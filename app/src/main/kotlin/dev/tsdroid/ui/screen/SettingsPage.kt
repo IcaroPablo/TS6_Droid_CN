@@ -221,7 +221,7 @@ fun SettingsPage(
                             Text(
                                 text = selectedLanguageLabel,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = LocalContentColor.current.copy(alpha = 0.72f),
                                 modifier = Modifier.clickable { languageMenuExpanded = true },
                             )
                             DropdownMenu(
@@ -272,7 +272,7 @@ fun SettingsPage(
         Text(
             text = "TS6 Droid v$versionName",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = LocalContentColor.current.copy(alpha = 0.72f),
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
     }
@@ -285,7 +285,9 @@ private fun SettingsSectionTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        // Derive from the glass backdrop instead of assuming a light surface: `primary` on a
+        // light wallpaper washed the section labels out until they were barely readable.
+        color = LocalContentColor.current.copy(alpha = 0.75f),
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
     )
 }
@@ -317,7 +319,11 @@ private fun SettingsClickableRow(
     subtitle: String? = null,
     onClick: () -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {
-        Icon(Icons.AutoMirrored.Filled.NavigateNext, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(
+            Icons.AutoMirrored.Filled.NavigateNext,
+            null,
+            tint = LocalContentColor.current.copy(alpha = 0.6f),
+        )
     },
 ) {
     Row(
@@ -333,7 +339,7 @@ private fun SettingsClickableRow(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = LocalContentColor.current.copy(alpha = 0.72f),
                 )
             }
         }
@@ -609,14 +615,14 @@ private fun WallpaperCacheSection(context: Context) {
     Text(
         text = stringResource(R.string.wallpaper_cache_size, String.format("%.1f", cacheSizeMB.floatValue), cacheCount.intValue),
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = LocalContentColor.current.copy(alpha = 0.72f),
         modifier = Modifier.padding(start = 16.dp, top = 8.dp),
     )
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
         Text(
             text = stringResource(R.string.wallpaper_max_cache, maxSize.longValue),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = LocalContentColor.current.copy(alpha = 0.72f),
         )
         Slider(
             value = maxSize.longValue.toFloat(),
