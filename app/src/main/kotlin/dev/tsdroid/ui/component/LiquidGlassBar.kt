@@ -774,12 +774,14 @@ private fun LiquidGlassSurface(
         lightBackdrop -> Color.Black.copy(alpha = 0.05f)
         else -> Color.White.copy(alpha = 0.06f)
     }
+    // Liquid glass is gone and the surfaces are opaque, so the lens-era sheen and inset shading would
+    // only read as a gradient artefact on a flat card. They stay for the (now unused) refracted path.
     val topHighlight = when {
-        rendered == null -> if (dark) 0.14f else 0.20f
+        rendered == null -> 0f
         lightBackdrop -> 0.12f
         else -> 0.24f
     }
-    val insetShadow = if (lightBackdrop) 0.07f else 0.14f
+    val insetShadow = if (rendered == null) 0f else if (lightBackdrop) 0.07f else 0.14f
 
     Box(
         modifier = modifier
@@ -807,14 +809,12 @@ private fun LiquidGlassSurface(
             // Nothing to refract at all (the wallpaper switch is off). A see-through pane would be
             // an invisible ghost on the plain theme surface — cards and the bar would lose every
             // edge. Fall back to a defined frosted material so they still read as surfaces.
+            // Fully opaque: the surfaces are plain Material 3 now, so nothing from the wallpaper
+            // shows through them.
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceContainer.copy(
-                            alpha = if (dark) 0.86f else 0.90f
-                        )
-                    ),
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
             )
         } else {
             // A wallpaper exists but its first refraction has not landed yet. Stay almost invisible

@@ -142,12 +142,7 @@ object AnimeWallpaperState {
 
 @Composable
 fun AnimeBackground(enabled: Boolean) {
-    if (!enabled) {
-        // No wallpaper: paint the ambient gradient instead of nothing, so the glass panes still
-        // have a non-flat backdrop to refract and keep reading as liquid glass.
-        AmbientBackground()
-        return
-    }
+    if (!enabled) return
 
     val context = LocalContext.current
 
