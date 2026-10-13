@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
@@ -766,10 +768,10 @@ private fun LiquidGlassSurface(
         lightBackdrop -> Color.Black.copy(alpha = 0.88f)
         else -> Color.White.copy(alpha = 0.96f)
     }
-    // Milky veil over the blurred backdrop — this is the frosted finish. It used to be ~5% because
-    // the material was meant to be clear glass.
+    // Milky veil over the blurred backdrop — this is the frosted finish. Skipped when the pane has
+    // no background of its own (the transparent bottom bar), which must stay see-through.
     val veil = when {
-        rendered == null -> Color.Transparent
+        backgroundColor == Color.Transparent -> Color.Transparent
         dark -> Color.White.copy(alpha = 0.30f)
         else -> Color.White.copy(alpha = 0.46f)
     }
@@ -797,14 +799,29 @@ private fun LiquidGlassSurface(
             }
             .clip(shape),
     ) {
-        if (rendered != null) {
+        // Draw the wallpaper ITSELF, blurred, offset so the pane shows exactly the region that is
+        // behind it right now. Tracking the layout this way (instead of pasting a once-sampled
+        // bitmap) is what removes the dragged-backdrop artefact: the blur follows the pane as it
+        // scrolls, so it can never disagree with the wallpaper around it, and nothing has to be
+        // re-rendered when the finger lifts. GPU blur, once per pane per frame.
+        val blurSource = wallpaper
+        if (blurSource != null) {
             Image(
-                bitmap = rendered.image,
+                bitmap = blurSource,
                 contentDescription = null,
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .requiredSize(
+                        width = with(density) { windowSize.width.toDp() },
+                        height = with(density) { windowSize.height.toDp() },
+                    )
+                    .offset(
+                        x = with(density) { (-paneRect.left).toDp() },
+                        y = with(density) { (-paneRect.top).toDp() },
+                    )
+                    .blur(18.dp),
             )
-        } else if (wallpaper == null) {
+        } else {
             // Nothing to refract at all (the wallpaper switch is off). A see-through pane would be
             // an invisible ghost on the plain theme surface — cards and the bar would lose every
             // edge. Fall back to a defined frosted material so they still read as surfaces.
@@ -816,18 +833,6 @@ private fun LiquidGlassSurface(
                 modifier = Modifier
                     .matchParentSize()
                     .background(backgroundColor),
-            )
-        } else {
-            // A wallpaper exists but its first refraction has not landed yet. Stay almost invisible
-            // so this frame already reads as glass rather than as a downgrade: the pane sits
-            // directly on the wallpaper, so showing it unrefracted is already glass-like.
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        if (dark) Color.White.copy(alpha = 0.05f)
-                        else Color.White.copy(alpha = 0.08f)
-                    ),
             )
         }
 
