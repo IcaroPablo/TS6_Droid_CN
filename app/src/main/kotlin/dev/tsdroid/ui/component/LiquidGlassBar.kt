@@ -806,21 +806,26 @@ private fun LiquidGlassSurface(
         // re-rendered when the finger lifts. GPU blur, once per pane per frame.
         val blurSource = wallpaper
         if (blurSource != null) {
-            Image(
-                bitmap = blurSource,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .requiredSize(
-                        width = with(density) { windowSize.width.toDp() },
-                        height = with(density) { windowSize.height.toDp() },
-                    )
-                    .offset(
-                        x = with(density) { (-paneRect.left).toDp() },
-                        y = with(density) { (-paneRect.top).toDp() },
-                    )
-                    .blur(18.dp),
-            )
+            // matchParentSize so the window-sized child below contributes NOTHING to the pane's own
+            // measurement. A requiredSize child does participate, which inflated the pane to the
+            // wallpaper's size (the card grew to fill the screen) and threw the offset off.
+            Box(modifier = Modifier.matchParentSize()) {
+                Image(
+                    bitmap = blurSource,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .requiredSize(
+                            width = with(density) { windowSize.width.toDp() },
+                            height = with(density) { windowSize.height.toDp() },
+                        )
+                        .offset(
+                            x = with(density) { (-paneRect.left).toDp() },
+                            y = with(density) { (-paneRect.top).toDp() },
+                        )
+                        .blur(18.dp),
+                )
+            }
         } else {
             // Nothing to refract at all (the wallpaper switch is off). A see-through pane would be
             // an invisible ghost on the plain theme surface — cards and the bar would lose every
