@@ -34,9 +34,11 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -390,7 +392,7 @@ fun LiquidGlassPanel(
     cornerRadius: Dp = 28.dp,
     elevation: Dp = 10.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-    content: @Composable () -> Unit,
+    content: @Composable BoxScope.(contentColor: Color) -> Unit,
 ) {
     Box(
         modifier = modifier
@@ -407,11 +409,47 @@ fun LiquidGlassPanel(
             wallpaper = wallpaper,
             shape = shape,
             cornerRadius = cornerRadius,
-            modifier = Modifier.matchParentSize(),
-        ) {
+            // Deliberately not matchParentSize(): the content must be able to size this panel,
+            // and a matchParentSize child contributes nothing to its parent's measurement — the
+            // whole card then collapsed to zero height. The paint layers inside the surface fill
+            // it via matchParentSize instead, so the glass still covers the measured content.
+            modifier = Modifier,
+        ) { contentColor ->
             Box(modifier = Modifier.padding(contentPadding)) {
-                content()
+                content(contentColor)
             }
+        }
+    }
+}
+
+/**
+ * A compact glass surface for list rows and grouped settings: the same refracting material as
+ * [LiquidGlassPanel], with a lighter shadow so a long list does not read as a pile of slabs.
+ *
+ * The backdrop-derived colour is published as `LocalContentColor`, so any inner [Text] or [Icon]
+ * that does not set an explicit colour adapts to whatever is actually behind the glass instead of
+ * assuming a light background.
+ */
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    wallpaper: ImageBitmap? = null,
+    shape: Shape = RoundedCornerShape(22.dp),
+    cornerRadius: Dp = 22.dp,
+    elevation: Dp = 3.dp,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable () -> Unit,
+) {
+    LiquidGlassPanel(
+        modifier = modifier,
+        wallpaper = wallpaper,
+        shape = shape,
+        cornerRadius = cornerRadius,
+        elevation = elevation,
+        contentPadding = contentPadding,
+    ) { contentColor ->
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            content()
         }
     }
 }
@@ -429,8 +467,8 @@ fun LiquidGlassNavBar(
     wallpaper: ImageBitmap? = null,
     barHeight: Dp = 64.dp,
     horizontalMargin: Dp = 16.dp,
-    topMargin: Dp = 6.dp,
-    bottomMargin: Dp = 8.dp,
+    topMargin: Dp = 8.dp,
+    bottomMargin: Dp = 12.dp,
 ) {
     if (items.isEmpty()) return
     val dark = isSystemInDarkTheme()
@@ -625,7 +663,11 @@ private fun LiquidGlassSurface(
                 outSize = paneSize,
                 cornerRadiusPx = cornerRadiusPx,
                 surfaceArgb = surfaceColor.toArgb(),
-                backdropAlpha = 0.75f, // AnimeBackground paints the wallpaper at 75% alpha
+                // 1.0 = genuinely clear glass. AnimeBackground paints the wallpaper at full
+                // opacity, so nothing may be mixed in behind the refraction: any value below 1
+                // blends the (near-white) surface colour into every pane, which is exactly what
+                // made the glass read as a translucent white slab instead of glass.
+                backdropAlpha = 1.0f,
             )
         }
     }
@@ -675,14 +717,16 @@ private fun LiquidGlassSurface(
                 modifier = Modifier.matchParentSize(),
             )
         } else {
-            // No wallpaper to refract (disabled, still loading, or geometry unknown): fall back
-            // to a clean, neutral translucent material instead of a coloured wash.
+            // No wallpaper to refract yet (disabled, still loading, or geometry unknown). Stay
+            // genuinely translucent: the previous near-opaque slab is exactly what made the bar
+            // read as a flat grey card rather than glass. The specular rim, the inset shadow and
+            // the luminous border below carry the material until the backdrop arrives.
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(
-                        if (dark) Color(0xFF16161A).copy(alpha = 0.75f)
-                        else Color(0xFFE9E9EE).copy(alpha = 0.78f)
+                        if (dark) Color.White.copy(alpha = 0.08f)
+                        else Color.White.copy(alpha = 0.18f)
                     ),
             )
         }

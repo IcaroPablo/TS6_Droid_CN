@@ -3,7 +3,6 @@ package dev.tsdroid.ui.component
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.drawable.BitmapDrawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +17,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import coil.request.ImageResult
 import coil.request.SuccessResult
 import dev.tsdroid.background.CustomBackgroundManager
@@ -131,10 +132,10 @@ object AnimeWallpaperState {
 
     fun extractDominantColor(result: ImageResult) {
         if (result !is SuccessResult) return
-        val bitmap = when (val drawable = result.drawable) {
-            is BitmapDrawable -> drawable.bitmap
-            else -> return
-        }
+        // Coil can hand back any Drawable (bitmap, crossfade, wrapper). Requiring a
+        // BitmapDrawable bailed out silently, which left `wallpaperBitmap` empty: every glass
+        // surface then fell back to its opaque material while the wallpaper still displayed.
+        val bitmap = runCatching { result.drawable.toBitmap() }.getOrNull() ?: return
         extractColorFromBitmap(bitmap)
     }
 }
@@ -162,7 +163,9 @@ fun AnimeBackground(enabled: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .alpha(0.75f)
+            // Painted at full strength: the glass panes refract exactly what is shown here, so
+            // softening the wallpaper also washed out every pane that samples it.
+            .alpha(1f)
     ) {
         if (customBmp != null) {
             imageLoaded = true
@@ -174,7 +177,9 @@ fun AnimeBackground(enabled: Boolean) {
             )
         } else if (url != null) {
             AsyncImage(
-                model = url,
+                // Software bitmaps only: the glass refraction reads pixels back out of this
+                // image, and a hardware bitmap cannot be read that way.
+                model = ImageRequest.Builder(context).data(url).allowHardware(false).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

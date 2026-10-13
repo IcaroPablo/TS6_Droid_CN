@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -30,16 +32,14 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -79,6 +79,7 @@ import dev.tslib.ConnectionState
 import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChannelTree
+import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassNavBar
 import dev.tsdroid.ui.component.LiquidGlassNavItem
 import dev.tsdroid.viewmodel.ConnectionViewModel
@@ -177,8 +178,24 @@ fun ConnectionScreen(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             floatingActionButton = {
                 if (selectedTab == 0) {
-                    FloatingActionButton(onClick = { showBottomSheet = true }) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.manual_connection))
+                    GlassCard(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clickable { showBottomSheet = true },
+                        wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+                        shape = CircleShape,
+                        cornerRadius = 28.dp,
+                        elevation = 6.dp,
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = stringResource(R.string.manual_connection),
+                            )
+                        }
                     }
                 }
             },
@@ -215,12 +232,9 @@ fun ConnectionScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             bookmarks.forEachIndexed { index, bookmark ->
-                                    Card(
+                                    GlassCard(
                                         modifier = Modifier.fillMaxWidth(),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                                        ),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                        wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -253,7 +267,7 @@ fun ConnectionScreen(
                                                 Text(
                                                     bookmark.address,
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    color = LocalContentColor.current.copy(alpha = 0.72f),
                                                 )
                                             }
                                             FilledTonalButton(

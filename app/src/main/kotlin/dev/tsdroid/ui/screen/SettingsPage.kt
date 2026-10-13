@@ -42,6 +42,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.component.AnimeWallpaperState
+import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
 import kotlinx.coroutines.launch
@@ -107,10 +109,9 @@ fun SettingsPage(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         // ── 外观 ──
-        Card(
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-            shape = MaterialTheme.shapes.large,
+            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_appearance))
@@ -142,10 +143,9 @@ fun SettingsPage(
         Spacer(Modifier.height(12.dp))
 
         // ── 音频 ──
-        Card(
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-            shape = MaterialTheme.shapes.large,
+            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_audio))
@@ -177,10 +177,9 @@ fun SettingsPage(
         Spacer(Modifier.height(12.dp))
 
         // ── 聊天 ──
-        Card(
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-            shape = MaterialTheme.shapes.large,
+            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_chat))
@@ -206,10 +205,9 @@ fun SettingsPage(
         Spacer(Modifier.height(12.dp))
 
         // ── 更多 ──
-        Card(
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-            shape = MaterialTheme.shapes.large,
+            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_more))
