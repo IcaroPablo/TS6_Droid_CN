@@ -158,7 +158,9 @@ fun ConnectionScreen(
             ),
             selectedIndex = selectedTab,
             onSelect = { selectedTab = it },
-            wallpaper = rememberGlassBackdrop(animeBackground),
+            // No wallpaper: the bar is deliberately transparent, and sampling the backdrop would
+            // frost it instead of leaving the wallpaper visible through it.
+            wallpaper = null,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .zIndex(1f),

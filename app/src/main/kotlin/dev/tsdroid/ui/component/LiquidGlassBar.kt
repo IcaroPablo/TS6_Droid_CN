@@ -175,16 +175,16 @@ private object LiquidGlassRefraction {
     private const val RIM_DISTANCE = 0.35f
 
     /**
-     * The reference applies half of the computed displacement (`maxScale *= 0.5`); a touch
-     * stronger here because a phone-sized bar is much smaller than the 300x200 demo.
+     * No lens distortion: the target look is flat milk glass, not a refracting bubble. The edge
+     * displacement is therefore switched off and only the diffusion above shapes the material.
      */
-    private const val LENS_SCALE = 0.7f
+    private const val LENS_SCALE = 0f
 
     /**
-     * The reference blurs the backdrop by only 0.25px (it demos a *clear* lens). A navigation bar
-     * sits over the whole app, so a small amount of diffusion is kept for legibility.
+     * Diffusion applied to the sampled backdrop. This is what separates "frosted" from "glass": a
+     * couple of pixels keeps the backdrop legible through a lens, ~15px turns it into milk glass.
      */
-    private const val DIFFUSION_RADIUS_PX = 2
+    private const val DIFFUSION_RADIUS_PX = 15
 
     private const val CONTRAST = 1.12f
     private const val BRIGHTNESS = 1.02f
@@ -766,10 +766,12 @@ private fun LiquidGlassSurface(
         lightBackdrop -> Color.Black.copy(alpha = 0.88f)
         else -> Color.White.copy(alpha = 0.96f)
     }
+    // Milky veil over the blurred backdrop — this is the frosted finish. It used to be ~5% because
+    // the material was meant to be clear glass.
     val veil = when {
         rendered == null -> Color.Transparent
-        lightBackdrop -> Color.Black.copy(alpha = 0.05f)
-        else -> Color.White.copy(alpha = 0.06f)
+        dark -> Color.White.copy(alpha = 0.30f)
+        else -> Color.White.copy(alpha = 0.46f)
     }
     // Liquid glass is gone and the surfaces are opaque, so the lens-era sheen and inset shading would
     // only read as a gradient artefact on a flat card. They stay for the (now unused) refracted path.
