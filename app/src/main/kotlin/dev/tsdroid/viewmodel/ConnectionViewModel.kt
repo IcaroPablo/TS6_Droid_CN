@@ -4,9 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.graphics.BitmapFactory
-import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -105,7 +103,6 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private var serviceConnection: ServiceConnection? = null
     private var connectJob: kotlinx.coroutines.Job? = null
     private var cloneBypassIdentity: Identity? = null
 
@@ -165,7 +162,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         // Check for overlay permission before starting the service
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
             _connectionState.value = ConnectionState.DISCONNECTED
-            _error.value = "Please grant the 'Display over other apps' permission to use the floating window."
+            _error.value = context.getString(R.string.error_overlay_permission_required)
             val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:${context.packageName}"))
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
@@ -465,14 +462,5 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         TsConnectionService.instance?.hideFloatingWindow() ?: run {
             Log.d(TAG, "hideFloatingWindow: no instance, cannot hide overlay")
         }
-    }
-
-    override fun onCleared() {
-        serviceConnection?.let {
-            try {
-                getApplication<Application>().unbindService(it)
-            } catch (_: Exception) {}
-        }
-        super.onCleared()
     }
 }

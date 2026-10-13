@@ -1,7 +1,6 @@
 package dev.tsdroid.service
 
 import android.graphics.PixelFormat
-import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -117,13 +116,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             private set
     }
 
-    inner class LocalBinder : Binder() {
-        val tsClient: TsClient get() = this@TsConnectionService.tsClient
-        val audioBridge: AudioBridge get() = this@TsConnectionService.audioBridge
-        val service: TsConnectionService get() = this@TsConnectionService
-    }
-
-    private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     val tsClient = TsClient()
@@ -520,9 +512,14 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         return START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent): IBinder {
+    /**
+     * Binding is not used: the UI reaches this service through [instance] and the state
+     * flows exposed by [tsClient]. This override exists only because Service declares
+     * onBind abstract, so it deliberately reports that no binder is available.
+     */
+    override fun onBind(intent: Intent): IBinder? {
         super.onBind(intent)
-        return binder
+        return null
     }
 
     private fun startServiceForeground() {

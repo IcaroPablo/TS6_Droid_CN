@@ -35,14 +35,6 @@ class AvatarCache(private val cacheDir: File) {
         Log.d(TAG, "Cleared memory cache for ${uids.size} UID(s)")
     }
 
-    /** Clear ALL memory caches so next loadAvatar calls re-download */
-    fun clearAllMemoryCache() {
-        memoryCache.clear()
-        loading.clear()
-        failedAttempts.clear()
-        Log.d(TAG, "Cleared ALL memory caches")
-    }
-
     /**
      * Convert a TS3 base64 UID to the avatar file path used by the server.
      *

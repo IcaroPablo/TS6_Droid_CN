@@ -1,15 +1,12 @@
 package dev.tsdroid.viewmodel
 
 import android.app.Application
-import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Environment
-import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
