@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "bookmarks")
 
@@ -95,36 +97,110 @@ class BookmarkStore(private val context: Context) {
     }
 
     private fun parseBookmarks(json: String): List<ServerBookmark> {
-        if (json == "[]") return emptyList()
+        if (json.isBlank() || json == "[]") return emptyList()
+
+        val array = try {
+            JSONArray(json)
+        } catch (_: Exception) {
+            // A legacy value with an unescaped backslash that forms no JSON escape — a
+            // Windows path such as "C:\users", say — is not valid JSON and never gets here.
+            return parseBookmarksLegacy(json)
+        }
+
+        // Legacy records quote iconId as a string and spell absent values as the literal
+        // "null". Reading those as JSON would silently corrupt any value containing a
+        // backslash, because "\t" in "C:\temp" is a *valid* JSON escape that turns into a
+        // tab. Detect the old shape and use the parser written for it instead.
+        if (isLegacyArray(array)) return parseBookmarksLegacy(json)
+
+        return (0 until array.length()).mapNotNull { index ->
+            val obj = array.optJSONObject(index) ?: return@mapNotNull null
+            try {
+                ServerBookmark(
+                    name = obj.optString("name", ""),
+                    address = obj.optString("address", ""),
+                    nickname = obj.optString("nickname", ""),
+                    password = obj.optionalString("password"),
+                    channel = obj.optionalString("channel"),
+                    serverName = obj.optionalString("serverName"),
+                    iconId = obj.optLong("iconId", 0L),
+                )
+            } catch (_: Exception) {
+                // A single malformed entry must not discard the user's other servers.
+                null
+            }
+        }
+    }
+
+    /**
+     * Every legacy record wrote `"iconId":"7"` with the number quoted, whereas
+     * [serializeBookmarks] emits a real JSON number. That makes the two shapes
+     * distinguishable without guessing.
+     */
+    private fun isLegacyArray(array: JSONArray): Boolean {
+        for (index in 0 until array.length()) {
+            val obj = array.optJSONObject(index) ?: continue
+            if (obj.opt("iconId") is String) return true
+        }
+        return false
+    }
+
+    /**
+     * Legacy format — `[{"name":"x","password":"null",…}]` with only `"` escaped. Kept so
+     * bookmarks saved by earlier builds survive the migration to real JSON.
+     */
+    private fun parseBookmarksLegacy(json: String): List<ServerBookmark> {
         return try {
-            val entries = json.removeSurrounding("[", "]").split("},{")
-            entries.map { entry ->
+            json.removeSurrounding("[", "]").split("},{").mapNotNull { entry ->
                 val clean = entry.removePrefix("{").removeSuffix("}")
                 val fields = mutableMapOf<String, String>()
                 for (pair in clean.split("\",\"")) {
                     val kv = pair.replace("\"", "").split(":", limit = 2)
                     if (kv.size == 2) fields[kv[0]] = kv[1]
                 }
-                ServerBookmark(
-                    name = fields["name"] ?: "",
-                    address = fields["address"] ?: "",
-                    nickname = fields["nickname"] ?: "",
-                    password = fields["password"]?.takeIf { it != "null" },
-                    channel = fields["channel"]?.takeIf { it != "null" },
-                    serverName = fields["serverName"]?.takeIf { it != "null" },
-                    iconId = fields["iconId"]?.toLongOrNull() ?: 0,
-                )
+                try {
+                    ServerBookmark(
+                        name = fields["name"] ?: "",
+                        address = fields["address"] ?: "",
+                        nickname = fields["nickname"] ?: "",
+                        password = fields["password"]?.takeIf { it != "null" },
+                        channel = fields["channel"]?.takeIf { it != "null" },
+                        serverName = fields["serverName"]?.takeIf { it != "null" },
+                        iconId = fields["iconId"]?.toLongOrNull() ?: 0,
+                    )
+                } catch (_: Exception) {
+                    null
+                }
             }
         } catch (_: Exception) {
             emptyList()
         }
     }
 
-    private fun serializeBookmarks(bookmarks: List<ServerBookmark>): String {
-        return bookmarks.joinToString(",", "[", "]") { b ->
-            """{"name":"${escape(b.name)}","address":"${escape(b.address)}","nickname":"${escape(b.nickname)}","password":"${b.password ?: "null"}","channel":"${b.channel ?: "null"}","serverName":"${b.serverName ?: "null"}","iconId":"${b.iconId}"}"""
-        }
+    /**
+     * An absent value is `null` when the key is missing, holds a real JSON null, or — in a
+     * legacy record — holds the literal string "null".
+     */
+    private fun JSONObject.optionalString(key: String): String? {
+        if (!has(key) || isNull(key)) return null
+        return optString(key, "").takeIf { it.isNotBlank() && it != "null" }
     }
 
-    private fun escape(s: String): String = s.replace("\"", "\\\"")
+    private fun serializeBookmarks(bookmarks: List<ServerBookmark>): String {
+        val array = JSONArray()
+        for (bookmark in bookmarks) {
+            array.put(
+                JSONObject().apply {
+                    put("name", bookmark.name)
+                    put("address", bookmark.address)
+                    put("nickname", bookmark.nickname)
+                    put("password", bookmark.password ?: JSONObject.NULL)
+                    put("channel", bookmark.channel ?: JSONObject.NULL)
+                    put("serverName", bookmark.serverName ?: JSONObject.NULL)
+                    put("iconId", bookmark.iconId)
+                },
+            )
+        }
+        return array.toString()
+    }
 }
