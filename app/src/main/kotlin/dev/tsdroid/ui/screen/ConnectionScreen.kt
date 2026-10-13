@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.han.R
@@ -147,6 +148,22 @@ fun ConnectionScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         AnimeBackground(enabled = animeBackground)
 
+        // Floating tab bar: laid over the content instead of taking a Scaffold.bottomBar slot, so it
+        // reserves no height and the content area keeps the whole screen. zIndex keeps it above the
+        // Scaffold (drawn later) even though it is declared first.
+        LiquidGlassNavBar(
+            items = listOf(
+                LiquidGlassNavItem(Icons.Default.Home, stringResource(R.string.tab_home)),
+                LiquidGlassNavItem(Icons.Default.Settings, stringResource(R.string.tab_settings)),
+            ),
+            selectedIndex = selectedTab,
+            onSelect = { selectedTab = it },
+            wallpaper = rememberGlassBackdrop(animeBackground),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .zIndex(1f),
+        )
+
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -161,19 +178,6 @@ fun ConnectionScreen(
                         containerColor = Color.Transparent,
                         scrolledContainerColor = Color.Transparent,
                     ),
-                )
-            },
-            bottomBar = {
-                // iOS 26 style liquid-glass floating bar: blurred wallpaper backdrop,
-                // specular highlights and a selection pill that glides between items.
-                LiquidGlassNavBar(
-                    items = listOf(
-                        LiquidGlassNavItem(Icons.Default.Home, stringResource(R.string.tab_home)),
-                        LiquidGlassNavItem(Icons.Default.Settings, stringResource(R.string.tab_settings)),
-                    ),
-                    selectedIndex = selectedTab,
-                    onSelect = { selectedTab = it },
-                    wallpaper = rememberGlassBackdrop(animeBackground),
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
