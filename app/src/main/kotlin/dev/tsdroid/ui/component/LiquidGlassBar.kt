@@ -583,18 +583,12 @@ fun LiquidGlassNavBar(
                         .width(slotWidth - pillInset * 2)
                         .height(barHeight - 12.dp)
                         .clip(capsule)
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = if (dark) 0.12f else 0.22f),
-                                1f to Color.White.copy(alpha = if (dark) 0.04f else 0.09f),
-                            )
-                        )
+                        // A theme-tinted pill instead of the old white-alpha overlay: on the neutral
+                        // near-white bar a translucent white pill would be invisible.
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
                         .border(
                             width = 0.75.dp,
-                            brush = Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = if (dark) 0.28f else 0.55f),
-                                1f to Color.White.copy(alpha = 0.06f),
-                            ),
+                            color = MaterialTheme.colorScheme.outlineVariant,
                             shape = capsule,
                         ),
                 )
@@ -809,12 +803,14 @@ private fun LiquidGlassSurface(
             // Nothing to refract at all (the wallpaper switch is off). A see-through pane would be
             // an invisible ghost on the plain theme surface — cards and the bar would lose every
             // edge. Fall back to a defined frosted material so they still read as surfaces.
-            // Fully opaque: the surfaces are plain Material 3 now, so nothing from the wallpaper
-            // shows through them.
+            // Neutral near-white / near-black rather than surfaceContainer. The latter is a fixed
+            // lavender-tinted M3 baseline (#F3EDF7) which, laid over a saturated wallpaper as a
+            // large opaque slab, reads as a muddy purple block and clashes with the wallpaper's own
+            // dominant colour. `surface` is neutral, so the cards read as clean cards on a photo.
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                    .background(MaterialTheme.colorScheme.surface),
             )
         } else {
             // A wallpaper exists but its first refraction has not landed yet. Stay almost invisible
