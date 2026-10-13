@@ -677,8 +677,11 @@ private fun LiquidGlassSurface(
     shape: Shape,
     cornerRadius: Dp,
     modifier: Modifier = Modifier,
-    /** Painted behind the content. `Color.Transparent` leaves only the rim, for a floating bar. */
-    backgroundColor: Color = MaterialTheme.colorScheme.surface,
+    /**
+     * Painted behind the content. Defaults to a slightly translucent near-white/near-black, which
+     * gives the frosted "milk glass" look; `Color.Transparent` leaves only the rim (floating bar).
+     */
+    backgroundColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
