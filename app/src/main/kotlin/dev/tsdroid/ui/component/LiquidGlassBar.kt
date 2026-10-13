@@ -85,6 +85,53 @@ import kotlin.math.sqrt
  * A rendered glass backdrop plus the average luminance of what it shows, which is used to pick
  * light or dark labels (the same vibrancy behaviour iOS uses).
  */
+/**
+ * How long a pane waits for its geometry to settle before recomputing the refracted backdrop.
+ * Scrolling changes a pane's position every frame; without this the SDF render would restart on
+ * each frame and the pane would never show a stable image.
+ */
+private const val GLASS_SETTLE_MS = 90L
+
+/**
+ * Identifies one refracted pane: the wallpaper instance plus the exact pixels and radius the lens
+ * was computed for.
+ */
+private data class GlassCacheKey(
+    val wallpaperId: Int,
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+    val outWidth: Int,
+    val outHeight: Int,
+    val radius: Float,
+)
+
+/**
+ * Remembers already-rendered panes so revisiting a screen does not re-run the lens.
+ *
+ * Without this, returning to the settings tab (or scrolling back to a spot already seen) recomputed
+ * every pane's SDF render from scratch, which is why the glass appeared to rebuild itself on each
+ * visit. Bounded, because every entry holds a pane-sized ARGB bitmap.
+ */
+private object GlassBackdropCache {
+    private const val MAX_ENTRIES = 14
+
+    private val entries = object : LinkedHashMap<GlassCacheKey, GlassBackdrop>(16, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<GlassCacheKey, GlassBackdrop>,
+        ): Boolean = size > MAX_ENTRIES
+    }
+
+    @Synchronized
+    fun get(key: GlassCacheKey): GlassBackdrop? = entries[key]
+
+    @Synchronized
+    fun put(key: GlassCacheKey, value: GlassBackdrop) {
+        entries[key] = value
+    }
+}
+
 private data class GlassBackdrop(
     val image: ImageBitmap,
     val meanLuma: Float,
@@ -466,6 +513,8 @@ fun LiquidGlassNavBar(
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
     barHeight: Dp = 64.dp,
+    /** Width given to each item. The capsule hugs the items instead of filling the window. */
+    itemWidth: Dp = 92.dp,
     horizontalMargin: Dp = 16.dp,
     topMargin: Dp = 8.dp,
     bottomMargin: Dp = 12.dp,
@@ -474,7 +523,7 @@ fun LiquidGlassNavBar(
     val dark = isSystemInDarkTheme()
     val capsule = CircleShape
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
@@ -484,10 +533,17 @@ fun LiquidGlassNavBar(
                 top = topMargin,
                 bottom = bottomMargin,
             ),
+        // Centred, and only as wide as its items: a two-item bar reads as a compact capsule
+        // rather than a rail spanning the whole window.
+        contentAlignment = Alignment.Center,
     ) {
-        BoxWithConstraints(
+        // Hug the items, but never exceed the available width: as entries are added the slot
+        // shrinks so the capsule stays inside the window instead of being clipped.
+        val capsuleWidth = minOf(itemWidth * items.size, maxWidth)
+        val slotWidth = capsuleWidth / items.size
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .width(capsuleWidth)
                 .height(barHeight)
                 .shadow(
                     elevation = 10.dp,
@@ -498,7 +554,6 @@ fun LiquidGlassNavBar(
                 )
                 .clip(capsule),
         ) {
-            val itemWidth = maxWidth / items.size
             val pillInset = 6.dp
 
             LiquidGlassSurface(
@@ -514,7 +569,7 @@ fun LiquidGlassNavBar(
                     Color.White.copy(alpha = 0.65f)
                 }
                 val pillOffset by animateDpAsState(
-                    targetValue = itemWidth * selectedIndex + pillInset,
+                    targetValue = slotWidth * selectedIndex + pillInset,
                     animationSpec = spring(
                         dampingRatio = 0.72f,
                         stiffness = Spring.StiffnessMediumLow,
@@ -525,7 +580,7 @@ fun LiquidGlassNavBar(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = pillOffset)
-                        .width(itemWidth - pillInset * 2)
+                        .width(slotWidth - pillInset * 2)
                         .height(barHeight - 12.dp)
                         .clip(capsule)
                         .background(
@@ -652,10 +707,39 @@ private fun LiquidGlassSurface(
         windowSize,
         surfaceColor,
     ) {
-        value = null
         val source = wallpaper
-        if (source == null || paneSize.width <= 0 || paneSize.height <= 0) return@produceState
-        value = withContext(Dispatchers.Default) {
+        if (source == null) {
+            // Nothing to refract at all (background off): drop the stale frame.
+            value = null
+            return@produceState
+        }
+        if (paneSize.width <= 0 || paneSize.height <= 0) return@produceState
+        // Deliberately NOT `value = null` here. Clearing it on every key change meant each scroll
+        // frame and each entrance animation dropped the pane back to the flat fallback until the
+        // new bitmap arrived — the glass visibly vanished while scrolling and re-appeared a moment
+        // after the finger stopped. Keeping the previous frame means the pane always shows glass,
+        // and the newly rendered one simply replaces it.
+        // The settle delay coalesces the geometry changes a scroll produces, so the SDF render
+        // runs once for the resting position instead of once per frame. It is skipped for the
+        // very first frame of a pane so nothing is delayed on initial appearance.
+        if (value != null) kotlinx.coroutines.delay(GLASS_SETTLE_MS)
+        val key = GlassCacheKey(
+            wallpaperId = System.identityHashCode(source),
+            left = paneRect.left.toInt(),
+            top = paneRect.top.toInt(),
+            right = paneRect.right.toInt(),
+            bottom = paneRect.bottom.toInt(),
+            outWidth = paneSize.width,
+            outHeight = paneSize.height,
+            radius = cornerRadiusPx,
+        )
+        GlassBackdropCache.get(key)?.let { cached ->
+            // This exact pane was rendered before (returning to a tab, scrolling back): reuse it
+            // instead of running the lens again, so nothing visibly rebuilds.
+            value = cached
+            return@produceState
+        }
+        val computed = withContext(Dispatchers.Default) {
             LiquidGlassRefraction.render(
                 wallpaper = source,
                 paneRect = paneRect,
@@ -670,6 +754,9 @@ private fun LiquidGlassSurface(
                 backdropAlpha = 1.0f,
             )
         }
+        if (computed != null) GlassBackdropCache.put(key, computed)
+        // Keep the previous frame if this one failed, rather than dropping to the flat fallback.
+        value = computed ?: value
     }
 
     // Vibrancy: choose the label colour from what the glass actually shows, then pick overlays
@@ -716,17 +803,29 @@ private fun LiquidGlassSurface(
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.matchParentSize(),
             )
-        } else {
-            // No wallpaper to refract yet (disabled, still loading, or geometry unknown). Stay
-            // genuinely translucent: the previous near-opaque slab is exactly what made the bar
-            // read as a flat grey card rather than glass. The specular rim, the inset shadow and
-            // the luminous border below carry the material until the backdrop arrives.
+        } else if (wallpaper == null) {
+            // Nothing to refract at all (the wallpaper switch is off). A see-through pane would be
+            // an invisible ghost on the plain theme surface — cards and the bar would lose every
+            // edge. Fall back to a defined frosted material so they still read as surfaces.
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(
-                        if (dark) Color.White.copy(alpha = 0.08f)
-                        else Color.White.copy(alpha = 0.18f)
+                        MaterialTheme.colorScheme.surfaceContainer.copy(
+                            alpha = if (dark) 0.86f else 0.90f
+                        )
+                    ),
+            )
+        } else {
+            // A wallpaper exists but its first refraction has not landed yet. Stay almost invisible
+            // so this frame already reads as glass rather than as a downgrade: the pane sits
+            // directly on the wallpaper, so showing it unrefracted is already glass-like.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        if (dark) Color.White.copy(alpha = 0.05f)
+                        else Color.White.copy(alpha = 0.08f)
                     ),
             )
         }
@@ -769,7 +868,9 @@ private fun LiquidGlassSurface(
                 .matchParentSize()
                 .border(
                     width = 0.75.dp,
-                    brush = if (lightBackdrop && rendered != null) {
+                    // No backdrop at all counts as a light one, so the frosted fallback gets the
+                    // darker hairline instead of an invisible white one.
+                    brush = if (lightBackdrop) {
                         Brush.linearGradient(
                             0f to Color.Black.copy(alpha = 0.12f),
                             0.55f to Color.Black.copy(alpha = 0.04f),

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -39,19 +41,23 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +94,7 @@ fun FileManagerDialog(
     onShareFile: (ShareTarget, String, Long) -> Unit,
     onDismiss: () -> Unit,
     onPreviewImage: (String) -> Unit = {},
+    wallpaper: ImageBitmap? = null,
 ) {
     // Permission flags — write operations require explicit permission bits.
     // When permissionHints == 0 (server didn't send hints), hide write buttons.
@@ -126,17 +133,33 @@ fun FileManagerDialog(
         files.sortedWith(compareBy<TsFileEntry> { it.isFile }.thenBy { it.name.lowercase() })
     }
 
-    Surface(
+    // Full-screen glass panel: this used to be an opaque `colorScheme.surface` slab. The
+    // `contentColor` comes from the wallpaper actually behind the glass, so everything below
+    // adapts through LocalContentColor instead of assuming a light backdrop.
+    LiquidGlassPanel(
         modifier = Modifier.fillMaxSize(),
-        tonalElevation = 3.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding(),
-        ) {
-                // Top bar
+        wallpaper = wallpaper,
+        shape = RoundedCornerShape(0.dp),
+        cornerRadius = 0.dp,
+        elevation = 0.dp,
+        contentPadding = PaddingValues(0.dp),
+    ) { contentColor ->
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding(),
+            ) {
+                // Top bar — transparent, otherwise its default opaque surface would cover the
+                // glass as a slab; its title and actions take the glass colour.
                 TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent,
+                        titleContentColor = LocalContentColor.current,
+                        actionIconContentColor = LocalContentColor.current,
+                        navigationIconContentColor = LocalContentColor.current,
+                    ),
                     title = {
                         Text(
                             currentPath,
@@ -188,11 +211,13 @@ fun FileManagerDialog(
                             )
                         }
                         sortedFiles.isEmpty() -> {
+                            // No opaque backdrop any more: follow the glass instead of assuming
+                            // the light-theme `onSurfaceVariant` is readable.
                             Text(
                                 text = stringResource(R.string.no_files),
                                 modifier = Modifier.align(Alignment.Center),
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = LocalContentColor.current.copy(alpha = 0.78f),
                             )
                         }
                         else -> {
@@ -218,7 +243,8 @@ fun FileManagerDialog(
 
             }
         }
-    // (end of Surface) — dialogs below are still inside the function
+    }
+    // (end of LiquidGlassPanel) — dialogs below are still inside the function
 
     // New folder dialog
     if (showNewFolderDialog) {
@@ -387,7 +413,7 @@ private fun FileEntryRow(
             else -> Icons.Default.Description
         }
         val tint = if (!entry.isFile) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant
+            else LocalContentColor.current.copy(alpha = 0.78f)
         Icon(
             icon,
             contentDescription = if (!entry.isFile) stringResource(R.string.folder) else null,
@@ -410,12 +436,12 @@ private fun FileEntryRow(
                     Text(
                         text = formatFileSize(entry.size),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = LocalContentColor.current.copy(alpha = 0.7f),
                     )
                     Text(
                         text = formatTimestamp(entry.datetime),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = LocalContentColor.current.copy(alpha = 0.7f),
                     )
                 }
             }

@@ -7,6 +7,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,14 +21,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,17 @@ import dev.tsdroid.viewmodel.FileAttachment
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * Wallpaper currently painted behind the screen. Glass surfaces that live inside a container which
+ * cannot forward it as a parameter — a chat bubble inside [ChatView] — read it from here, so they
+ * still refract the real backdrop instead of falling back to the flat translucent placeholder.
+ * Null means "nothing to refract" (anime background off, or not decoded yet), which the glass
+ * material already handles.
+ *
+ * Provided by the screen that hosts the glass (see `ServerScreen.ChatPanel`).
+ */
+val LocalGlassWallpaper = compositionLocalOf<ImageBitmap?> { null }
 
 // Match BBCode [img]URL[/img]
 private val IMG_BBCODE = Regex("""\[img](.*?)\[/img]""", RegexOption.IGNORE_CASE)
@@ -111,27 +123,33 @@ fun MessageBubble(
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
     val linkColor = MaterialTheme.colorScheme.primary
-    val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
+    // Inline code used to paint an opaque `surfaceContainerHighest` chip; over glass that is a
+    // light slab behind text the glass has already coloured, so it becomes a neutral wash.
+    val codeBackground = LocalContentColor.current.copy(alpha = 0.14f)
     val parsed = remember(message.text, linkColor, codeBackground, showLinkThumbnails) {
         parseMessage(message.text, linkColor, codeBackground, showLinkThumbnails)
     }
+    val bubbleTint = if (isMe) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant
 
-    Card(
+    GlassCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(
                 start = if (isMe) 48.dp else 0.dp,
                 end = if (isMe) 0.dp else 48.dp,
             ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isMe)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-        ),
+        wallpaper = rememberGlassBackdrop(true),
+        shape = RoundedCornerShape(12.dp),
+        cornerRadius = 12.dp,
+        elevation = 3.dp,
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier
+                // The side tint still carries the meaning ("mine" vs "theirs"), but as a thin
+                // translucent wash over the glass instead of an opaque container fill.
+                .background(bubbleTint.copy(alpha = 0.45f))
+                .padding(8.dp),
         ) {
             if (!isMe) {
                 Text(
@@ -182,7 +200,7 @@ fun MessageBubble(
             Text(
                 text = timeFormat.format(Date(message.timestamp)),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = LocalContentColor.current.copy(alpha = 0.7f),
             )
         }
     }
@@ -281,7 +299,7 @@ private fun FileAttachmentCard(
                 else
                     stringResource(R.string.file_attachment_info, formatFileSize(context, attachment.fileSize)),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = LocalContentColor.current.copy(alpha = 0.7f),
             )
             when (downloadState) {
                 is DownloadState.Idle -> {
@@ -297,7 +315,7 @@ private fun FileAttachmentCard(
                     Text(
                         text = stringResource(R.string.downloading),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = LocalContentColor.current.copy(alpha = 0.7f),
                     )
                 }
                 is DownloadState.Done -> {

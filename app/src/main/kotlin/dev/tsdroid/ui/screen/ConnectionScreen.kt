@@ -82,6 +82,7 @@ import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassNavBar
 import dev.tsdroid.ui.component.LiquidGlassNavItem
+import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.viewmodel.ConnectionViewModel
 import kotlinx.coroutines.launch
 
@@ -172,7 +173,7 @@ fun ConnectionScreen(
                     ),
                     selectedIndex = selectedTab,
                     onSelect = { selectedTab = it },
-                    wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+                    wallpaper = rememberGlassBackdrop(animeBackground),
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -182,7 +183,7 @@ fun ConnectionScreen(
                         modifier = Modifier
                             .size(56.dp)
                             .clickable { showBottomSheet = true },
-                        wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+                        wallpaper = rememberGlassBackdrop(animeBackground),
                         shape = CircleShape,
                         cornerRadius = 28.dp,
                         elevation = 6.dp,
@@ -234,7 +235,7 @@ fun ConnectionScreen(
                             bookmarks.forEachIndexed { index, bookmark ->
                                     GlassCard(
                                         modifier = Modifier.fillMaxWidth(),
-                                        wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+                                        wallpaper = rememberGlassBackdrop(animeBackground),
                                     ) {
                                         Row(
                                             modifier = Modifier

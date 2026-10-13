@@ -2,7 +2,7 @@ package dev.tsdroid.ui.screen
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +53,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -65,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,7 +80,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -90,10 +93,15 @@ import dev.tsdroid.bridge.AudioBridge
 import dev.tslib.ConnectionState
 import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
+import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChatView
 import dev.tsdroid.ui.component.FileManagerDialog
+import dev.tsdroid.ui.component.GlassCard
+import dev.tsdroid.ui.component.LiquidGlassPanel
+import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.ShareTarget
+import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
@@ -197,6 +205,10 @@ fun ServerScreen(
 
     val totalUnread = unreadChannel + totalUnreadPrivate
 
+    // Backdrop for the liquid-glass surfaces on this screen: only when the wallpaper is actually
+    // painted behind them, exactly like ConnectionScreen does.
+    val glassWallpaper = rememberGlassBackdrop(animeBackground)
+
     Box(modifier = Modifier.fillMaxSize()) {
         AnimeBackground(enabled = animeBackground)
 
@@ -245,142 +257,179 @@ fun ServerScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
+                // The controls used to float straight on the wallpaper with no panel at all, so
+                // their contrast was pure luck. They now sit on a floating glass bar.
+                LiquidGlassPanel(
+                    modifier = Modifier.fillMaxWidth(),
+                    wallpaper = glassWallpaper,
+                    shape = RoundedCornerShape(28.dp),
+                    cornerRadius = 28.dp,
+                    elevation = 6.dp,
+                    contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
-                    // Chat FAB with badge
-                    Box {
-                        IconButton(onClick = {
-                            chatOpen = !chatOpen
-                        }) {
-                            Icon(
-                                Icons.Default.ChatBubble,
-                                contentDescription = stringResource(R.string.chat),
-                                tint = Color(0xFF4CAF50),
-                            )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Chat FAB with badge
+                        Box {
+                            IconButton(onClick = {
+                                chatOpen = !chatOpen
+                            }) {
+                                Icon(
+                                    Icons.Default.ChatBubble,
+                                    contentDescription = stringResource(R.string.chat),
+                                    tint = Color(0xFF4CAF50),
+                                )
+                            }
+                            if (totalUnread > 0) {
+                                Badge(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = (-4).dp, y = 4.dp),
+                                ) {
+                                    Text("$totalUnread")
+                                }
+                            }
                         }
-                        if (totalUnread > 0) {
-                            Badge(
+
+                        // Center button: PTT or Mute depending on MODE (not mute state)
+                        if (isPttMode) {
+                            // PTT mode: hold to talk — a glass circle whose pressed state is carried
+                            // by the icon tint and the rim, not by an opaque fill.
+                            var isPressed by remember { mutableStateOf(false) }
+                            GlassCard(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = (-4).dp, y = 4.dp),
+                                    .size(72.dp)
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onPress = {
+                                                isPressed = true
+                                                viewModel.setPushToTalk(true)
+                                                tryAwaitRelease()
+                                                viewModel.setPushToTalk(false)
+                                                isPressed = false
+                                            },
+                                        )
+                                    },
+                                wallpaper = glassWallpaper,
+                                shape = CircleShape,
+                                cornerRadius = 36.dp,
+                                elevation = 4.dp,
                             ) {
-                                Text("$totalUnread")
+                                val pttTint = if (isPressed) MaterialTheme.colorScheme.primary
+                                    else LocalContentColor.current.copy(alpha = 0.88f)
+                                val pttRim = if (isPressed) MaterialTheme.colorScheme.primary
+                                    else LocalContentColor.current.copy(alpha = 0.30f)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .border(
+                                            width = if (isPressed) 2.dp else 1.dp,
+                                            color = pttRim,
+                                            shape = CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(
+                                            Icons.Default.Mic,
+                                            contentDescription = stringResource(R.string.push_to_talk),
+                                            modifier = Modifier.size(28.dp),
+                                            tint = pttTint,
+                                        )
+                                        Text(
+                                            stringResource(R.string.ptt),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = pttTint,
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            // Voice activity mode: click to mute and go back to PTT. The error
+                            // colour is carried by the icon tint and the rim.
+                            GlassCard(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clickable { viewModel.toggleVoiceMode() },
+                                wallpaper = glassWallpaper,
+                                shape = CircleShape,
+                                cornerRadius = 36.dp,
+                                elevation = 4.dp,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = MaterialTheme.colorScheme.error,
+                                            shape = CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(
+                                            Icons.Default.MicOff,
+                                            contentDescription = stringResource(R.string.mute_mic),
+                                            modifier = Modifier.size(28.dp),
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                        Text(
+                                            stringResource(R.string.mute),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
 
-                    // Center button: PTT or Mute depending on MODE (not mute state)
-                    if (isPttMode) {
-                        // PTT mode: hold to talk
-                        var isPressed by remember { mutableStateOf(false) }
-                        val pttBackground = if (isPressed) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        val pttTint = if (isPressed) MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(pttBackground)
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onPress = {
-                                            isPressed = true
-                                            viewModel.setPushToTalk(true)
-                                            tryAwaitRelease()
-                                            viewModel.setPushToTalk(false)
-                                            isPressed = false
-                                        },
-                                    )
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    Icons.Default.Mic,
-                                    contentDescription = stringResource(R.string.push_to_talk),
-                                    modifier = Modifier.size(28.dp),
-                                    tint = pttTint,
-                                )
-                                Text(
-                                    stringResource(R.string.ptt),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = pttTint,
-                                )
-                            }
-                        }
-                    } else {
-                        // Voice activity mode: click to mute and go back to PTT
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.errorContainer)
-                                .clickable { viewModel.toggleVoiceMode() },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    Icons.Default.MicOff,
-                                    contentDescription = stringResource(R.string.mute_mic),
-                                    modifier = Modifier.size(28.dp),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                                Text(
-                                    stringResource(R.string.mute),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                            }
-                        }
-                    }
-
-                    // Toggle voice mode (PTT →Voice Activity)
-                    IconButton(onClick = { viewModel.toggleVoiceMode() }) {
-                        Icon(
-                            if (isPttMode) Icons.Default.MicOff else Icons.Default.Mic,
-                            contentDescription = stringResource(if (isPttMode) R.string.unmute_mic else R.string.mute_mic),
-                            tint = if (isPttMode) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.primary,
-                        )
-                    }
-
-                    // Whisper (密聊) indicator —shows active state, click to stop
-                    if (WhisperManager.isWhisperActive && whisperFirstTargetName != null) {
-                        IconButton(onClick = { viewModel.toggleWhisper(WhisperManager.whisperTargets.first()) }) {
+                        // Toggle voice mode (PTT →Voice Activity)
+                        IconButton(onClick = { viewModel.toggleVoiceMode() }) {
                             Icon(
-                                Icons.Default.Forum,
-                                contentDescription = "停止密聊",
-                                tint = Color(0xFF4CAF50),
+                                if (isPttMode) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = stringResource(if (isPttMode) R.string.unmute_mic else R.string.mute_mic),
+                                tint = if (isPttMode) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary,
                             )
                         }
-                    } else {
-                        IconButton(
-                            onClick = {},
-                            enabled = false,
-                        ) {
+
+                        // Whisper (密聊) indicator —shows active state, click to stop
+                        if (WhisperManager.isWhisperActive && whisperFirstTargetName != null) {
+                            IconButton(onClick = { viewModel.toggleWhisper(WhisperManager.whisperTargets.first()) }) {
+                                Icon(
+                                    Icons.Default.Forum,
+                                    contentDescription = "停止密聊",
+                                    tint = Color(0xFF4CAF50),
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = {},
+                                enabled = false,
+                            ) {
+                                Icon(
+                                    Icons.Default.Forum,
+                                    contentDescription = "密聊",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                )
+                            }
+                        }
+
+                        // Toggle Output Mute (Deafen)
+                        IconButton(onClick = { viewModel.toggleOutputMute() }) {
                             Icon(
-                                Icons.Default.Forum,
-                                contentDescription = "密聊",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                if (isOutputMuted) Icons.Default.HeadsetOff else Icons.Default.Headset,
+                                contentDescription = stringResource(if (isOutputMuted) R.string.notif_unmute else R.string.notif_mute),
+                                tint = if (isOutputMuted) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary,
                             )
                         }
-                    }
-
-                    // Toggle Output Mute (Deafen)
-                    IconButton(onClick = { viewModel.toggleOutputMute() }) {
-                        Icon(
-                            if (isOutputMuted) Icons.Default.HeadsetOff else Icons.Default.Headset,
-                            contentDescription = stringResource(if (isOutputMuted) R.string.notif_unmute else R.string.notif_mute),
-                            tint = if (isOutputMuted) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.primary,
-                        )
                     }
                 }
             }
@@ -425,6 +474,7 @@ fun ServerScreen(
                 ) {
                     FileManagerDialog(
                         currentPath = currentFilePath,
+                        wallpaper = glassWallpaper,
                         files = fileList,
                         isLoading = fileManagerLoading,
                         users = users,
@@ -469,6 +519,7 @@ fun ServerScreen(
                     ChatPanel(
                         chatTab = chatTab,
                         onTabChange = { chatTab = it },
+                        wallpaper = glassWallpaper,
                         channelMessages = channelMessages,
                         privateMessages = pmTargetId?.let { id ->
                             privateMessages[id] ?: emptyList()
@@ -544,6 +595,7 @@ fun ServerScreen(
 fun ChatPanel(
     chatTab: Int,
     onTabChange: (Int) -> Unit,
+    wallpaper: ImageBitmap? = null,
     channelMessages: List<ChatMessage>,
     privateMessages: List<ChatMessage>,
     messageText: String,
@@ -581,194 +633,267 @@ fun ChatPanel(
             onUploadFile(fileName, data)
         } catch (_: Exception) {}
     }
-    Surface(
+    // Full-screen glass panel: this used to be a near-opaque white slab, the cheapest-looking
+    // surface in the app. `contentColor` is derived from the wallpaper actually behind the glass,
+    // so the children keep their contrast on any backdrop; nothing else about them changes.
+    LiquidGlassPanel(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding()
-                .padding(8.dp),
+        wallpaper = wallpaper,
+        shape = RoundedCornerShape(0.dp),
+        cornerRadius = 0.dp,
+        elevation = 0.dp,
+        contentPadding = PaddingValues(0.dp),
+    ) { contentColor ->
+        CompositionLocalProvider(
+            LocalContentColor provides contentColor,
+            LocalGlassWallpaper provides wallpaper,
         ) {
-            // Header: tabs + close
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(8.dp),
             ) {
-                TabRow(
-                    selectedTabIndex = chatTab,
-                    modifier = Modifier.weight(1f),
-                    containerColor = Color.Transparent,
-                ) {
-                    Tab(
-                        selected = chatTab == 0,
-                        onClick = { onTabChange(0) },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(R.string.tab_channel))
-                                if (unreadChannel > 0) {
-                                    Spacer(Modifier.width(4.dp))
-                                    Badge { Text("$unreadChannel") }
-                                }
-                            }
-                        },
-                    )
-                    Tab(
-                        selected = chatTab == 1,
-                        onClick = { onTabChange(1) },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(R.string.tab_private))
-                                if (unreadPrivateTotal > 0) {
-                                    Spacer(Modifier.width(4.dp))
-                                    Badge { Text("$unreadPrivateTotal") }
-                                }
-                            }
-                        },
-                    )
-                }
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
-                }
-            }
-
-            // PM conversation selector
-            if (chatTab == 1 && pmConversationUsers.isNotEmpty()) {
+                // Header: tabs + close
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // "All" chip
-                    FilterChip(
-                        selected = pmTarget == null,
-                        onClick = { onClearPmTarget() },
-                        label = { Text(stringResource(R.string.filter_all)) },
-                        leadingIcon = if (pmTarget == null) {
-                            { Icon(Icons.Default.ChatBubble, null, Modifier.size(16.dp)) }
-                        } else null,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        ),
-                    )
-                    // One chip per conversation user
-                    pmConversationUsers.forEach { (userId, nickname) ->
-                        val isSelected = pmTarget?.id == userId
-                        val userUnread = unreadPrivatePerUser[userId] ?: 0
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { onSelectPmUser(userId) },
-                            label = {
+                    TabRow(
+                        selectedTabIndex = chatTab,
+                        modifier = Modifier.weight(1f),
+                        containerColor = Color.Transparent,
+                    ) {
+                        Tab(
+                            selected = chatTab == 0,
+                            onClick = { onTabChange(0) },
+                            text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(nickname)
-                                    if (userUnread > 0) {
+                                    Text(stringResource(R.string.tab_channel))
+                                    if (unreadChannel > 0) {
                                         Spacer(Modifier.width(4.dp))
-                                        Badge { Text("$userUnread") }
+                                        Badge { Text("$unreadChannel") }
                                     }
                                 }
                             },
-                            leadingIcon = if (isSelected) {
-                                { Icon(Icons.Default.Person, null, Modifier.size(16.dp)) }
-                            } else null,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            ),
+                        )
+                        Tab(
+                            selected = chatTab == 1,
+                            onClick = { onTabChange(1) },
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(stringResource(R.string.tab_private))
+                                    if (unreadPrivateTotal > 0) {
+                                        Spacer(Modifier.width(4.dp))
+                                        Badge { Text("$unreadPrivateTotal") }
+                                    }
+                                }
+                            },
                         )
                     }
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
+                    }
                 }
-            }
 
-            // Whisper mode indicator
-            if (isWhisperActive && whisperTargetName != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                ) {
+                // PM conversation selector
+                if (chatTab == 1 && pmConversationUsers.isNotEmpty()) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(
-                            Icons.Default.Forum,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "密聊 ${whisperTargetName}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
-            }
-
-            // Messages
-            val messages = when (chatTab) {
-                0 -> channelMessages
-                1 -> privateMessages
-                else -> emptyList()
-            }
-            ChatView(
-                messages = messages,
-                showLinkThumbnails = showLinkThumbnails,
-                autoLoadImages = autoLoadImages,
-                onDownload = onDownload,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            )
-
-            // Message input
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (canUploadFiles) {
-                    IconButton(
-                        onClick = { filePickerLauncher.launch("*/*") },
-                        enabled = (chatTab == 0 || pmTarget != null) && !isWhisperActive,
-                    ) {
-                        Icon(Icons.Default.AttachFile, contentDescription = stringResource(R.string.attach_file))
-                    }
-                }
-                OutlinedTextField(
-                    value = messageText,
-                    onValueChange = onMessageChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = {
-                        Text(
-                            when {
-                                isWhisperActive && whisperTargetName != null ->
-                                    "密聊 ${whisperTargetName}..."
-                                chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
-                                else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
+                        // "All" chip — the selected container is a small glass pill, not an
+                        // opaque primary/secondary container fill.
+                        GlassFilterChip(selected = pmTarget == null, wallpaper = wallpaper) {
+                            val chipColor = if (pmTarget == null) LocalContentColor.current
+                                else LocalContentColor.current.copy(alpha = 0.78f)
+                            FilterChip(
+                                selected = pmTarget == null,
+                                onClick = { onClearPmTarget() },
+                                label = {
+                                    Text(stringResource(R.string.filter_all), color = chipColor)
+                                },
+                                leadingIcon = if (pmTarget == null) {
+                                    {
+                                        Icon(
+                                            Icons.Default.ChatBubble,
+                                            null,
+                                            Modifier.size(16.dp),
+                                            tint = chipColor,
+                                        )
+                                    }
+                                } else null,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color.Transparent,
+                                ),
+                            )
+                        }
+                        // One chip per conversation user
+                        pmConversationUsers.forEach { (userId, nickname) ->
+                            val isSelected = pmTarget?.id == userId
+                            val userUnread = unreadPrivatePerUser[userId] ?: 0
+                            GlassFilterChip(selected = isSelected, wallpaper = wallpaper) {
+                                val chipColor = if (isSelected) LocalContentColor.current
+                                    else LocalContentColor.current.copy(alpha = 0.78f)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { onSelectPmUser(userId) },
+                                    label = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(nickname, color = chipColor)
+                                            if (userUnread > 0) {
+                                                Spacer(Modifier.width(4.dp))
+                                                Badge { Text("$userUnread") }
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = if (isSelected) {
+                                        {
+                                            Icon(
+                                                Icons.Default.Person,
+                                                null,
+                                                Modifier.size(16.dp),
+                                                tint = chipColor,
+                                            )
+                                        }
+                                    } else null,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color.Transparent,
+                                    ),
+                                )
                             }
-                        )
-                    },
-                    singleLine = true,
-                    enabled = chatTab == 0 || pmTarget != null || (isWhisperActive && whisperTargetName != null),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    ),
+                        }
+                    }
+                }
+
+                // Whisper mode indicator — light glass instead of an opaque slab, so the icon and
+                // label take their colour from what is behind them.
+                if (isWhisperActive && whisperTargetName != null) {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        wallpaper = wallpaper,
+                        shape = RoundedCornerShape(8.dp),
+                        cornerRadius = 8.dp,
+                        elevation = 2.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.Forum,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "密聊 ${whisperTargetName}",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
+                }
+
+                // Messages
+                val messages = when (chatTab) {
+                    0 -> channelMessages
+                    1 -> privateMessages
+                    else -> emptyList()
+                }
+                ChatView(
+                    messages = messages,
+                    showLinkThumbnails = showLinkThumbnails,
+                    autoLoadImages = autoLoadImages,
+                    onDownload = onDownload,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                 )
-                IconButton(
-                    onClick = onSend,
-                    enabled = messageText.isNotBlank() && (chatTab == 0 || pmTarget != null || (isWhisperActive && whisperTargetName != null)),
+
+                // Message input
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
+                    if (canUploadFiles) {
+                        IconButton(
+                            onClick = { filePickerLauncher.launch("*/*") },
+                            enabled = (chatTab == 0 || pmTarget != null) && !isWhisperActive,
+                        ) {
+                            Icon(Icons.Default.AttachFile, contentDescription = stringResource(R.string.attach_file))
+                        }
+                    }
+                    OutlinedTextField(
+                        value = messageText,
+                        onValueChange = onMessageChange,
+                        modifier = Modifier.weight(1f),
+                        placeholder = {
+                            Text(
+                                when {
+                                    isWhisperActive && whisperTargetName != null ->
+                                        "密聊 ${whisperTargetName}..."
+                                    chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
+                                    else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
+                                }
+                            )
+                        },
+                        singleLine = true,
+                        enabled = chatTab == 0 || pmTarget != null || (isWhisperActive && whisperTargetName != null),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            // Light glass: the panel's refraction shows through, the border keeps
+                            // the focus affordance, and every text colour follows the glass.
+                            focusedTextColor = LocalContentColor.current,
+                            unfocusedTextColor = LocalContentColor.current,
+                            disabledTextColor = LocalContentColor.current.copy(alpha = 0.38f),
+                            focusedContainerColor = LocalContentColor.current.copy(alpha = 0.10f),
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = LocalContentColor.current.copy(alpha = 0.35f),
+                            disabledBorderColor = LocalContentColor.current.copy(alpha = 0.15f),
+                            focusedPlaceholderColor = LocalContentColor.current.copy(alpha = 0.55f),
+                            unfocusedPlaceholderColor = LocalContentColor.current.copy(alpha = 0.55f),
+                            disabledPlaceholderColor = LocalContentColor.current.copy(alpha = 0.30f),
+                            cursorColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    )
+                    IconButton(
+                        onClick = onSend,
+                        enabled = messageText.isNotBlank() && (chatTab == 0 || pmTarget != null || (isWhisperActive && whisperTargetName != null)),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * Selected filter chips sit on a small glass pill instead of the previous opaque
+ * primary/secondary container fill. The chip's own container stays transparent, and the chip's
+ * label/icon colours are set explicitly to `LocalContentColor` at the call site, so the selected
+ * state reads as "brighter label on glass" and the unselected one stays flat on the panel glass.
+ */
+@Composable
+private fun GlassFilterChip(
+    selected: Boolean,
+    wallpaper: ImageBitmap?,
+    chip: @Composable () -> Unit,
+) {
+    if (selected) {
+        GlassCard(
+            wallpaper = wallpaper,
+            shape = RoundedCornerShape(8.dp),
+            cornerRadius = 8.dp,
+            elevation = 2.dp,
+        ) { chip() }
+    } else {
+        chip()
     }
 }
 

@@ -46,6 +46,7 @@ import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
+import dev.tsdroid.ui.component.rememberGlassBackdrop
 import kotlinx.coroutines.launch
 
 @Composable
@@ -111,7 +112,7 @@ fun SettingsPage(
         // ── 外观 ──
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+            wallpaper = rememberGlassBackdrop(animeBackground),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_appearance))
@@ -145,7 +146,7 @@ fun SettingsPage(
         // ── 音频 ──
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+            wallpaper = rememberGlassBackdrop(animeBackground),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_audio))
@@ -179,7 +180,7 @@ fun SettingsPage(
         // ── 聊天 ──
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+            wallpaper = rememberGlassBackdrop(animeBackground),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_chat))
@@ -207,7 +208,7 @@ fun SettingsPage(
         // ── 更多 ──
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+            wallpaper = rememberGlassBackdrop(animeBackground),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_more))
