@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -85,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.han.R
+import dev.tsdroid.bridge.AudioBridge
 import dev.tslib.ConnectionState
 import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
@@ -132,6 +134,8 @@ fun ServerScreen(
     val currentFilePath by viewModel.currentFilePath.collectAsStateWithLifecycle()
     val fileManagerLoading by viewModel.fileManagerLoading.collectAsStateWithLifecycle()
     val channelPermissions by viewModel.currentChannelPermissions.collectAsStateWithLifecycle()
+    val reconnectStatus by viewModel.reconnectStatus.collectAsStateWithLifecycle()
+    val micStatus by viewModel.micStatus.collectAsStateWithLifecycle()
 
     var chatOpen by remember { mutableStateOf(false) }
     var chatEverOpened by remember { mutableStateOf(false) }
@@ -169,13 +173,14 @@ fun ServerScreen(
         onDispose {}
     }
 
-    // Navigate away on disconnect 鈥?one-shot via LaunchedEffect
-    LaunchedEffect(connectionState) {
-        if (connectionState == ConnectionState.DISCONNECTED) {
+    // Navigate away on disconnect 鈥?one-shot via LaunchedEffect.
+    // While the service is auto-reconnecting we stay here and show a banner instead.
+    LaunchedEffect(connectionState, reconnectStatus.active) {
+        if (connectionState == ConnectionState.DISCONNECTED && !reconnectStatus.active) {
             onDisconnected()
         }
     }
-    if (connectionState == ConnectionState.DISCONNECTED) return
+    if (connectionState == ConnectionState.DISCONNECTED && !reconnectStatus.active) return
 
     // Show floating window when entering ServerScreen if enabled
     LaunchedEffect(enableFloatingWindow) {
@@ -198,21 +203,40 @@ fun ServerScreen(
         Scaffold(
             containerColor = Color.Transparent,
         topBar = {
-            TopAppBar(
-                title = { Text(serverInfo?.name ?: stringResource(R.string.server)) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = Color.Transparent,
-                ),
-                actions = {
-                    IconButton(onClick = { viewModel.toggleFileManager() }) {
-                        Icon(Icons.Default.Folder, contentDescription = stringResource(R.string.file_manager))
-                    }
-                    IconButton(onClick = { viewModel.disconnect() }) {
-                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = stringResource(R.string.disconnect))
-                    }
-                },
-            )
+            Column {
+                TopAppBar(
+                    title = { Text(serverInfo?.name ?: stringResource(R.string.server)) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent,
+                    ),
+                    actions = {
+                        IconButton(onClick = { viewModel.toggleFileManager() }) {
+                            Icon(Icons.Default.Folder, contentDescription = stringResource(R.string.file_manager))
+                        }
+                        IconButton(onClick = { viewModel.disconnect() }) {
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = stringResource(R.string.disconnect))
+                        }
+                    },
+                )
+                // Connection / microphone health, so a silent failure is never invisible again
+                if (reconnectStatus.active) {
+                    StatusBanner(
+                        text = stringResource(
+                            R.string.reconnect_in_progress,
+                            maxOf(reconnectStatus.attempt, 1),
+                        ),
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                } else if (micStatus == AudioBridge.MicStatus.UNAVAILABLE) {
+                    StatusBanner(
+                        text = stringResource(R.string.mic_unavailable_warning),
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
         },
         bottomBar = {
             Box(
@@ -744,6 +768,33 @@ fun ChatPanel(
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
                 }
             }
+        }
+    }
+}
+
+/** Inline status strip used for reconnect / microphone health warnings. */
+@Composable
+private fun StatusBanner(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(text = text, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

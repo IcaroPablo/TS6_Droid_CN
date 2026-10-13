@@ -125,4 +125,16 @@
     <string name="about_contributors_title">Contributors</string>
     <string name="about_contributions_count">%1$d contributions</string>
     <string name="contributors_load_error">Failed to load</string>
+
+    <!-- Background reliability -->
+    <string name="reconnect_in_progress">Reconnecting… (attempt %1$d)</string>
+    <string name="reconnect_notification">Disconnected — reconnecting (attempt %1$d)</string>
+    <string name="mic_unavailable_warning">The microphone is currently unavailable; trying to recover automatically. If it stays like this, check that the system allows this app to record in the background.</string>
+    <string name="mic_unavailable_short">Mic unavailable</string>
+    <string name="battery_optimization">Battery optimization exemption</string>
+    <string name="battery_optimization_desc">Exempting the app keeps recording and networking alive in the background (important in power-save modes)</string>
+    <string name="battery_optimization_allowed">Exempt</string>
+    <string name="battery_optimization_action">Set</string>
+    <string name="app_details_settings">App permissions &amp; auto-start</string>
+    <string name="app_details_settings_desc">On Xiaomi/Huawei/OPPO/vivo ROMs, allow auto-start, unrestricted background running and background pop-ups here</string>
 </resources>

@@ -166,4 +166,16 @@
     <string name="about_contributors_title">Contributeurs</string>
     <string name="about_contributions_count">%1$d contributions</string>
     <string name="contributors_load_error">Échec du chargement</string>
+
+    <!-- Fiabilité en arrière-plan -->
+    <string name="reconnect_in_progress">Reconnexion… (tentative %1$d)</string>
+    <string name="reconnect_notification">Déconnecté — reconnexion (tentative %1$d)</string>
+    <string name="mic_unavailable_warning">Le micro est actuellement indisponible ; tentative de récupération automatique. Si cela persiste, vérifiez que le système autorise l\'enregistrement en arrière-plan pour cette application.</string>
+    <string name="mic_unavailable_short">Micro indisponible</string>
+    <string name="battery_optimization">Exemption d\'optimisation de batterie</string>
+    <string name="battery_optimization_desc">Exempter l\'application maintient l\'enregistrement et le réseau en arrière-plan (important en mode économie d\'énergie)</string>
+    <string name="battery_optimization_allowed">Exempté</string>
+    <string name="battery_optimization_action">Régler</string>
+    <string name="app_details_settings">Autorisations et démarrage auto</string>
+    <string name="app_details_settings_desc">Sur les ROM Xiaomi/Huawei/OPPO/vivo, autorisez ici le démarrage auto, l\'exécution illimitée en arrière-plan et les fenêtres contextuelles</string>
 </resources>

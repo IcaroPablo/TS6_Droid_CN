@@ -1,10 +1,13 @@
 package dev.tsdroid.ui.screen
 
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +36,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
@@ -245,6 +251,16 @@ fun SettingsPage(
 
                 // 检查更新
                 UpdateCheckRow(context)
+
+                // 后台运行：电池优化白名单（避免系统限制后台录音与网络）
+                BatteryOptimizationRow(context)
+
+                // 应用详情（自启动 / 后台运行，国产 ROM 专用开关）
+                SettingsClickableRow(
+                    label = stringResource(R.string.app_details_settings),
+                    subtitle = stringResource(R.string.app_details_settings_desc),
+                    onClick = { openAppDetailsSettings(context) },
+                )
             }
         }
 
@@ -299,6 +315,7 @@ private fun SettingsSwitchRow(
 @Composable
 private fun SettingsClickableRow(
     label: String,
+    subtitle: String? = null,
     onClick: () -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {
         Icon(Icons.AutoMirrored.Filled.NavigateNext, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -311,9 +328,97 @@ private fun SettingsClickableRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         trailing()
     }
+}
+
+// ── 后台运行相关（电池优化 / 应用详情） ──
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+    return try {
+        manager.isIgnoringBatteryOptimizations(context.packageName)
+    } catch (_: Throwable) {
+        false
+    }
+}
+
+private fun requestIgnoreBatteryOptimizations(context: Context) {
+    val direct = Intent(
+        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+        Uri.parse("package:${context.packageName}"),
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val opened = try {
+        context.startActivity(direct)
+        true
+    } catch (_: Throwable) {
+        false
+    }
+    if (!opened) {
+        // Some ROMs refuse the direct dialog; fall back to the exemption list.
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Throwable) {
+        }
+    }
+}
+
+private fun openAppDetailsSettings(context: Context) {
+    try {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (_: Throwable) {
+    }
+}
+
+@Composable
+private fun BatteryOptimizationRow(context: Context) {
+    var ignoring by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            // Re-read the exemption state when the user comes back from the system page.
+            if (event == Lifecycle.Event.ON_RESUME) {
+                ignoring = isIgnoringBatteryOptimizations(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    SettingsClickableRow(
+        label = stringResource(R.string.battery_optimization),
+        subtitle = stringResource(R.string.battery_optimization_desc),
+        onClick = { requestIgnoreBatteryOptimizations(context) },
+        trailing = {
+            Text(
+                text = stringResource(
+                    if (ignoring) R.string.battery_optimization_allowed
+                    else R.string.battery_optimization_action
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (ignoring) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error,
+            )
+        },
+    )
 }
 
 // ── 自定义背景区 ──

@@ -165,4 +165,16 @@
     <string name="about_contributors_title">贡献者</string>
     <string name="about_contributions_count">%1$d 次贡献</string>
     <string name="contributors_load_error">加载失败</string>
+
+    <!-- 后台可靠性与自愈提示 / Background reliability -->
+    <string name="reconnect_in_progress">正在重连…（第 %1$d 次）</string>
+    <string name="reconnect_notification">连接已断开，正在重连（第 %1$d 次）</string>
+    <string name="mic_unavailable_warning">麦克风当前不可用，正在尝试自动恢复。若长时间无好转，请检查系统是否限制了本应用的后台录音。</string>
+    <string name="mic_unavailable_short">麦克风不可用</string>
+    <string name="battery_optimization">电池优化白名单</string>
+    <string name="battery_optimization_desc">加入白名单可避免系统在后台限制录音与网络（省电模式下尤其重要）</string>
+    <string name="battery_optimization_allowed">已允许</string>
+    <string name="battery_optimization_action">去设置</string>
+    <string name="app_details_settings">应用权限与自启动</string>
+    <string name="app_details_settings_desc">小米/华为/OPPO/vivo 等 ROM 请在此允许「自启动」「后台运行/无限制」「后台弹出界面」</string>
 </resources>

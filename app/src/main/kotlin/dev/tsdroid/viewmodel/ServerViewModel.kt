@@ -27,6 +27,7 @@ import dev.tsdroid.han.R
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.MessageStore
 import dev.tsdroid.data.SettingsStore
+import dev.tsdroid.service.ReconnectStatus
 import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.service.WhisperManager
 import dev.tslib.Channel
@@ -141,6 +142,14 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val isOutputMuted: StateFlow<Boolean> = _isOutputMuted.asStateFlow()
 
     val isLocalVoiceActive: StateFlow<Boolean> get() = audioBridge?.isLocalVoiceActive ?: MutableStateFlow(false)
+
+    /** Automatic reconnection progress, so the UI can stay put instead of bouncing out. */
+    private val _reconnectStatus = MutableStateFlow(ReconnectStatus())
+    val reconnectStatus: StateFlow<ReconnectStatus> = _reconnectStatus.asStateFlow()
+
+    /** Microphone health reported by the audio bridge (self-healing capture). */
+    private val _micStatus = MutableStateFlow(AudioBridge.MicStatus.IDLE)
+    val micStatus: StateFlow<AudioBridge.MicStatus> = _micStatus.asStateFlow()
 
     private val _connectionState = MutableStateFlow(ConnectionState.CONNECTED)
     val connectionState: StateFlow<Int> = _connectionState.asStateFlow()
@@ -318,9 +327,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     if (privateMsgs.isNotEmpty()) _privateMessages.value = privateMsgs.mapValues { (_, msgs) -> msgs.map { migrateMessage(it) } }
                 }
             }
-            // Start audio capture if not already running
+            // Start audio capture if not already running. The bridge owns its own
+            // capture scope, so the mic is no longer cancelled with this ViewModel.
             if (!service.audioBridge.isCapturing.value) {
-                service.audioBridge.startCapture(viewModelScope, noiseSuppression.value)
+                service.audioBridge.startCapture(noiseSuppression.value)
             }
             // Apply persisted audio gain
             service.audioBridge.gainFactor = audioGain.value
@@ -336,6 +346,12 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             }
             viewModelScope.launch {
                 service.audioBridge.isOutputMuted.collect { _isOutputMuted.value = it }
+            }
+            viewModelScope.launch {
+                service.reconnectStatus.collect { _reconnectStatus.value = it }
+            }
+            viewModelScope.launch {
+                service.audioBridge.micStatus.collect { _micStatus.value = it }
             }
 
             // Start event loop (guarded by AtomicBoolean — safe if already running)

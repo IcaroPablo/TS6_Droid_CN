@@ -4,6 +4,7 @@ import android.graphics.PixelFormat
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,19 +61,37 @@ import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.bridge.AvatarCache
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.bridge.WhisperBridge
+import dev.tsdroid.data.BookmarkStore
+import dev.tsdroid.data.SettingsStore
+import dev.tslib.ConnectionState
 import dev.tslib.Identity
 import dev.tslib.Channel
 import dev.tslib.User
 import dev.tsdroid.ui.component.ChannelTree
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * State of the automatic reconnection loop, exposed so the UI can stay on the
+ * server screen (instead of bouncing the user back) while we retry.
+ */
+data class ReconnectStatus(
+    val active: Boolean = false,
+    val attempt: Int = 0,
+    val nextRetrySeconds: Int = 0,
+)
 
 class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateRegistryOwner {
 
@@ -88,6 +108,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         private const val ACTION_TOGGLE_MUTE = "com.flammedemon.ts6droid.TOGGLE_MUTE"
         private const val SPEAKER_DELAY_MS = 500L
         private const val AVATAR_REFRESH_INTERVAL_MS = 30000L // 30 seconds
+        private const val MIC_WATCHDOG_INTERVAL_MS = 30000L // 30 seconds
+        private const val RECONNECT_FIRST_DELAY_MS = 3000L
+        private const val RECONNECT_MAX_DELAY_MS = 60000L
+        private const val RECONNECT_CHANNEL_RESTORE_DELAY_MS = 1500L
 
         var instance: TsConnectionService? = null
             private set
@@ -137,6 +161,25 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private var latestStartId = 0
     @Volatile private var isStopping = false
     @Volatile private var restartRequestedWhileStopping = false
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // ── Automatic reconnection ────────────────────────────────────────────────
+    private data class SessionParams(
+        val address: String,
+        val identity: Identity,
+        val nickname: String,
+        val password: String?,
+    )
+
+    /** Credentials of the last successful session, used to re-establish it. */
+    @Volatile private var sessionParams: SessionParams? = null
+    private var reconnectJob: Job? = null
+
+    /** Cached preference so the disconnect handler can react without suspending. */
+    @Volatile private var autoReconnectEnabled = false
+
+    private val _reconnect = MutableStateFlow(ReconnectStatus())
+    val reconnectStatus: StateFlow<ReconnectStatus> = _reconnect.asStateFlow()
 
     override fun onCreate() {
         super.onCreate()
@@ -313,6 +356,133 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                 }
             }
         }
+
+        startMicWatchdog()
+        startConnectionWatchdog()
+
+        // Keep the auto-reconnect preference cached (see maybeStartAutoReconnect).
+        BookmarkStore(this).autoReconnect
+            .onEach { autoReconnectEnabled = it }
+            .launchIn(serviceScope)
+
+        // Surface microphone trouble in the notification while the app is in the background.
+        audioBridge.micStatus
+            .onEach { if (tsClient.isConnected || _reconnect.value.active) updateNotification() }
+            .launchIn(serviceScope)
+    }
+
+    /**
+     * Watches for an unexpected connection loss and drives the automatic
+     * reconnection loop. A mid-session drop used to leave the user sitting in the
+     * channel with no audio at all: sendAudio() was silently dropped while the
+     * microphone kept working locally, so nothing ever recovered the session.
+     */
+    private fun startConnectionWatchdog() {
+        tsClient.state
+            .onEach { state ->
+                if (state == ConnectionState.DISCONNECTED) {
+                    maybeStartAutoReconnect()
+                }
+            }
+            .launchIn(serviceScope)
+    }
+
+    private fun maybeStartAutoReconnect() {
+        val params = sessionParams ?: return
+        if (isStopping || isIntentionalDisconnect) return
+        if (reconnectJob?.isActive == true) return
+        if (!autoReconnectEnabled) {
+            Log.i(TAG, "Connection lost; automatic reconnection is disabled in settings")
+            return
+        }
+        Log.i(TAG, "Connection lost; scheduling automatic reconnection to ${params.address}")
+        // Announce synchronously with the state change so the UI keeps the user on
+        // the server screen instead of navigating back to the connection screen.
+        _reconnect.value = ReconnectStatus(active = true)
+        val channelId = currentChannelId()
+        reconnectJob = serviceScope.launch { runAutoReconnect(params, channelId) }
+    }
+
+    private fun currentChannelId(): Long? {
+        val myId = tsClient.clientId ?: return null
+        return tsClient.users.value.find { it.id == myId }?.channelId
+    }
+
+    /** Put the user back into the channel they were in before the connection dropped. */
+    private fun restoreChannelAfterReconnect(channelId: Long?) {
+        if (channelId == null) return
+        serviceScope.launch {
+            // Let the new session settle before moving.
+            delay(RECONNECT_CHANNEL_RESTORE_DELAY_MS)
+            if (!tsClient.isConnected || isStopping) return@launch
+            val current = currentChannelId()
+            if (current != channelId) {
+                Log.i(TAG, "Restoring channel $channelId after reconnect (currently $current)")
+                tsClient.moveToChannel(channelId)
+            }
+        }
+    }
+
+    private suspend fun runAutoReconnect(params: SessionParams, channelId: Long?) {
+        Log.i(TAG, "Auto-reconnect loop started (address=${params.address})")
+        // Offline: no point capturing, and let the CPU sleep between attempts.
+        audioBridge.stopCapture()
+        releaseWakeLock()
+        var attempt = 0
+        var delayMs = RECONNECT_FIRST_DELAY_MS
+        try {
+            while (true) {
+                attempt++
+                _reconnect.value = ReconnectStatus(
+                    active = true,
+                    attempt = attempt,
+                    nextRetrySeconds = (delayMs / 1000).toInt(),
+                )
+                updateNotification()
+                delay(delayMs)
+                if (isStopping || isIntentionalDisconnect) break
+
+                Log.i(TAG, "Auto-reconnect attempt $attempt to ${params.address}")
+                // Keep the CPU awake for the attempt itself; connectInternal releases
+                // the lock again if the attempt fails.
+                acquireWakeLock()
+                val failure = connectInternal(
+                    address = params.address,
+                    identity = params.identity,
+                    nickname = params.nickname,
+                    password = params.password,
+                    isReconnect = true,
+                )
+                if (failure == null) {
+                    Log.i(TAG, "Auto-reconnect succeeded on attempt $attempt")
+                    restoreChannelAfterReconnect(channelId)
+                    break
+                }
+                Log.w(TAG, "Auto-reconnect attempt $attempt failed: ${failure.message}")
+                delayMs = (delayMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
+            }
+        } finally {
+            _reconnect.value = ReconnectStatus()
+            reconnectJob = null
+            updateNotification()
+            Log.i(TAG, "Auto-reconnect loop finished")
+        }
+    }
+
+    // Microphone watchdog: a connected voice session must always be capturing.
+    // If capture ever stops while we are connected (and not on our way out),
+    // bring it back instead of leaving the user silently unheard.
+    private fun startMicWatchdog() {
+        serviceScope.launch {
+            while (true) {
+                delay(MIC_WATCHDOG_INTERVAL_MS)
+                if (isStopping || !tsClient.isConnected) continue
+                if (!audioBridge.isCapturing.value) {
+                    Log.w(TAG, "Capture is not running while connected; restarting it")
+                    audioBridge.startCapture(noiseSuppressionSetting())
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -399,11 +569,19 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         )
 
         val serverName = tsClient.serverInfo.value?.name ?: getString(R.string.connecting)
+        val reconnect = _reconnect.value
+        val statusText = when {
+            reconnect.active ->
+                getString(R.string.reconnect_notification, maxOf(reconnect.attempt, 1))
+            audioBridge.micStatus.value == AudioBridge.MicStatus.UNAVAILABLE ->
+                getString(R.string.mic_unavailable_short)
+            else -> serverName
+        }
         val muteLabel = getString(if (audioBridge.isMuted.value) R.string.notif_unmute else R.string.notif_mute)
 
         return NotificationCompat.Builder(this, TsDroidApp.CHANNEL_ID_CONNECTION)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(serverName)
+            .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(contentIntent)
             .setOngoing(true)
@@ -423,10 +601,31 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             return IllegalStateException("Connection service is still stopping. Please try again.")
         }
 
+        // A manual connection supersedes any pending automatic retry.
+        reconnectJob?.cancel()
+        reconnectJob = null
+        _reconnect.value = ReconnectStatus()
+        sessionParams = null
+
         isIntentionalDisconnect = false
+        val failure = connectInternal(address, identity, nickname, password, isReconnect = false)
+        if (failure == null) {
+            sessionParams = SessionParams(address, identity, nickname, password)
+        }
+        return failure
+    }
+
+    private suspend fun connectInternal(
+        address: String,
+        identity: Identity,
+        nickname: String,
+        password: String?,
+        isReconnect: Boolean,
+    ): Throwable? {
         return try {
             tsClient.connect(address, identity, nickname, password)
-            audioBridge.startCapture(serviceScope)
+            acquireWakeLock()
+            audioBridge.startCapture(noiseSuppressionSetting())
             // Sync initial mute state with server
             if (audioBridge.isMuted.value) {
                 tsClient.setInputMuted(true)
@@ -440,13 +639,50 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Connection error", e)
-            cleanupFailedConnection()
+            if (isReconnect) {
+                // Keep the foreground service (and its retry loop) alive while offline.
+                releaseWakeLock()
+                audioBridge.stopCapture()
+            } else {
+                cleanupFailedConnection()
+            }
             e
         }
     }
 
     fun disconnect() {
         disconnectAndStop()
+    }
+
+    private suspend fun noiseSuppressionSetting(): Boolean =
+        runCatching { SettingsStore(this).noiseSuppression.first() }.getOrDefault(true)
+
+    /**
+     * A live voice connection must keep the CPU awake; without it some devices
+     * suspend the capture path soon after the screen turns off.
+     */
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        try {
+            val manager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+            val lock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TS6Droid:connection")
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            wakeLock = lock
+            Log.i(TAG, "Partial wake lock acquired")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to acquire wake lock", e)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        val lock = wakeLock
+        wakeLock = null
+        try {
+            if (lock?.isHeld == true) lock.release()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to release wake lock", e)
+        }
     }
 
     private fun disconnectAndStop() {
@@ -467,17 +703,23 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
 
     private fun prepareToStop() {
         isStopping = true
+        reconnectJob?.cancel()
+        reconnectJob = null
+        _reconnect.value = ReconnectStatus()
+        sessionParams = null
         if (instance == this) {
             instance = null
         }
         hideFloatingWindow()
         audioBridge.stopCapture()
+        releaseWakeLock()
         WhisperManager.reset()
     }
 
     private fun cleanupFailedConnection() {
         hideFloatingWindow()
         audioBridge.stopCapture()
+        releaseWakeLock()
         WhisperManager.reset()
         isStopping = false
         restartRequestedWhileStopping = false
@@ -563,6 +805,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                 val isMicMuted by audioBridge.isMuted.collectAsStateWithLifecycle()
                 val isOutputMuted by audioBridge.isOutputMuted.collectAsStateWithLifecycle()
                 val isLocalVoiceActive by audioBridge.isLocalVoiceActive.collectAsStateWithLifecycle()
+                val reconnect by _reconnect.collectAsStateWithLifecycle()
+                val micStatus by audioBridge.micStatus.collectAsStateWithLifecycle()
                 
                 // Listen to local voice activity and apply delay mechanism
                 LaunchedEffect(isLocalVoiceActive) {
@@ -646,6 +890,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                     users = users,
                     isMicMuted = isMicMuted,
                     isOutputMuted = isOutputMuted,
+                    reconnectAttempt = reconnect.attempt,
+                    micUnavailable = micStatus == AudioBridge.MicStatus.UNAVAILABLE,
                     onToggleMic = { audioBridge.toggleMute() },
                     onToggleOutput = { audioBridge.toggleOutputMute() },
                     onChannelClick = { channelId -> tsClient.moveToChannel(channelId) },
@@ -716,6 +962,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         serviceViewModelStore.clear()
         hideFloatingWindow()
         audioBridge.stopCapture()
+        releaseWakeLock()
         WhisperManager.reset()
         try {
             tsClient.disconnect()
@@ -742,6 +989,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         users: List<User>,
         isMicMuted: Boolean,
         isOutputMuted: Boolean,
+        reconnectAttempt: Int,
+        micUnavailable: Boolean,
         onToggleMic: () -> Unit,
         onToggleOutput: () -> Unit,
         onChannelClick: (Long) -> Unit,
@@ -749,6 +998,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     ) {
         val CardBackgroundTransparent = Color(0x991A1A1A) // ~60% alpha dark glass base
         val SurfaceMutedTransparent = Color(0x33FFFFFF) // Subdued element backgrounds
+        val reconnecting = reconnectAttempt > 0
 
         // Find current channel users
         val myId = tsClient.clientId
@@ -889,6 +1139,37 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                             IconButton(onClick = onToggleExpand, modifier = Modifier.size(28.dp)) {
                                 Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Minimize", tint = Color.White)
                             }
+                        }
+
+                        // Health warnings (reconnecting / microphone unavailable)
+                        if (reconnecting || micUnavailable) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0x66F44336), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFCDD2),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (reconnecting) {
+                                        stringResource(R.string.reconnect_in_progress, maxOf(reconnectAttempt, 1))
+                                    } else {
+                                        stringResource(R.string.mic_unavailable_short)
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFFFCDD2),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                         }
 
                         Divider(color = SurfaceMutedTransparent, thickness = 1.dp)
