@@ -16,6 +16,12 @@ package dev.tslib;
 public class Identity implements AutoCloseable {
     private long nativePtr;
 
+    /** Set once {@link #close()} runs, even while a client still borrows the handle. */
+    private volatile boolean closed;
+
+    /** Number of live {@link Client}s that called {@link #borrow()}. */
+    private int borrowerCount;
+
     /**
      * Create a new random identity.
      *
@@ -136,29 +142,61 @@ public class Identity implements AutoCloseable {
     }
 
     /**
-     * Return the native pointer for use by {@link Client}.
+     * Lend the native handle to a {@link Client}. The handle stays valid until the matching
+     * {@link #release()} call, so a client is never left pointing at freed memory even if
+     * this identity is closed first.
+     *
+     * @return the native pointer, valid until {@link #release()}
+     * @throws IllegalStateException if this identity has already been closed
      */
-    long getNativePtr() {
+    synchronized long borrow() {
         checkNotClosed();
+        borrowerCount++;
         return nativePtr;
     }
 
+    /** Give back a handle obtained from {@link #borrow()}. */
+    synchronized void release() {
+        if (borrowerCount > 0) {
+            borrowerCount--;
+        }
+        if (closed && borrowerCount == 0) {
+            destroyNative();
+        }
+    }
+
+    /** @return true once {@link #close()} has been called. */
+    public boolean isClosed() {
+        return closed;
+    }
+
     @Override
-    public void close() {
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        // While a client still borrows the handle, destruction is deferred to release().
+        if (borrowerCount == 0) {
+            destroyNative();
+        }
+    }
+
+    @Override
+    public String toString() {
+        if (closed) return "Identity(closed)";
+        return "Identity(uid=" + getUniqueId() + ", level=" + getSecurityLevel() + ")";
+    }
+
+    private void destroyNative() {
         if (nativePtr != 0) {
             nativeDestroy(nativePtr);
             nativePtr = 0;
         }
     }
 
-    @Override
-    public String toString() {
-        if (nativePtr == 0) return "Identity(closed)";
-        return "Identity(uid=" + getUniqueId() + ", level=" + getSecurityLevel() + ")";
-    }
-
     private void checkNotClosed() {
-        if (nativePtr == 0) {
+        if (closed) {
             throw new IllegalStateException("Identity has been closed");
         }
     }

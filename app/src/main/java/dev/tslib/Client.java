@@ -14,6 +14,7 @@ package dev.tslib;
  * }</pre>
  */
 public class Client implements AutoCloseable {
+    private final Identity identity;
     private long nativePtr;
 
     /**
@@ -31,6 +32,11 @@ public class Client implements AutoCloseable {
     /**
      * Connect to a TeamSpeak server with optional password and channel.
      *
+     * <p>The identity is borrowed for the lifetime of this client: it stays valid on the
+     * native side even if {@link Identity#close()} is called first, and is only released
+     * once this client is closed. That removes the dangling-pointer hazard of holding a
+     * raw native pointer across an explicit identity close.
+     *
      * @param address  server address (host:port)
      * @param identity the identity to authenticate with
      * @param nickname display name on the server
@@ -40,11 +46,16 @@ public class Client implements AutoCloseable {
      */
     public Client(String address, Identity identity, String nickname,
                   String password, String channel) {
-        this.nativePtr = nativeCreate(address, identity.getNativePtr(),
-                                       nickname, password, channel);
-        if (this.nativePtr == 0) {
+        this.identity = identity;
+        long ptr = nativeCreate(address, identity.borrow(),
+                                nickname, password, channel);
+        if (ptr == 0) {
+            // Give the borrow back even when the connection never came up, otherwise the
+            // identity could never be destroyed.
+            identity.release();
             throw new TsLibException("Failed to connect to " + address);
         }
+        this.nativePtr = ptr;
     }
 
     /**
@@ -324,6 +335,8 @@ public class Client implements AutoCloseable {
         if (nativePtr != 0) {
             nativeDestroy(nativePtr);
             nativePtr = 0;
+            // Hand the identity back; it destroys itself here if it was already closed.
+            identity.release();
         }
     }
 
