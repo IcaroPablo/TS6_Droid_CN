@@ -614,10 +614,14 @@ class AudioBridge(
         if (_isOutputMuted.value) return // Global output mute — discard incoming audio
         val queue = userQueues.getOrPut(userId) { ArrayDeque() }
         synchronized(queue) {
-            if (queue.size < MAX_QUEUE_FRAMES) {
-                queue.addLast(opusData)
+            // Keep the queue bounded and always favour the freshest audio: once it is full,
+            // drop the oldest frames so the listener stays near "now". The previous code
+            // silently discarded the *new* frame instead, which made a backlogged user go
+            // permanently silent until the queue drained.
+            while (queue.size >= MAX_QUEUE_FRAMES) {
+                queue.removeFirst()
             }
-            // Drop oldest if queue is full (prevents unbounded lag)
+            queue.addLast(opusData)
         }
     }
 
@@ -681,5 +685,9 @@ class AudioBridge(
             out[i] = ((bytes[i * 2].toInt() and 0xFF) or
                     (bytes[i * 2 + 1].toInt() shl 8)).toShort()
         }
+        // `out` is reused across frames and across users. The mixer sums every sample of
+        // the buffer, so a short decode would otherwise fold the previous frame's (or the
+        // previous speaker's) tail into this one. Zero whatever the decoder did not fill.
+        Arrays.fill(out, count, out.size, 0.toShort())
     }
 }
