@@ -177,4 +177,5 @@
     <string name="battery_optimization_action">去设置</string>
     <string name="app_details_settings">应用权限与自启动</string>
     <string name="app_details_settings_desc">小米/华为/OPPO/vivo 等 ROM 请在此允许「自启动」「后台运行/无限制」「后台弹出界面」</string>
+    <string name="error_overlay_permission_required">请授予「显示在其他应用上层」权限以使用悬浮窗</string>
 </resources>

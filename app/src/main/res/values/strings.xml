@@ -178,4 +178,5 @@
     <string name="battery_optimization_action">Régler</string>
     <string name="app_details_settings">Autorisations et démarrage auto</string>
     <string name="app_details_settings_desc">Sur les ROM Xiaomi/Huawei/OPPO/vivo, autorisez ici le démarrage auto, l\'exécution illimitée en arrière-plan et les fenêtres contextuelles</string>
+    <string name="error_overlay_permission_required">Veuillez autoriser l\'affichage par-dessus les autres applications pour utiliser la fenêtre flottante.</string>
 </resources>
