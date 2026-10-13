@@ -16,6 +16,15 @@ android {
         versionName = "2.1.5-Han"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            // arm64-v8a is the only ABI whose libtslib_jni.so is current: the x86_64 copy
+            // predates the file-manager/permission API, and armeabi-v7a / x86 have no core
+            // library at all. Restricting to one ABI keeps every installed device working
+            // instead of letting x86_64 silently fail or 32-bit devices die on launch,
+            // because TsDroidApp loads libtslib_jni during class initialisation.
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     signingConfigs {
