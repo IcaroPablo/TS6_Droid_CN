@@ -42,8 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -79,7 +77,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.han.R
 import dev.tslib.ConnectionState
 import dev.tsdroid.ui.component.AnimeBackground
+import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChannelTree
+import dev.tsdroid.ui.component.LiquidGlassNavBar
+import dev.tsdroid.ui.component.LiquidGlassNavItem
 import dev.tsdroid.viewmodel.ConnectionViewModel
 import kotlinx.coroutines.launch
 
@@ -161,20 +162,17 @@ fun ConnectionScreen(
                 )
             },
             bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f)) {
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                        label = { Text(stringResource(R.string.tab_home)) },
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                        label = { Text(stringResource(R.string.tab_settings)) },
-                    )
-                }
+                // iOS 26 style liquid-glass floating bar: blurred wallpaper backdrop,
+                // specular highlights and a selection pill that glides between items.
+                LiquidGlassNavBar(
+                    items = listOf(
+                        LiquidGlassNavItem(Icons.Default.Home, stringResource(R.string.tab_home)),
+                        LiquidGlassNavItem(Icons.Default.Settings, stringResource(R.string.tab_settings)),
+                    ),
+                    selectedIndex = selectedTab,
+                    onSelect = { selectedTab = it },
+                    wallpaper = if (animeBackground) AnimeWallpaperState.activeBitmap else null,
+                )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
             floatingActionButton = {

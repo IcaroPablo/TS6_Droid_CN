@@ -31,6 +31,17 @@ object AnimeWallpaperState {
     val currentUrl = mutableStateOf<String?>(null)
     val customBitmap = mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     val dominantColor = mutableStateOf<Color?>(null)
+
+    /**
+     * Latest decoded wallpaper (online or cached file). Used as the blurred backdrop of the
+     * liquid-glass surfaces, so they never have to decode the image a second time.
+     */
+    val wallpaperBitmap = mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+
+    /** The image the background is actually painting right now, if any. */
+    val activeBitmap: androidx.compose.ui.graphics.ImageBitmap?
+        get() = customBitmap.value ?: wallpaperBitmap.value
+
     private var fetched = false
 
     suspend fun ensureFetched(context: Context) {
@@ -94,6 +105,7 @@ object AnimeWallpaperState {
     }
 
     private fun extractColorFromBitmap(bitmap: Bitmap) {
+        wallpaperBitmap.value = bitmap.asImageBitmap()
         val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return
         val scaled = Bitmap.createScaledBitmap(mutable, 48, 48, true)
         var r = 0; var g = 0; var b = 0; var count = 0
