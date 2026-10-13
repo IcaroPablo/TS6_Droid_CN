@@ -545,13 +545,6 @@ fun LiquidGlassNavBar(
             modifier = Modifier
                 .width(capsuleWidth)
                 .height(barHeight)
-                .shadow(
-                    elevation = 10.dp,
-                    shape = capsule,
-                    clip = false,
-                    ambientColor = Color.Black.copy(alpha = 0.22f),
-                    spotColor = Color.Black.copy(alpha = 0.25f),
-                )
                 .clip(capsule),
         ) {
             val pillInset = 6.dp
@@ -561,6 +554,11 @@ fun LiquidGlassNavBar(
                 shape = capsule,
                 cornerRadius = barHeight / 2,
                 modifier = Modifier.matchParentSize(),
+                // Fully transparent: the bar contributes no background of its own, so the wallpaper
+                // shows straight through and only the items, their halo and the selection pill
+                // remain. The drop shadow is dropped with it — a shadow under an invisible capsule
+                // would just be a floating smudge.
+                backgroundColor = Color.Transparent,
             ) { contentColor ->
                 // Selection pill — a brighter sliver of the same glass.
                 val halo = if (contentColor.luminance() > 0.5f) {
@@ -679,6 +677,8 @@ private fun LiquidGlassSurface(
     shape: Shape,
     cornerRadius: Dp,
     modifier: Modifier = Modifier,
+    /** Painted behind the content. `Color.Transparent` leaves only the rim, for a floating bar. */
+    backgroundColor: Color = MaterialTheme.colorScheme.surface,
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
@@ -810,7 +810,7 @@ private fun LiquidGlassSurface(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(MaterialTheme.colorScheme.surface),
+                    .background(backgroundColor),
             )
         } else {
             // A wallpaper exists but its first refraction has not landed yet. Stay almost invisible
