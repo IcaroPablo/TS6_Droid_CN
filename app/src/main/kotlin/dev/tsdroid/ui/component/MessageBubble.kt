@@ -139,9 +139,11 @@ fun MessageBubble(
                 start = if (isMe) 48.dp else 0.dp,
                 end = if (isMe) 0.dp else 48.dp,
             ),
-        wallpaper = rememberGlassBackdrop(true),
+        // The wallpaper this screen is actually painting, published by the panel that hosts the
+        // chat: reading the decoded wallpaper directly would frost a bubble even while the anime
+        // background is switched off.
+        wallpaper = LocalGlassWallpaper.current,
         shape = RoundedCornerShape(12.dp),
-        cornerRadius = 12.dp,
         elevation = 3.dp,
     ) {
         Column(

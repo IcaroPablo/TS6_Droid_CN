@@ -140,7 +140,6 @@ fun FileManagerDialog(
         modifier = Modifier.fillMaxSize(),
         wallpaper = wallpaper,
         shape = RoundedCornerShape(0.dp),
-        cornerRadius = 0.dp,
         elevation = 0.dp,
         contentPadding = PaddingValues(0.dp),
     ) { contentColor ->

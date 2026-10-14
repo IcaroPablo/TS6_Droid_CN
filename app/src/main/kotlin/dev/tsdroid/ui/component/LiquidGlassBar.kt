@@ -1,14 +1,11 @@
 package dev.tsdroid.ui.component
 
-import android.graphics.Bitmap
-import android.graphics.Color as AndroidColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,8 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
@@ -43,101 +38,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sqrt
-
-/**
- * A rendered glass backdrop plus the average luminance of what it shows, which is used to pick
- * light or dark labels (the same vibrancy behaviour iOS uses).
- */
-/**
- * How long a pane waits for its geometry to settle before recomputing the refracted backdrop.
- * Scrolling changes a pane's position every frame; without this the SDF render would restart on
- * each frame and the pane would never show a stable image.
- */
-private const val GLASS_SETTLE_MS = 90L
-
-/**
- * Identifies one refracted pane: the wallpaper instance plus the exact pixels and radius the lens
- * was computed for.
- */
-private data class GlassCacheKey(
-    val wallpaperId: Int,
-    val left: Int,
-    val top: Int,
-    val right: Int,
-    val bottom: Int,
-    val outWidth: Int,
-    val outHeight: Int,
-    val radius: Float,
-)
-
-/**
- * Remembers already-rendered panes so revisiting a screen does not re-run the lens.
- *
- * Without this, returning to the settings tab (or scrolling back to a spot already seen) recomputed
- * every pane's SDF render from scratch, which is why the glass appeared to rebuild itself on each
- * visit. Bounded, because every entry holds a pane-sized ARGB bitmap.
- */
-private object GlassBackdropCache {
-    private const val MAX_ENTRIES = 14
-
-    private val entries = object : LinkedHashMap<GlassCacheKey, GlassBackdrop>(16, 0.75f, true) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<GlassCacheKey, GlassBackdrop>,
-        ): Boolean = size > MAX_ENTRIES
-    }
-
-    @Synchronized
-    fun get(key: GlassCacheKey): GlassBackdrop? = entries[key]
-
-    @Synchronized
-    fun put(key: GlassCacheKey, value: GlassBackdrop) {
-        entries[key] = value
-    }
-}
-
-private data class GlassBackdrop(
-    val image: ImageBitmap,
-    val meanLuma: Float,
-)
 
 /**
  * One entry of [LiquidGlassNavBar].
@@ -148,297 +75,17 @@ data class LiquidGlassNavItem(
 )
 
 /**
- * Direct port of the iOS 26 "liquid glass" recipe used by
- * https://github.com/childrentime/liquid-glass:
+ * The frosted surface every panel and card is built from: the wallpaper actually behind the pane,
+ * blurred, with the reference's inset bottom shadow, a specular rim and a soft drop shadow on top.
  *
- * 1. the glass shape is a signed distance field (rounded rect / capsule);
- * 2. every pixel samples the backdrop at `center + (p - center) * scaled`, where `scaled` runs
- *    from 1 in the middle down to ~0.84 at the rim — the backdrop is therefore *refracted*
- *    (pulled towards the centre) in a band along the edge, like a thick glass lens;
- * 3. the result gets the same post chain: `contrast(1.2) brightness(1.05) saturate(1.1)`.
- *
- * The reference encodes that maths into a displacement map and hands it to SVG's
- * `feDisplacementMap` through `backdrop-filter`. Android has no backdrop filter, so the same
- * maths is applied on the CPU, once per wallpaper/geometry change, directly over the wallpaper
- * pixels sitting behind the pane. Doing it on the real backdrop also keeps the refracted image
- * aligned with the wallpaper around the pane, which is what makes it read as glass rather than
- * as a tinted panel.
- */
-private object LiquidGlassRefraction {
-
-    /** Reference constants: `smoothStep(0.8, 0, distanceToEdge - 0.15)`. */
-    private const val EDGE_START = 0.8f
-    private const val EDGE_OFFSET = 0.15f
-
-    /**
-     * The reference SDF ("0.3 / 0.2 / 0.6" box) puts its rim at ≈0.35 in its normalised
-     * distance units; mapping our true capsule SDF onto the same range reproduces its strength.
-     */
-    private const val RIM_DISTANCE = 0.35f
-
-    /**
-     * No lens distortion: the target look is flat milk glass, not a refracting bubble. The edge
-     * displacement is therefore switched off and only the diffusion above shapes the material.
-     */
-    private const val LENS_SCALE = 0f
-
-    /**
-     * Diffusion applied to the sampled backdrop. This is what separates "frosted" from "glass": a
-     * couple of pixels keeps the backdrop legible through a lens, ~15px turns it into milk glass.
-     */
-    private const val DIFFUSION_RADIUS_PX = 15
-
-    private const val CONTRAST = 1.12f
-    private const val BRIGHTNESS = 1.02f
-    private const val SATURATION = 1.08f
-
-    private fun smoothStep(a: Float, b: Float, t: Float): Float {
-        val u = ((t - a) / (b - a)).coerceIn(0f, 1f)
-        return u * u * (3f - 2f * u)
-    }
-
-    private fun roundedRectSdf(x: Float, y: Float, halfW: Float, halfH: Float, radius: Float): Float {
-        val qx = abs(x) - halfW + radius
-        val qy = abs(y) - halfH + radius
-        val outerX = max(qx, 0f)
-        val outerY = max(qy, 0f)
-        return min(max(qx, qy), 0f) + sqrt(outerX * outerX + outerY * outerY) - radius
-    }
-
-    /**
-     * Renders the refracted backdrop for one glass pane.
-     *
-     * @param wallpaper image the app paints full screen (see [AnimeWallpaperState.activeBitmap])
-     * @param paneRect pane rect in window pixels
-     * @param windowSize window size in pixels (how the wallpaper is laid out, ContentScale.Crop)
-     * @param outSize pane size in pixels, i.e. the output bitmap size
-     * @param cornerRadiusPx pane corner radius in pixels
-     * @param surfaceArgb app surface colour, used to match the wallpaper's on-screen alpha
-     * @param backdropAlpha alpha the background paints the wallpaper with
-     */
-    fun render(
-        wallpaper: ImageBitmap,
-        paneRect: Rect,
-        windowSize: IntSize,
-        outSize: IntSize,
-        cornerRadiusPx: Float,
-        surfaceArgb: Int,
-        backdropAlpha: Float,
-    ): GlassBackdrop? {
-        if (outSize.width <= 0 || outSize.height <= 0) return null
-        if (windowSize.width <= 0 || windowSize.height <= 0) return null
-
-        val source = try {
-            wallpaper.asAndroidBitmap()
-        } catch (_: Throwable) {
-            return null
-        }
-        val imgW = source.width
-        val imgH = source.height
-        if (imgW <= 0 || imgH <= 0) return null
-
-        // How the wallpaper is laid out on screen: ContentScale.Crop, centred.
-        val cropScale = max(windowSize.width.toFloat() / imgW, windowSize.height.toFloat() / imgH)
-        val originX = (windowSize.width - imgW * cropScale) / 2f
-        val originY = (windowSize.height - imgH * cropScale) / 2f
-
-        // Only the wallpaper region that can be sampled for this pane needs to be pulled in.
-        val margin = 2f
-        val regionLeft = floor((paneRect.left - originX) / cropScale - margin).toInt().coerceIn(0, imgW - 1)
-        val regionTop = floor((paneRect.top - originY) / cropScale - margin).toInt().coerceIn(0, imgH - 1)
-        val regionRight = ceil((paneRect.right - originX) / cropScale + margin).toInt().coerceIn(regionLeft + 1, imgW)
-        val regionBottom = ceil((paneRect.bottom - originY) / cropScale + margin).toInt().coerceIn(regionTop + 1, imgH)
-        val regionW = regionRight - regionLeft
-        val regionH = regionBottom - regionTop
-
-        val pixels = IntArray(regionW * regionH)
-        try {
-            source.getPixels(pixels, 0, regionW, regionLeft, regionTop, regionW, regionH)
-        } catch (_: Throwable) {
-            return null
-        }
-
-        val outW = outSize.width
-        val outH = outSize.height
-        val centerX = outW / 2f
-        val centerY = outH / 2f
-        val halfW = outW / 2f
-        val halfH = outH / 2f
-        val radius = min(cornerRadiusPx, min(halfW, halfH))
-
-        // Pane origin inside the sampled wallpaper region.
-        val paneOriginX = (paneRect.left - originX) / cropScale - regionLeft
-        val paneOriginY = (paneRect.top - originY) / cropScale - regionTop
-
-        val surfaceR = AndroidColor.red(surfaceArgb) / 255f
-        val surfaceG = AndroidColor.green(surfaceArgb) / 255f
-        val surfaceB = AndroidColor.blue(surfaceArgb) / 255f
-        val surfaceWeight = (1f - backdropAlpha).coerceIn(0f, 1f)
-
-        val out = IntArray(outW * outH)
-        for (oy in 0 until outH) {
-            val py = oy + 0.5f - centerY
-            for (ox in 0 until outW) {
-                val px = ox + 0.5f - centerX
-
-                // 1. distance to the rim, mapped onto the reference's normalised range
-                val sdf = roundedRectSdf(px, py, halfW, halfH, radius)
-                val rim = RIM_DISTANCE * (1f + sdf / halfH) // 0 in the middle, ≈RIM at the edge
-
-                // 2. the closer to the rim, the stronger the refraction
-                val displacement = smoothStep(EDGE_START, 0f, rim - EDGE_OFFSET)
-                val scaled = smoothStep(0f, 1f, displacement)
-
-                // 3. sample the backdrop pulled towards the centre
-                val pull = 1f - LENS_SCALE * (1f - scaled)
-                val sampleX = px * pull + centerX
-                val sampleY = py * pull + centerY
-
-                val color = sampleBilinear(
-                    pixels = pixels,
-                    w = regionW,
-                    h = regionH,
-                    x = paneOriginX + sampleX / cropScale,
-                    y = paneOriginY + sampleY / cropScale,
-                )
-
-                // 4. reference post chain: contrast(1.2) brightness(1.05) saturate(1.1)
-                var r = AndroidColor.red(color) / 255f
-                var g = AndroidColor.green(color) / 255f
-                var b = AndroidColor.blue(color) / 255f
-                r = ((r - 0.5f) * CONTRAST + 0.5f) * BRIGHTNESS
-                g = ((g - 0.5f) * CONTRAST + 0.5f) * BRIGHTNESS
-                b = ((b - 0.5f) * CONTRAST + 0.5f) * BRIGHTNESS
-                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                r = luma + (r - luma) * SATURATION
-                g = luma + (g - luma) * SATURATION
-                b = luma + (b - luma) * SATURATION
-
-                // The background paints the wallpaper with an alpha; match that here.
-                r = r * backdropAlpha + surfaceR * surfaceWeight
-                g = g * backdropAlpha + surfaceG * surfaceWeight
-                b = b * backdropAlpha + surfaceB * surfaceWeight
-
-                out[oy * outW + ox] = AndroidColor.argb(
-                    255,
-                    (r.coerceIn(0f, 1f) * 255f).toInt(),
-                    (g.coerceIn(0f, 1f) * 255f).toInt(),
-                    (b.coerceIn(0f, 1f) * 255f).toInt(),
-                )
-            }
-        }
-        if (DIFFUSION_RADIUS_PX > 0) boxBlur(out, outW, outH, DIFFUSION_RADIUS_PX)
-
-        var lumaSum = 0.0
-        for (pixel in out) {
-            lumaSum += (0.2126 * AndroidColor.red(pixel) +
-                0.7152 * AndroidColor.green(pixel) +
-                0.0722 * AndroidColor.blue(pixel)) / 255.0
-        }
-        val meanLuma = (lumaSum / out.size).toFloat()
-
-        val bitmap = try {
-            Bitmap.createBitmap(out, outW, outH, Bitmap.Config.ARGB_8888)
-        } catch (_: Throwable) {
-            return null
-        }
-        return GlassBackdrop(bitmap.asImageBitmap(), meanLuma)
-    }
-
-    /** Separable box blur, enough to take the digital edge off the refracted backdrop. */
-    private fun boxBlur(pixels: IntArray, w: Int, h: Int, radius: Int) {
-        val window = radius * 2 + 1
-        val tmp = IntArray(pixels.size)
-
-        for (y in 0 until h) {
-            val row = y * w
-            var rSum = 0
-            var gSum = 0
-            var bSum = 0
-            for (i in -radius..radius) {
-                val c = pixels[row + i.coerceIn(0, w - 1)]
-                rSum += AndroidColor.red(c)
-                gSum += AndroidColor.green(c)
-                bSum += AndroidColor.blue(c)
-            }
-            for (x in 0 until w) {
-                tmp[row + x] = AndroidColor.argb(255, rSum / window, gSum / window, bSum / window)
-                val leaving = pixels[row + (x - radius).coerceIn(0, w - 1)]
-                val entering = pixels[row + (x + radius + 1).coerceIn(0, w - 1)]
-                rSum += AndroidColor.red(entering) - AndroidColor.red(leaving)
-                gSum += AndroidColor.green(entering) - AndroidColor.green(leaving)
-                bSum += AndroidColor.blue(entering) - AndroidColor.blue(leaving)
-            }
-        }
-
-        for (x in 0 until w) {
-            var rSum = 0
-            var gSum = 0
-            var bSum = 0
-            for (i in -radius..radius) {
-                val c = tmp[i.coerceIn(0, h - 1) * w + x]
-                rSum += AndroidColor.red(c)
-                gSum += AndroidColor.green(c)
-                bSum += AndroidColor.blue(c)
-            }
-            for (y in 0 until h) {
-                pixels[y * w + x] = AndroidColor.argb(255, rSum / window, gSum / window, bSum / window)
-                val leaving = tmp[(y - radius).coerceIn(0, h - 1) * w + x]
-                val entering = tmp[(y + radius + 1).coerceIn(0, h - 1) * w + x]
-                rSum += AndroidColor.red(entering) - AndroidColor.red(leaving)
-                gSum += AndroidColor.green(entering) - AndroidColor.green(leaving)
-                bSum += AndroidColor.blue(entering) - AndroidColor.blue(leaving)
-            }
-        }
-    }
-
-    /** Bilinear sample with edge clamping — the reference's `blur(0.25px)` tap. */
-    private fun sampleBilinear(pixels: IntArray, w: Int, h: Int, x: Float, y: Float): Int {
-        val cx = x.coerceIn(0f, (w - 1).toFloat())
-        val cy = y.coerceIn(0f, (h - 1).toFloat())
-        val x0 = floor(cx).toInt()
-        val y0 = floor(cy).toInt()
-        val x1 = min(x0 + 1, w - 1)
-        val y1 = min(y0 + 1, h - 1)
-        val fx = cx - x0
-        val fy = cy - y0
-
-        val c00 = pixels[y0 * w + x0]
-        val c10 = pixels[y0 * w + x1]
-        val c01 = pixels[y1 * w + x0]
-        val c11 = pixels[y1 * w + x1]
-
-        val w00 = (1f - fx) * (1f - fy)
-        val w10 = fx * (1f - fy)
-        val w01 = (1f - fx) * fy
-        val w11 = fx * fy
-
-        val r = AndroidColor.red(c00) * w00 + AndroidColor.red(c10) * w10 +
-            AndroidColor.red(c01) * w01 + AndroidColor.red(c11) * w11
-        val g = AndroidColor.green(c00) * w00 + AndroidColor.green(c10) * w10 +
-            AndroidColor.green(c01) * w01 + AndroidColor.green(c11) * w11
-        val b = AndroidColor.blue(c00) * w00 + AndroidColor.blue(c10) * w10 +
-            AndroidColor.blue(c01) * w01 + AndroidColor.blue(c11) * w11
-        return AndroidColor.argb(
-            255,
-            r.toInt().coerceIn(0, 255),
-            g.toInt().coerceIn(0, 255),
-            b.toInt().coerceIn(0, 255),
-        )
-    }
-}
-
-/**
- * The iOS 26 liquid-glass material: a genuinely refracted backdrop, the reference's inset bottom
- * shadow, a specular rim and a soft drop shadow. Deliberately **no** milky tint and only a hint
- * of diffusion — the refraction is what makes it read as glass.
+ * When [wallpaper] is null — the anime background is switched off, or nothing has been decoded yet
+ * — the pane paints its own `backgroundColor` instead, so a card still reads as a surface.
  */
 @Composable
 fun LiquidGlassPanel(
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
     shape: Shape = RoundedCornerShape(28.dp),
-    cornerRadius: Dp = 28.dp,
     elevation: Dp = 10.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
@@ -457,11 +104,9 @@ fun LiquidGlassPanel(
         LiquidGlassSurface(
             wallpaper = wallpaper,
             shape = shape,
-            cornerRadius = cornerRadius,
-            // Deliberately not matchParentSize(): the content must be able to size this panel,
-            // and a matchParentSize child contributes nothing to its parent's measurement — the
-            // whole card then collapsed to zero height. The paint layers inside the surface fill
-            // it via matchParentSize instead, so the glass still covers the measured content.
+            // Deliberately not matchParentSize(): the content must be able to size this panel.
+            // The backdrop is painted in the draw phase, which never takes part in measurement, so
+            // a pane can no longer be inflated by its own backdrop.
             modifier = Modifier,
         ) { contentColor ->
             Box(modifier = Modifier.padding(contentPadding)) {
@@ -472,7 +117,7 @@ fun LiquidGlassPanel(
 }
 
 /**
- * A compact glass surface for list rows and grouped settings: the same refracting material as
+ * A compact frosted surface for list rows and grouped settings: the same material as
  * [LiquidGlassPanel], with a lighter shadow so a long list does not read as a pile of slabs.
  *
  * The backdrop-derived colour is published as `LocalContentColor`, so any inner [Text] or [Icon]
@@ -484,7 +129,6 @@ fun GlassCard(
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
     shape: Shape = RoundedCornerShape(22.dp),
-    cornerRadius: Dp = 22.dp,
     elevation: Dp = 3.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit,
@@ -493,7 +137,6 @@ fun GlassCard(
         modifier = modifier,
         wallpaper = wallpaper,
         shape = shape,
-        cornerRadius = cornerRadius,
         elevation = elevation,
         contentPadding = contentPadding,
     ) { contentColor ->
@@ -504,8 +147,8 @@ fun GlassCard(
 }
 
 /**
- * iOS 26 style floating navigation bar: a glass capsule whose backdrop is really refracted,
- * with a selection pill that glides between items on a spring.
+ * iOS 26 style floating navigation bar: a capsule surface with a selection pill that glides
+ * between items on a spring.
  */
 @Composable
 fun LiquidGlassNavBar(
@@ -522,7 +165,6 @@ fun LiquidGlassNavBar(
     bottomMargin: Dp = 12.dp,
 ) {
     if (items.isEmpty()) return
-    val dark = isSystemInDarkTheme()
     val capsule = CircleShape
 
     BoxWithConstraints(
@@ -554,7 +196,6 @@ fun LiquidGlassNavBar(
             LiquidGlassSurface(
                 wallpaper = wallpaper,
                 shape = capsule,
-                cornerRadius = barHeight / 2,
                 modifier = Modifier.matchParentSize(),
                 // Fully transparent: the bar contributes no background of its own, so the wallpaper
                 // shows straight through and only the items, their halo and the selection pill
@@ -660,7 +301,8 @@ fun LiquidGlassNavBar(
 }
 
 /**
- * Size of the root layout, which is the window (and therefore the wallpaper) size.
+ * Size of the composition root: the layout the full-screen wallpaper fills, and therefore the
+ * space a pane's backdrop position is measured in.
  */
 private fun LayoutCoordinates.rootLayoutSize(): IntSize {
     var current: LayoutCoordinates = this
@@ -670,178 +312,115 @@ private fun LayoutCoordinates.rootLayoutSize(): IntSize {
 }
 
 /**
- * The glass material itself: refracted wallpaper (computed off the main thread), a barely-there
- * legibility veil, the reference's inset bottom shadow and a specular rim.
+ * The frosted material itself: the wallpaper behind the pane, blurred, with a legibility veil, the
+ * reference's inset bottom shadow and a specular rim on top.
  */
 @Composable
 private fun LiquidGlassSurface(
     wallpaper: ImageBitmap?,
     shape: Shape,
-    cornerRadius: Dp,
     modifier: Modifier = Modifier,
     /**
-     * Painted behind the content. Defaults to a slightly translucent near-white/near-black, which
-     * gives the frosted "milk glass" look; `Color.Transparent` leaves only the rim (floating bar).
+     * Painted behind the content when there is no wallpaper to blur. Defaults to a slightly
+     * translucent near-white/near-black; `Color.Transparent` leaves only the rim (floating bar).
      */
     backgroundColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val density = LocalDensity.current
-    val cornerRadiusPx = with(density) { cornerRadius.toPx() }
 
-    // Window size (how the full-screen wallpaper is laid out) + this pane's rect, both in
-    // pixels: measured from the layout tree, so the refracted backdrop lines up with the
-    // wallpaper painted around the bar.
-    var windowSize by remember { mutableStateOf(IntSize.Zero) }
-    var paneRect by remember { mutableStateOf(Rect.Zero) }
-    var paneSize by remember { mutableStateOf(IntSize.Zero) }
+    // Where this pane sits inside the root: the offset the backdrop is positioned from. Only ever
+    // read in the draw phase below, so scrolling — which changes it every frame — redraws the pane
+    // instead of recomposing it.
+    var paneLeft by remember { mutableStateOf(0f) }
+    var paneTop by remember { mutableStateOf(0f) }
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val backdrop by produceState<GlassBackdrop?>(
-        initialValue = null,
-        wallpaper,
-        paneRect,
-        paneSize,
-        windowSize,
-        surfaceColor,
-    ) {
-        val source = wallpaper
-        if (source == null) {
-            // Nothing to refract at all (background off): drop the stale frame.
-            value = null
-            return@produceState
-        }
-        if (paneSize.width <= 0 || paneSize.height <= 0) return@produceState
-        // Deliberately NOT `value = null` here. Clearing it on every key change meant each scroll
-        // frame and each entrance animation dropped the pane back to the flat fallback until the
-        // new bitmap arrived — the glass visibly vanished while scrolling and re-appeared a moment
-        // after the finger stopped. Keeping the previous frame means the pane always shows glass,
-        // and the newly rendered one simply replaces it.
-        // The settle delay coalesces the geometry changes a scroll produces, so the SDF render
-        // runs once for the resting position instead of once per frame. It is skipped for the
-        // very first frame of a pane so nothing is delayed on initial appearance.
-        if (value != null) kotlinx.coroutines.delay(GLASS_SETTLE_MS)
-        val key = GlassCacheKey(
-            wallpaperId = System.identityHashCode(source),
-            left = paneRect.left.toInt(),
-            top = paneRect.top.toInt(),
-            right = paneRect.right.toInt(),
-            bottom = paneRect.bottom.toInt(),
-            outWidth = paneSize.width,
-            outHeight = paneSize.height,
-            radius = cornerRadiusPx,
-        )
-        GlassBackdropCache.get(key)?.let { cached ->
-            // This exact pane was rendered before (returning to a tab, scrolling back): reuse it
-            // instead of running the lens again, so nothing visibly rebuilds.
-            value = cached
-            return@produceState
-        }
-        val computed = withContext(Dispatchers.Default) {
-            LiquidGlassRefraction.render(
-                wallpaper = source,
-                paneRect = paneRect,
-                windowSize = windowSize,
-                outSize = paneSize,
-                cornerRadiusPx = cornerRadiusPx,
-                surfaceArgb = surfaceColor.toArgb(),
-                // 1.0 = genuinely clear glass. AnimeBackground paints the wallpaper at full
-                // opacity, so nothing may be mixed in behind the refraction: any value below 1
-                // blends the (near-white) surface colour into every pane, which is exactly what
-                // made the glass read as a translucent white slab instead of glass.
-                backdropAlpha = 1.0f,
-            )
-        }
-        if (computed != null) GlassBackdropCache.put(key, computed)
-        // Keep the previous frame if this one failed, rather than dropping to the flat fallback.
-        value = computed ?: value
-    }
+    // One blurred copy of the wallpaper, shared by every pane and rebuilt only when the wallpaper or
+    // the root changes — never once per pane, and never per frame.
+    val frosted = rememberFrostedWallpaper(wallpaper, rootSize)
+    // Whether anything is painted behind this pane at all. The blurred copy may still be building;
+    // until it arrives the pane simply stays transparent over the wallpaper the background paints.
+    val hasBackdrop = wallpaper != null
 
-    // Vibrancy: choose the label colour from what the glass actually shows, then pick overlays
-    // that keep that contrast. Every overlay stays neutral (never theme-tinted), otherwise the
-    // glass picks up a colour cast and reads as a dirty gradient.
-    val rendered = backdrop
-    val lightBackdrop = (rendered?.meanLuma ?: 1f) >= 0.5f
-    val contentColor = when {
-        rendered == null -> MaterialTheme.colorScheme.onSurface
-        lightBackdrop -> Color.Black.copy(alpha = 0.88f)
-        else -> Color.White.copy(alpha = 0.96f)
-    }
     // Milky veil over the blurred backdrop — this is the frosted finish. Skipped when the pane has
     // no background of its own (the transparent bottom bar), which must stay see-through.
     val veil = when {
         backgroundColor == Color.Transparent -> Color.Transparent
+        !hasBackdrop -> Color.Transparent
         dark -> Color.White.copy(alpha = 0.30f)
         else -> Color.White.copy(alpha = 0.46f)
     }
-    // Liquid glass is gone and the surfaces are opaque, so the lens-era sheen and inset shading would
-    // only read as a gradient artefact on a flat card. They stay for the (now unused) refracted path.
+    // Vibrancy: choose the label colour from what the pane actually shows. The wallpaper's mean
+    // luminance is measured once, while the blurred copy is built; the veil is nearly white, so it
+    // is folded in before the decision.
+    val effectiveLuma = frosted?.let { it.meanLuma * (1f - veil.alpha) + veil.alpha }
+    val lightBackdrop = effectiveLuma?.let { it >= 0.5f } ?: !dark
+    val contentColor = when {
+        !hasBackdrop -> MaterialTheme.colorScheme.onSurface
+        lightBackdrop -> Color.Black.copy(alpha = 0.88f)
+        else -> Color.White.copy(alpha = 0.96f)
+    }
+    // The sheen and the inset shading only read as material over a backdrop; on the flat fallback
+    // they would be a gradient artefact on a solid card.
     val topHighlight = when {
-        rendered == null -> 0f
+        !hasBackdrop -> 0f
         lightBackdrop -> 0.12f
         else -> 0.24f
     }
-    val insetShadow = if (rendered == null) 0f else if (lightBackdrop) 0.07f else 0.14f
+    val insetShadow = when {
+        !hasBackdrop -> 0f
+        lightBackdrop -> 0.07f
+        else -> 0.14f
+    }
 
     Box(
         modifier = modifier
             .onGloballyPositioned { coordinates ->
-                paneSize = coordinates.size
-                paneRect = Rect(
-                    offset = coordinates.positionInWindow(),
-                    size = Size(
-                        coordinates.size.width.toFloat(),
-                        coordinates.size.height.toFloat(),
-                    ),
-                )
-                windowSize = coordinates.rootLayoutSize()
+                val position = coordinates.positionInRoot()
+                paneLeft = position.x
+                paneTop = position.y
+                rootSize = coordinates.rootLayoutSize()
             }
-            .clip(shape),
+            .clip(shape)
+            // The backdrop is painted here, in the draw phase, clipped to the pane's own size. Its
+            // position comes from the pane's draw space instead of from a sized-and-offset child, so
+            // it never takes part in measurement: a pane can neither be inflated by its own backdrop
+            // nor end up with a strip of bare wallpaper inside it.
+            .drawWithContent {
+                val image = frosted?.image
+                val root = rootSize
+                if (image != null && root.width > 0 && root.height > 0) {
+                    // The blurred copy is the whole wallpaper as the background lays it out, at half
+                    // size, so drawing it over the root puts it exactly behind the pane.
+                    clipRect(left = 0f, top = 0f, right = size.width, bottom = size.height) {
+                        // Move the origin from this pane's top-left corner to the root's, which is
+                        // where the wallpaper itself is painted from.
+                        translate(left = -paneLeft, top = -paneTop) {
+                            drawImage(
+                                image = image,
+                                dstSize = root,
+                                filterQuality = FilterQuality.Low,
+                            )
+                        }
+                    }
+                } else if (wallpaper == null) {
+                    // Nothing behind the pane at all (the wallpaper switch is off). A see-through
+                    // pane would be an invisible ghost on the plain theme surface, so the pane falls
+                    // back to a material of its own and still reads as a surface. Neutral near-white
+                    // / near-black rather than surfaceContainer: the latter is a fixed
+                    // lavender-tinted M3 baseline (#F3EDF7) and reads as a muddy purple block.
+                    drawRect(color = backgroundColor)
+                }
+                // With a wallpaper but no blurred copy yet, nothing is painted: the wallpaper the
+                // background is already drawing *is* the backdrop, so the pane is merely not frosted
+                // for the frame or two the blur takes to build.
+                drawContent()
+            },
     ) {
-        // Draw the wallpaper ITSELF, blurred, offset so the pane shows exactly the region that is
-        // behind it right now. Tracking the layout this way (instead of pasting a once-sampled
-        // bitmap) is what removes the dragged-backdrop artefact: the blur follows the pane as it
-        // scrolls, so it can never disagree with the wallpaper around it, and nothing has to be
-        // re-rendered when the finger lifts. GPU blur, once per pane per frame.
-        val blurSource = wallpaper
-        if (blurSource != null) {
-            // matchParentSize so the window-sized child below contributes NOTHING to the pane's own
-            // measurement. A requiredSize child does participate, which inflated the pane to the
-            // wallpaper's size (the card grew to fill the screen) and threw the offset off.
-            Box(modifier = Modifier.matchParentSize()) {
-                Image(
-                    bitmap = blurSource,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .requiredSize(
-                            width = with(density) { windowSize.width.toDp() },
-                            height = with(density) { windowSize.height.toDp() },
-                        )
-                        .offset(
-                            x = with(density) { (-paneRect.left).toDp() },
-                            y = with(density) { (-paneRect.top).toDp() },
-                        )
-                        .blur(18.dp),
-                )
-            }
-        } else {
-            // Nothing to refract at all (the wallpaper switch is off). A see-through pane would be
-            // an invisible ghost on the plain theme surface — cards and the bar would lose every
-            // edge. Fall back to a defined frosted material so they still read as surfaces.
-            // Neutral near-white / near-black rather than surfaceContainer. The latter is a fixed
-            // lavender-tinted M3 baseline (#F3EDF7) which, laid over a saturated wallpaper as a
-            // large opaque slab, reads as a muddy purple block and clashes with the wallpaper's own
-            // dominant colour. `surface` is neutral, so the cards read as clean cards on a photo.
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(backgroundColor),
-            )
-        }
 
-        // Legibility veil — very light, the refraction must stay visible.
+        // Legibility veil over the frosted backdrop — light enough that the wallpaper still reads as
+        // texture instead of as a flat tint.
         if (veil != Color.Transparent) {
             Box(
                 modifier = Modifier

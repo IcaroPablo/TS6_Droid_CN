@@ -191,7 +191,6 @@ fun ConnectionScreen(
                             .clickable { showBottomSheet = true },
                         wallpaper = rememberGlassBackdrop(animeBackground),
                         shape = CircleShape,
-                        cornerRadius = 28.dp,
                         elevation = 6.dp,
                     ) {
                         Box(

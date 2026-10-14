@@ -263,7 +263,6 @@ fun ServerScreen(
                     modifier = Modifier.fillMaxWidth(),
                     wallpaper = glassWallpaper,
                     shape = RoundedCornerShape(28.dp),
-                    cornerRadius = 28.dp,
                     elevation = 6.dp,
                     contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
@@ -318,7 +317,6 @@ fun ServerScreen(
                                     },
                                 wallpaper = glassWallpaper,
                                 shape = CircleShape,
-                                cornerRadius = 36.dp,
                                 elevation = 4.dp,
                             ) {
                                 val pttTint = if (isPressed) MaterialTheme.colorScheme.primary
@@ -359,7 +357,6 @@ fun ServerScreen(
                                     .clickable { viewModel.toggleVoiceMode() },
                                 wallpaper = glassWallpaper,
                                 shape = CircleShape,
-                                cornerRadius = 36.dp,
                                 elevation = 4.dp,
                             ) {
                                 Box(
@@ -640,7 +637,6 @@ fun ChatPanel(
         modifier = Modifier.fillMaxSize(),
         wallpaper = wallpaper,
         shape = RoundedCornerShape(0.dp),
-        cornerRadius = 0.dp,
         elevation = 0.dp,
         contentPadding = PaddingValues(0.dp),
     ) { contentColor ->
@@ -776,7 +772,6 @@ fun ChatPanel(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                         wallpaper = wallpaper,
                         shape = RoundedCornerShape(8.dp),
-                        cornerRadius = 8.dp,
                         elevation = 2.dp,
                     ) {
                         Row(
@@ -889,7 +884,6 @@ private fun GlassFilterChip(
         GlassCard(
             wallpaper = wallpaper,
             shape = RoundedCornerShape(8.dp),
-            cornerRadius = 8.dp,
             elevation = 2.dp,
         ) { chip() }
     } else {
