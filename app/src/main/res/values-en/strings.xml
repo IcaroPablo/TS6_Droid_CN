@@ -65,6 +65,14 @@
     <string name="wallpaper_clear_cache">Clear wallpaper cache</string>
     <string name="wallpaper_clear_cache_confirm">Are you sure you want to clear all wallpaper cache? This cannot be undone.</string>
     <string name="wallpaper_cache_empty">No cached wallpapers</string>
+    <string name="wallpaper_export">Save to gallery</string>
+    <string name="wallpaper_export_all">Save all</string>
+    <string name="wallpaper_export_done">Saved %1$d image(s) to the gallery</string>
+    <string name="wallpaper_export_failed">Could not save to the gallery</string>
+    <string name="session_running">Session running</string>
+    <string name="session_running_desc">The session keeps running in the background</string>
+    <string name="back_to_session">Return to session</string>
+    <string name="back_to_home">Back to home</string>
     <string name="confirm">Confirm</string>
     <string name="custom_bg_title">Custom Background</string>
     <string name="custom_bg_upload">Choose from gallery</string>

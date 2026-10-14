@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.window.Dialog
@@ -46,8 +47,10 @@ import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
+import dev.tsdroid.ui.component.WallpaperExporter
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun SettingsPage(
@@ -571,6 +574,23 @@ private fun WallpaperCacheSection(context: Context) {
 
     if (showCacheViewer) {
         val cachedFiles = remember { mutableStateListOf(*WallpaperCacheManager.getCachedFiles().toTypedArray()) }
+        val scope = rememberCoroutineScope()
+
+        // Exports report through a toast: the copy itself is silent, and a failure (no space left)
+        // would otherwise look exactly like a tap that did nothing.
+        fun export(files: List<File>) {
+            if (files.isEmpty()) return
+            scope.launch {
+                val saved = WallpaperExporter.export(context, files)
+                val message = if (saved > 0) {
+                    context.getString(R.string.wallpaper_export_done, saved)
+                } else {
+                    context.getString(R.string.wallpaper_export_failed)
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+        }
+
         AlertDialog(
             onDismissRequest = { showCacheViewer = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -590,24 +610,40 @@ private fun WallpaperCacheSection(context: Context) {
                                 modifier = Modifier
                                     .aspectRatio(1f)
                                     .clip(MaterialTheme.shapes.medium)
-                                    .clickable {
-                                        WallpaperCacheManager.deleteFile(file)
-                                        cachedFiles.removeAt(index)
-                                        cacheSizeMB.floatValue = WallpaperCacheManager.getCacheSizeMB()
-                                        cacheCount.intValue = WallpaperCacheManager.getCachedFilesCount()
-                                    },
+                                    // Tapping an image saves it to the gallery; deleting is the
+                                    // explicit ✕, so a thumbnail can no longer be thrown away by a
+                                    // stray tap.
+                                    .clickable { export(listOf(file)) },
                             ) {
                                 AsyncImage(model = file, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                                Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(16.dp)
-                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f), CircleShape).padding(2.dp))
+                                Icon(Icons.Default.Download, stringResource(R.string.wallpaper_export),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(22.dp)
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f), CircleShape).padding(3.dp))
+                                Icon(Icons.Default.Close, stringResource(R.string.remove),
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp)
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f), CircleShape).padding(3.dp)
+                                        .clickable {
+                                            WallpaperCacheManager.deleteFile(file)
+                                            cachedFiles.removeAt(index)
+                                            cacheSizeMB.floatValue = WallpaperCacheManager.getCacheSizeMB()
+                                            cacheCount.intValue = WallpaperCacheManager.getCachedFilesCount()
+                                        })
                             }
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showCacheViewer = false }) { Text(stringResource(R.string.close)) }
+                Row {
+                    if (cachedFiles.isNotEmpty()) {
+                        TextButton(onClick = { export(cachedFiles.toList()) }) {
+                            Text(stringResource(R.string.wallpaper_export_all))
+                        }
+                    }
+                    TextButton(onClick = { showCacheViewer = false }) { Text(stringResource(R.string.close)) }
+                }
             },
         )
     }

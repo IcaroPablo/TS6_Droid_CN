@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
@@ -65,8 +66,6 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -96,6 +95,7 @@ import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChatView
+import dev.tsdroid.ui.component.CompactTopBar
 import dev.tsdroid.ui.component.FileManagerDialog
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassPanel
@@ -112,7 +112,7 @@ import dev.tsdroid.service.WhisperManager
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerScreen(
-    onDisconnected: () -> Unit,
+    onBackToHome: () -> Unit,
     onNavigateToAbout: () -> Unit,
     viewModel: ServerViewModel = viewModel(),
 ) {
@@ -181,11 +181,12 @@ fun ServerScreen(
         onDispose {}
     }
 
-    // Navigate away on disconnect —one-shot via LaunchedEffect.
+    // Leave this screen — home button or a session that ended on its own. Going home never drops the
+    // connection; only the disconnect button above does that.
     // While the service is auto-reconnecting we stay here and show a banner instead.
     LaunchedEffect(connectionState, reconnectStatus.active) {
         if (connectionState == ConnectionState.DISCONNECTED && !reconnectStatus.active) {
-            onDisconnected()
+            onBackToHome()
         }
     }
     if (connectionState == ConnectionState.DISCONNECTED && !reconnectStatus.active) return
@@ -216,12 +217,18 @@ fun ServerScreen(
             containerColor = Color.Transparent,
         topBar = {
             Column {
-                TopAppBar(
-                    title = { Text(serverInfo?.name ?: stringResource(R.string.server)) },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
+                CompactTopBar(
+                    title = serverInfo?.name ?: stringResource(R.string.server),
+                    // Leaving the server screen is not disconnecting: the session keeps running in
+                    // the service, so it can be picked up again from the home screen.
+                    navigationIcon = {
+                        IconButton(onClick = onBackToHome) {
+                            Icon(
+                                Icons.Default.Home,
+                                contentDescription = stringResource(R.string.back_to_home),
+                            )
+                        }
+                    },
                     actions = {
                         IconButton(onClick = { viewModel.toggleFileManager() }) {
                             Icon(Icons.Default.Folder, contentDescription = stringResource(R.string.file_manager))

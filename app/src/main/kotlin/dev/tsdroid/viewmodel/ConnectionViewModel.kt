@@ -42,6 +42,13 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         private const val MIN_NICKNAME_LENGTH = 3
         /** Survit aux recréations du ViewModel dans le même processus. */
         private var autoReconnectAttempted = false
+
+        /**
+         * Whether this process has already decided what to do about the session the service is
+         * running. Deliberately per process rather than per screen: backing out of the server screen
+         * must not be undone by the connection screen composing again.
+         */
+        private var sessionResumeHandled = false
     }
 
     private val bookmarkStore = BookmarkStore(application)
@@ -232,6 +239,33 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         return true
     }
 
+    /**
+     * [resumeExistingConnection], but only the first time this process asks.
+     *
+     * Jumping straight into a session that the service is still running is what the app wants on
+     * start-up. It is exactly what it must not do when the user comes back to this screen with the
+     * back gesture while the session keeps running — they would be thrown straight back into the
+     * server screen and could never reach the rest of the app.
+     */
+    fun resumeExistingConnectionOnce(onConnected: () -> Unit): Boolean {
+        if (sessionResumeHandled) return false
+        sessionResumeHandled = true
+        return resumeExistingConnection(onConnected)
+    }
+
+    /**
+     * The service owns the live session, so while the user stays on this screen it is the only thing
+     * that knows whether the session is still up. Keeps [connectionState] — and with it the "return
+     * to session" affordance — honest.
+     */
+    fun observeServiceState(state: Int) {
+        // A connect started from this screen owns the state until it settles: the service's client
+        // still reports its previous state for a moment, and letting that through would flash the
+        // "connected" affordance off in the middle of a connection attempt.
+        if (_connectionState.value == ConnectionState.CONNECTING) return
+        if (state != _connectionState.value) _connectionState.value = state
+    }
+
     fun connectBookmark(bookmark: ServerBookmark, onConnected: () -> Unit) {
         address.value = bookmark.address
         nickname.value = bookmark.nickname
@@ -249,8 +283,13 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
 
     fun tryAutoReconnect(onConnected: () -> Unit) {
         if (autoReconnectAttempted) return
-        if (resumeExistingConnection(onConnected)) return
         autoReconnectAttempted = true
+        // Never stack a second connection on top of a live one: if the service is already running a
+        // session, the only sensible move is to jump back into it, and only on a fresh start.
+        if (TsConnectionService.instance?.hasActiveConnection() == true) {
+            resumeExistingConnectionOnce(onConnected)
+            return
+        }
         viewModelScope.launch {
             val lastAddr = bookmarkStore.lastBookmarkAddress.first()
             if (lastAddr.isEmpty()) return@launch

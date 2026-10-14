@@ -66,6 +66,14 @@
     <string name="wallpaper_clear_cache">Vider le cache des fonds d\'écran</string>
     <string name="wallpaper_clear_cache_confirm">Êtes-vous sûr de vouloir vider tout le cache des fonds d\'écran ? Cette action est irréversible.</string>
     <string name="wallpaper_cache_empty">Aucun fond d\'écran en cache</string>
+    <string name="wallpaper_export">Enregistrer dans la galerie</string>
+    <string name="wallpaper_export_all">Tout enregistrer</string>
+    <string name="wallpaper_export_done">%1$d image(s) enregistrée(s) dans la galerie</string>
+    <string name="wallpaper_export_failed">Échec de l\'enregistrement dans la galerie</string>
+    <string name="session_running">Session en cours</string>
+    <string name="session_running_desc">La session continue en arrière-plan</string>
+    <string name="back_to_session">Revenir à la session</string>
+    <string name="back_to_home">Retour à l\'accueil</string>
     <string name="confirm">Confirmer</string>
     <string name="custom_bg_title">Fond d\'écran personnalisé</string>
     <string name="custom_bg_upload">Choisir dans la galerie</string>

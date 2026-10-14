@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -51,8 +52,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,14 +77,17 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.han.R
 import dev.tslib.ConnectionState
+import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChannelTree
+import dev.tsdroid.ui.component.CompactTopBar
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassNavBar
 import dev.tsdroid.ui.component.LiquidGlassNavItem
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.viewmodel.ConnectionViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,7 +132,9 @@ fun ConnectionScreen(
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         permissionLauncher.launch(permissions.toTypedArray())
-        viewModel.resumeExistingConnection(onConnected)
+        // Only once per process: coming back here while a session runs must stay here, not bounce
+        // straight back into the server screen.
+        viewModel.resumeExistingConnectionOnce(onConnected)
     }
 
     LaunchedEffect(autoReconnect) {
@@ -137,6 +142,30 @@ fun ConnectionScreen(
             viewModel.tryAutoReconnect(onConnected)
         }
     }
+
+    // A session that is still running lives in the service, which is the only thing that knows when
+    // it ends — the server screen is gone by then. Tracking it here keeps the card below honest.
+    var sessionName by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        // Coming back here after disconnecting: the service has already stopped itself, so the
+        // "connected" state this screen still holds from before is stale. Clear it before waiting.
+        if (TsConnectionService.instance?.hasActiveConnection() != true) {
+            viewModel.observeServiceState(ConnectionState.DISCONNECTED)
+        }
+        var attempts = 0
+        while (TsConnectionService.instance == null && attempts < 50) {
+            delay(100)
+            attempts++
+        }
+        val service = TsConnectionService.instance ?: return@LaunchedEffect
+        launch { service.tsClient.state.collect { viewModel.observeServiceState(it) } }
+        launch {
+            service.tsClient.serverInfo.collect { info ->
+                sessionName = info?.name ?: service.tsClient.serverAddress
+            }
+        }
+    }
+    val sessionRunning = connectionState == ConnectionState.CONNECTED
 
     LaunchedEffect(error) {
         error?.let {
@@ -158,9 +187,9 @@ fun ConnectionScreen(
             ),
             selectedIndex = selectedTab,
             onSelect = { selectedTab = it },
-            // No wallpaper: the bar is deliberately transparent, and sampling the backdrop would
-            // frost it instead of leaving the wallpaper visible through it.
-            wallpaper = null,
+            // Frosted like every other surface: it used to be transparent so the wallpaper showed
+            // straight through, which left the items floating on the photo with no bar at all.
+            wallpaper = rememberGlassBackdrop(animeBackground),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .zIndex(1f),
@@ -169,18 +198,24 @@ fun ConnectionScreen(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = if (selectedTab == 0) stringResource(R.string.app_name)
-                                   else stringResource(R.string.tab_settings)
+                Column {
+                    CompactTopBar(
+                        title = if (selectedTab == 0) stringResource(R.string.app_name)
+                        else stringResource(R.string.tab_settings),
+                    )
+                    // A session is running but the user is here, so give them the way back into it:
+                    // a connection in the service is not visible anywhere else.
+                    if (sessionRunning) {
+                        RunningSessionCard(
+                            name = sessionName,
+                            onReturn = onConnected,
+                            wallpaper = rememberGlassBackdrop(animeBackground),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
                         )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                )
+                    }
+                }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
             floatingActionButton = {
@@ -520,6 +555,56 @@ fun ConnectionScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The way back into a session that is still running in the background.
+ *
+ * Leaving the server screen no longer disconnects, so the connection has to be visible from here:
+ * otherwise the only thing the user could do about a live session would be to start another one.
+ */
+@Composable
+private fun RunningSessionCard(
+    name: String?,
+    onReturn: () -> Unit,
+    wallpaper: ImageBitmap?,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(
+        modifier = modifier.clickable(onClick = onReturn),
+        wallpaper = wallpaper,
+        elevation = 3.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.session_running),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = name ?: stringResource(R.string.session_running_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalContentColor.current.copy(alpha = 0.72f),
+                    maxLines = 1,
+                )
+            }
+            Text(
+                text = stringResource(R.string.back_to_session),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

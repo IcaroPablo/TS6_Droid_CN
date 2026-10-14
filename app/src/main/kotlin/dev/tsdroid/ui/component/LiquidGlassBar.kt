@@ -197,11 +197,6 @@ fun LiquidGlassNavBar(
                 wallpaper = wallpaper,
                 shape = capsule,
                 modifier = Modifier.matchParentSize(),
-                // Fully transparent: the bar contributes no background of its own, so the wallpaper
-                // shows straight through and only the items, their halo and the selection pill
-                // remain. The drop shadow is dropped with it — a shadow under an invisible capsule
-                // would just be a floating smudge.
-                backgroundColor = Color.Transparent,
             ) { contentColor ->
                 // Selection pill — a brighter sliver of the same glass.
                 val halo = if (contentColor.luminance() > 0.5f) {
@@ -322,7 +317,8 @@ private fun LiquidGlassSurface(
     modifier: Modifier = Modifier,
     /**
      * Painted behind the content when there is no wallpaper to blur. Defaults to a slightly
-     * translucent near-white/near-black; `Color.Transparent` leaves only the rim (floating bar).
+     * translucent near-white/near-black; `Color.Transparent` leaves only the rim, for a pane that
+     * must stay fully see-through.
      */
     backgroundColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
@@ -343,8 +339,8 @@ private fun LiquidGlassSurface(
     // until it arrives the pane simply stays transparent over the wallpaper the background paints.
     val hasBackdrop = wallpaper != null
 
-    // Milky veil over the blurred backdrop — this is the frosted finish. Skipped when the pane has
-    // no background of its own (the transparent bottom bar), which must stay see-through.
+    // Milky veil over the blurred backdrop — this is the frosted finish. Skipped for a pane that owns
+    // no background at all and must stay see-through.
     val veil = when {
         backgroundColor == Color.Transparent -> Color.Transparent
         !hasBackdrop -> Color.Transparent
