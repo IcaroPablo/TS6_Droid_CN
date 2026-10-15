@@ -11,33 +11,89 @@
 <div align="center">
 <table>
   <tr>
-    <td align="center"><img src="img/screenshow1.jpg" width="240"/></td>
-    <td align="center"><img src="img/screenshow2.jpg" width="240"/></td>
+    <td align="center"><a href="img/screenshow1.jpg"><img src="img/screenshow1.jpg" width="240" alt="主页：关闭动漫背景"/></a></td>
+    <td align="center"><a href="img/screenshow2.jpg"><img src="img/screenshow2.jpg" width="240" alt="主页：开启动漫背景"/></a></td>
   </tr>
   <tr>
-    <td align="center"><img src="img/screenshow3.jpg" width="240"/></td>
-    <td align="center"><img src="img/screenshow4.jpg" width="240"/></td>
+    <td colspan="2" align="center"><sub>主页（关闭 / 开启动漫背景）</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="img/screenshow3.jpg"><img src="img/screenshow3.jpg" width="240" alt="设置页：关闭动漫背景"/></a></td>
+    <td align="center"><a href="img/screenshow4.jpg"><img src="img/screenshow4.jpg" width="240" alt="设置页：开启动漫背景"/></a></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>设置（关闭 / 开启动漫背景）</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="img/screenshow5.jpg"><img src="img/screenshow5.jpg" width="240" alt="服务器页：关闭动漫背景"/></a></td>
+    <td align="center"><a href="img/screenshow6.jpg"><img src="img/screenshow6.jpg" width="240" alt="服务器页：开启动漫背景"/></a></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>服务器（关闭 / 开启动漫背景）</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="img/screenshow7.jpg"><img src="img/screenshow7.jpg" width="240" alt="悬浮窗：展开面板"/></a></td>
+    <td align="center"><a href="img/screenshow8.jpg"><img src="img/screenshow8.jpg" width="240" alt="悬浮窗：收起气泡"/></a></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>悬浮窗（展开 / 收起）</sub></td>
   </tr>
 </table>
 </div>
+
+<sub>每行两张为同一界面的左右对照；点击任意一张可查看原始大图。</sub>
 
 ---
 
 ## 更新日志
 
-### v2.1.5-Han（2026-10-13）
+### v2.1.5-Han（2026-10-15）
+
+**磨砂材质**
+- 卡片、底栏、弹窗、菜单与输入面板统一为磨砂材质，全部在界面内绘制（新增 `GlassDialog` / `GlassOverlayHost` / `GlassMenuItem` / `CompactTopBar`）
+- 磨砂改为按壁纸烘焙一张模糊副本供所有面板共享，移除旧的折射（SDF）管线
+- 磨砂层在绘制阶段按面板尺寸裁切，面板尺寸与位置始终一致
+- 关闭动漫背景时回退为实体表面
+- 顶栏统一为紧凑顶栏（64dp → 48dp）
+- 「我是二刺螈」（动漫背景）默认关闭
+
+**自绘图标集**
+- 新增 `AppIcons`（24×24 视口、2 单位圆头描边，共 10 个图标），替换界面里零散的 Material 图标
+
+**界面调整**
+- 关于页改为纯白背景并锁定浅色方案
+- 设置页「关于软件」移到「更多」分组末尾
+- 移除密聊功能
 
 **新功能**
-- **iOS 26 风格液态玻璃悬浮底栏**：按开源复刻方案（childrentime/liquid-glass：SDF + `feDisplacementMap` 折射）在 Android 上重写底部导航栏——用有向距离场（SDF）算出每个像素沿玻璃边缘应向中心折射多少，直接把悬浮栏背后的壁纸像素做成真实折射成像，再叠加参考实现的 `contrast(1.2) / brightness(1.05) / saturate(1.1)` 后处理、`inset 0 -10px 25px` 底部内阴影与边缘高光；标签颜色按折射后背景亮度自适应（浅底深字 / 深底浅字）。折射在后台线程一次性计算并缓存，新增可复用组件 `LiquidGlassPanel` / `LiquidGlassNavBar`
-- **断线自动重连**：会话中途掉线后按 3s→6s→12s…（上限 60s）自动退避重连，受设置项「自动重连」控制；重连成功后自动回到掉线前所在的频道；通知栏显示重连次数，重连期间界面停留在服务器页并显示横幅提示，不再直接弹回连接页
-- **后台运行设置**：设置页新增「电池优化白名单」（一键申请加入白名单，并显示当前状态）与「应用权限与自启动」（跳转应用详情页，便于在小米/华为/OPPO/vivo 等 ROM 上开启自启动与后台运行）
-- 麦克风不可用时，服务器页顶部横幅、悬浮窗与通知栏都会给出可见提示
+- **悬浮窗重做**：仅在 App 退到后台时显示，回到前台自动隐藏
+  - 气泡显示 App 图标或说话者头像，可拖动并吸附屏幕边缘，长按按住说话，右下角显示未读 / 静音角标
+  - 面板含「成员 / 频道」两个视图、麦克风与声音控制、断开连接，头部 ⌂ 回到 App，展开 / 收起带过渡动画
+- **左右滑动切换界面**：主页 ↔ 设置，聊天面板 频道 ↔ 私信
+- **退回首页不必断开**：连接后按返回键或顶栏首页图标即可回首页，顶栏右侧「会话进行中」胶囊一键回到会话
+- **壁纸缓存导出到相册**：单张保存或全部保存
+- **按住说话 / 语音激活模式持久化**
+- **断线自动重连**：指数退避重连，成功后回到原频道
+- 设置页新增「电池优化白名单」与「应用权限与自启动」
+- 麦克风不可用时在服务器页横幅、悬浮窗与通知中提示
+- 新增中 / 英 / 法三语文案
+
+**性能优化**
+- 冷启动壁纸只下载并解码一次，主题主色统计改用 `getPixels`，磨砂烘焙复用缓冲
+- 语言设置后台预读，图标解码与身份文件读写移出主线程，通知渠道按需创建
+- 壁纸就绪耗时打印到日志
 
 **Bug 修复**
-- **后台麦克风失效自愈**：系统在后台抢占/静音录音时（表现为频道内其他人完全听不到、App 内却看起来一切正常），现在会检测全零音频帧、空读、录音设备失效与系统静音回调，并自动重建录音通道，无需重启 App 或重新连接
-- 采集协程改由音频桥自己持有，不再随 Activity/ViewModel 销毁而被取消（后台运行一段时间后彻底没声音的主因之一）
-- 连接期间持有 `PARTIAL_WAKE_LOCK`，避免息屏后采集线程被系统挂起；新增麦克风看门狗（30 秒）兜底：已连接但没在采集时自动拉起
-- 新增中/英/法三语文案
+- 修复开关壁纸卡顿
+- 修复悬浮窗拖动、点击或展开时的闪退
+- 修复悬浮窗展开动画过慢、徽标被裁切、按钮外出现灰色方块
+- 修复聊天气泡宽度与左右分侧
+- 修复关闭动漫背景后卡片只剩描边
+- 修复电池优化白名单行样式不统一
+- 修复启动页在壁纸就绪前进入
+- 修复后台麦克风失效时自动重建录音通道
+- 修复后台长时间运行后彻底没声音（采集协程改由音频桥持有）
+- 连接期间持有 `PARTIAL_WAKE_LOCK`，并新增麦克风看门狗
 
 ### v2.1.4-Han（2026-08-18）
 
@@ -76,6 +132,8 @@
 - **应用内更新**：点击更新检测后可直接在应用内下载并安装 APK，无需跳转浏览器
 - 下载进度条实时显示百分比，下载完成自动弹出系统安装界面
 - 新增「正在下载」状态，下载中不可关闭弹窗，失败显示错误信息
+- 新增 FileProvider 支持，Android 8+ 设备正常安装应用内下载的 APK
+- 新增 `REQUEST_INSTALL_PACKAGES` 权限声明
 
 **Bug 修复**
 - 修复版本检测无法识别新版问题：比较版本号前先清除 `-Han` 后缀
@@ -85,26 +143,6 @@
 **编译签名**
 - 新增统一签名文件 `release.keystore`，debug 和 release 均使用同一签名
 - 多电脑协作只需复制 `release.keystore` 到项目根目录即可
-
-### v2.1.0-Han（2026-06-27）
-
-**应用内更新**
-- 应用内 APK 下载与安装：更新弹窗内直接下载新版本 APK，显示实时进度条，下载完成后自动调起系统安装界面
-- 新增 FileProvider 支持，Android 8+ 设备正常安装应用内下载的 APK
-- 多电脑编译签名统一：使用项目内统一 `release.keystore` 签名文件，确保不同电脑编译的 APK 签名一致，可直接覆盖安装
-- 新增 `REQUEST_INSTALL_PACKAGES` 权限声明
-
-**功能修复**
-- 修复音量增益滑块调节后不生效的问题，新增 Flow 观察者实时同步到音频桥
-- 麦克风降噪实现验证：使用 Android 原生 NoiseSuppressor API，补全日志帮助排查设备兼容性
-- Logo 背景色从蓝色更换为粉色（#2962FF → #FF69B4）
-- 修复应用内版本检测无法检测到新版的问题：版本号比较前清除 `-Han` 后缀，API 失败时显示错误信息而非误判为「已是最新」
-- 修复 GitHub API 在国内网络环境下不可用时长显「已是最新」的问题
-
-**新功能**
-- 应用内版本检测：设置页点击版本号可查询 GitHub 最新 Release 并弹窗更新
-- 网络错误时显示具体错误信息，无更新时提示「已是最新版本」
-- Release 未上传 APK 时自动回退跳转至 GitHub Releases 页面
 
 ### v2.0.5-Han（2026-06-27）
 
@@ -180,8 +218,14 @@
 
 1. **简体中文本地化**：100% 补齐全文本简体中文翻译（`zh-rCN`）。
 2. **语言切换**：支持中文、English、Français 一键切换，无需更改手机系统语言。
-3. **内置核心语音驱动**：直接内置全架构核心二进制库（jniLibs），开箱即用。
+3. **内置核心语音驱动**：直接内置核心二进制库（`jniLibs`，当前仅随包提供 arm64-v8a），开箱即用。
 4. **CI/CD 深度优化**：适配 AndroidX/Jetifier 兼容环境，优化 Gradle JVM 内存上限。
+5. **统一的磨砂材质与自绘图标**：卡片、浮动底栏、弹窗与菜单是同一套「就地绘制」的半透明磨砂表面，跟随系统深浅色；关闭动漫背景时自动回退为实体表面。界面图标统一为自绘图标集 `AppIcons`，不再混用 Material 图标。
+6. **动漫背景与自定义背景**（默认关闭）：开启后可获取在线动漫壁纸并自动提取主色生成主题，也可从相册选择图片（支持裁切预览）；壁纸缓存可设上限、浏览、单张删除，并可**导出到相册**。
+7. **后台悬浮窗**：连接后 App 退到后台会出现悬浮气泡（有人说话时显示说话者头像，否则显示 App 图标），可拖动并吸附屏幕边缘；轻点展开面板查看当前频道成员、切换频道、控制麦克风/声音、断开连接；长按气泡可**按住说话**，头部 ⌂ 一键回到 App。
+8. **断线自动重连与后台保活**：掉线后指数退避自动重连并回到原频道；提供电池优化白名单与应用详情快捷入口；连接期间持有 wake lock，并有麦克风看门狗自愈。
+9. **文件管理器**：浏览 / 下载 / 上传 / 新建 / 重命名 / 删除 / 分享，图片可在应用内全屏预览。
+10. **应用内更新**：检查更新后直接在应用内下载并安装 APK。
 
 ---
 
@@ -218,6 +262,8 @@ keytool -genkey -v -keystore release.keystore -alias ts6droid -keyalg RSA -keysi
 关于底层 Rust 架构、本地编译环境搭建等技术细节，请参考原作者仓库：
 
 [flamme-demon/TS6_Droid](https://github.com/flamme-demon/TS6_Droid)
+
+---
 
 ## 开源许可
 
