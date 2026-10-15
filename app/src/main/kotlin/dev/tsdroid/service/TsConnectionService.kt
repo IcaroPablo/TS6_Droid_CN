@@ -4,6 +4,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -19,6 +20,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
+import android.os.LocaleList
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,14 +63,16 @@ import dev.tsdroid.TsDroidApp
 import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.bridge.AvatarCache
 import dev.tsdroid.bridge.TsClient
-import dev.tsdroid.bridge.WhisperBridge
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.SettingsStore
 import dev.tslib.ConnectionState
 import dev.tslib.Identity
 import dev.tslib.Channel
 import dev.tslib.User
-import dev.tsdroid.ui.component.ChannelTree
+import dev.tsdroid.ui.component.AnimeWallpaperState
+import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.TsDroidTheme
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -80,7 +86,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 /**
  * State of the automatic reconnection loop, exposed so the UI can stay on the
@@ -112,11 +120,40 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         private const val RECONNECT_MAX_DELAY_MS = 60000L
         private const val RECONNECT_CHANNEL_RESTORE_DELAY_MS = 1500L
 
+        /**
+         * Longest push-to-talk hold the service will honour.
+         *
+         * A release event that never arrives (a gesture the system cancelled without telling us,
+         * a window torn down mid-hold) would otherwise leave the microphone open for good.
+         */
+        private const val MAX_TALK_HOLD_MS = 120_000L
+
+        /** Gap kept between the docked floating window and the screen edge. */
+        private const val EDGE_MARGIN_DP = 8f
+
+        /** Must match the overlay's reveal animation; the anchor lives for this long after a toggle. */
+        private const val REVEAL_ANIMATION_MS = 200L
+
         var instance: TsConnectionService? = null
             private set
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    /**
+     * Service-scope failures are logged, not fatal.
+     *
+     * This scope drives a live voice connection and a floating window over other apps. An unhandled
+     * exception in a `launch` goes to the thread's crash handler and takes the whole process down —
+     * which is how two floating-window bugs ended a call instead of just mis-drawing a bubble. The
+     * connection paths handle their own errors; anything that still escapes is a UI-level mistake and
+     * must not be allowed to kill the session.
+     */
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() +
+            Dispatchers.Main +
+            CoroutineExceptionHandler { _, error ->
+                Log.e(TAG, "Unhandled failure in the service, keeping the session alive", error)
+            },
+    )
 
     val tsClient = TsClient()
     lateinit var audioBridge: AudioBridge
@@ -129,7 +166,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private var overlayConnected by mutableStateOf(false)
     private var overlayChannelName by mutableStateOf<String?>(null)
     private var overlayActiveSpeakerId by mutableStateOf<Int?>(null)
-    private var overlayActiveSpeakerName by mutableStateOf<String?>(null)
     private var overlayActiveSpeakerAvatar by mutableStateOf<ImageBitmap?>(null)
     
     // Delay mechanism for overlay speaker state changes
@@ -143,9 +179,37 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     
     private lateinit var avatarCache: AvatarCache
 
-    // Overlay state
+    // ── Floating window state ────────────────────────────────────────────────
+    /** Whether the Activity is on screen. The window is for the times it is not. */
+    private var appInForeground = true
+    /** The user's "启用悬浮窗" setting, mirrored here so the service can act on changes. */
+    private var overlayEnabled = false
+    /** Messages that arrived while the app was away, shown as a badge on the bubble. */
+    private var overlayUnread by mutableStateOf(0)
     private var isOverlayExpanded by mutableStateOf(false)
-    private var positionBeforeExpand: Pair<Int, Int>? = null
+    private var overlayList by mutableStateOf(OverlayView.Members)
+    /**
+     * True while the bubble is held: the microphone is open *because of* that hold.
+     *
+     * The bubble reads it to show the user that they are live (and the service uses it to know
+     * whether it may close a microphone it opened — never one the user opened themselves).
+     */
+    private var overlayTalking by mutableStateOf(false)
+    /** When the current hold started, so a hold whose release went missing cannot stay open. */
+    private var overlayTalkStartedAt = 0L
+    private var overlayWidth = 0
+    private var overlayHeight = 0
+    /** Where the window sat before expanding/collapsing, so the docked edge can stay put. */
+    private var overlayToggleAnchorX = 0
+    private var overlayToggleAnchorWidth = 0
+    private var overlayToggleDockedRight = false
+
+    /** Sub-pixel drag left over from the last frame; a window moves in whole pixels only. */
+    private var overlayDragRemainderX = 0f
+    private var overlayDragRemainderY = 0f
+
+    /** Set by an expand/collapse, applied once the new size has been laid out. */
+    private var overlayAnchorPending = false
     private var lastSavedX = 100
     private var lastSavedY = 300
     
@@ -179,6 +243,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         restartRequestedWhileStopping = false
         instance = this
         Log.d(TAG, "Foreground Service Created")
+        // Created here rather than in Application.onCreate: this service is the only thing that posts
+        // on the channel, and creating it on every app start was a binder round trip on the way to the
+        // first frame — for users who never connect at all, too.
+        createNotificationChannel()
         savedStateRegistryController.performRestore(null)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         avatarCache = AvatarCache(applicationContext.cacheDir)
@@ -214,7 +282,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                             // Only update if still the pending speaker
                             if (pendingSpeakerId == speakerId) {
                                 overlayActiveSpeakerId = speakerId
-                                overlayActiveSpeakerName = findUserNickname(speakerId)
                                 val speakerUser = tsClient.users.value.find { it.id == speakerId }
                                 val uid = speakerUser?.uid
                                 if (!uid.isNullOrEmpty()) {
@@ -247,7 +314,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                             // Only update if still no pending speaker
                             if (pendingSpeakerId == null) {
                                 overlayActiveSpeakerId = null
-                                overlayActiveSpeakerName = null
                                 overlayActiveSpeakerAvatar = null
                             }
                         }
@@ -260,15 +326,32 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             overlayConnected = state == dev.tslib.ConnectionState.CONNECTED
             updateOverlayChannelName()
             updateNotification()
+            // A session that drops while the window is up has to take it away, and one that comes back
+            // (after an automatic reconnect) has to bring it back.
+            updateOverlayVisibility()
         }.launchIn(serviceScope)
 
         tsClient.users.onEach {
             updateOverlayChannelName()
-            refreshActiveSpeakerName()
         }.launchIn(serviceScope)
 
         tsClient.channels.onEach {
             updateOverlayChannelName()
+        }.launchIn(serviceScope)
+
+        // Messages that arrive while the app is away become a badge on the bubble; the count is
+        // cleared the moment the app comes back to the front.
+        tsClient.events.onEach { event ->
+            if (event.type != "text_message") return@onEach
+            val senderId = (event.data["sender_id"] as? Number)?.toInt()
+            if (senderId != null && senderId == tsClient.clientId) return@onEach
+            overlayUnread += 1
+        }.launchIn(serviceScope)
+
+        // The setting can change while a session runs, and it changes what the window does.
+        SettingsStore(this).enableFloatingWindow.onEach { enabled ->
+            overlayEnabled = enabled
+            updateOverlayVisibility()
         }.launchIn(serviceScope)
         
         // Listen to local voice activity and apply delay mechanism
@@ -469,12 +552,43 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             while (true) {
                 delay(MIC_WATCHDOG_INTERVAL_MS)
                 if (isStopping || !tsClient.isConnected) continue
+                if (overlayTalking &&
+                    SystemClock.elapsedRealtime() - overlayTalkStartedAt > MAX_TALK_HOLD_MS
+                ) {
+                    Log.w(TAG, "Push-to-talk hold outlived its release; closing the microphone")
+                    stopOverlayTalk()
+                }
                 if (!audioBridge.isCapturing.value) {
                     Log.w(TAG, "Capture is not running while connected; restarting it")
                     audioBridge.startCapture(noiseSuppressionSetting())
                 }
             }
         }
+    }
+
+    // ── Push to talk from the bubble ─────────────────────────────────────────
+
+    /**
+     * Opens the microphone for a hold on the bubble.
+     *
+     * Deliberately small and synchronous: the bubble's ring switches to "live" on this call, so
+     * what the user sees is the microphone's actual state and not a hope about it.
+     */
+    private fun startOverlayTalk() {
+        overlayTalkStartedAt = SystemClock.elapsedRealtime()
+        overlayTalking = true
+        audioBridge.setMuted(false)
+    }
+
+    /**
+     * Closes it again. Idempotent, and it only ever touches a microphone this hold opened — a
+     * release that arrives twice, or after the window has already been torn down, must not mute
+     * a user who is transmitting in voice-activity mode.
+     */
+    private fun stopOverlayTalk() {
+        if (!overlayTalking) return
+        overlayTalking = false
+        audioBridge.setMuted(true)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -587,6 +701,22 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             .build()
     }
 
+    /**
+     * The notification channel this service's foreground notification is posted on.
+     *
+     * `createNotificationChannel` is idempotent, so this costs nothing after the first start.
+     */
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            TsDroidApp.CHANNEL_ID_CONNECTION,
+            getString(R.string.channel_connection),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = getString(R.string.channel_connection_desc)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
     fun hasActiveConnection(address: String? = null): Boolean {
         return !isStopping &&
             tsClient.isConnected &&
@@ -629,9 +759,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
             // Start event loop
             tsClient.startEventLoop()
-            // Initialize whisper manager
-            WhisperManager.init(tsClient)
-            WhisperBridge.tryLoad()
             null
         } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -710,14 +837,12 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         hideFloatingWindow()
         audioBridge.stopCapture()
         releaseWakeLock()
-        WhisperManager.reset()
     }
 
     private fun cleanupFailedConnection() {
         hideFloatingWindow()
         audioBridge.stopCapture()
         releaseWakeLock()
-        WhisperManager.reset()
         isStopping = false
         restartRequestedWhileStopping = false
         instance = this
@@ -751,20 +876,36 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
     }
 
+    // ── Floating window ──────────────────────────────────────────────────────────────
+
+    /**
+     * The Activity reports whether it is on screen. The floating window is for the times it is *not*,
+     * so this — together with the setting, the overlay permission and a live connection — is the only
+     * thing that decides whether it shows. Nothing else shows or hides it any more.
+     */
+    fun setAppInForeground(foreground: Boolean) {
+        if (appInForeground == foreground) return
+        appInForeground = foreground
+        // The badge counts what arrived while the user was away.
+        if (foreground) overlayUnread = 0
+        updateOverlayVisibility()
+    }
+
+    private fun updateOverlayVisibility() {
+        val wanted = !appInForeground &&
+            overlayEnabled &&
+            hasOverlayPermission() &&
+            !isStopping &&
+            tsClient.isConnected
+        if (wanted) showFloatingWindow() else hideFloatingWindow()
+    }
+
     fun showFloatingWindow() {
-        Log.d(TAG, "showFloatingWindow called")
+        if (overlayView != null) return
         if (!hasOverlayPermission()) {
             Log.w(TAG, "Cannot show floating window because overlay permission is missing")
             return
         }
-        if (overlayView != null) {
-            Log.d(TAG, "showFloatingWindow skipped: already visible")
-            return
-        }
-
-        val displayMetrics = resources.displayMetrics
-        val widthPx = (280 * displayMetrics.density).toInt()
-        val heightPx = (350 * displayMetrics.density).toInt()
 
         val params = WindowManager.LayoutParams().apply {
             width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -776,130 +917,143 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
             format = PixelFormat.TRANSLUCENT
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             gravity = Gravity.TOP or Gravity.START
             x = lastSavedX
             y = lastSavedY
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // The window positions itself by hand: system-bar insets must not push it around.
+                fitInsetsTypes = 0
+            }
         }
 
+        val strings = overlayStringsContext()
         val composeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@TsConnectionService)
             setViewTreeViewModelStoreOwner(this@TsConnectionService)
             setViewTreeSavedStateRegistryOwner(this@TsConnectionService)
-            
+
             setContent {
-                val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-                val density = androidx.compose.ui.platform.LocalDensity.current
-                val screenWidthDp = configuration.screenWidthDp.dp
-                val screenHeightDp = configuration.screenHeightDp.dp
-                
                 val channels by tsClient.channels.collectAsStateWithLifecycle()
                 val users by tsClient.users.collectAsStateWithLifecycle()
+                val serverInfo by tsClient.serverInfo.collectAsStateWithLifecycle()
                 val isMicMuted by audioBridge.isMuted.collectAsStateWithLifecycle()
                 val isOutputMuted by audioBridge.isOutputMuted.collectAsStateWithLifecycle()
-                val isLocalVoiceActive by audioBridge.isLocalVoiceActive.collectAsStateWithLifecycle()
                 val reconnect by _reconnect.collectAsStateWithLifecycle()
                 val micStatus by audioBridge.micStatus.collectAsStateWithLifecycle()
-                
-                // Listen to local voice activity and apply delay mechanism
-                LaunchedEffect(isLocalVoiceActive) {
-                    // Cancel any pending local speaking state change
-                    localSpeakingJob?.cancel()
-                    pendingLocalSpeaking = isLocalVoiceActive
-                    
-                    // Delay local speaking state update to avoid flickering
-                    delay(SPEAKER_DELAY_MS)
-                    // Only update if still the pending state
-                    if (pendingLocalSpeaking == isLocalVoiceActive) {
-                        delayedLocalSpeaking = isLocalVoiceActive
+                // Not read here on purpose: the level meter reads it in its draw lambda, so a
+                // moving needle does not recompose the member list behind it.
+                val inputLevel = audioBridge.inputLevel.collectAsStateWithLifecycle()
+
+                // The app's own theme, so the window does not look like a different product.
+                TsDroidTheme(seedColor = AnimeWallpaperState.dominantColor.value) {
+                    CompositionLocalProvider(LocalContext provides strings) {
+                        FloatingOverlay(
+                            state = overlayState(
+                                channels = channels,
+                                users = users,
+                                serverName = serverInfo?.name,
+                                micMuted = isMicMuted,
+                                outputMuted = isOutputMuted,
+                                reconnecting = reconnect.active,
+                                reconnectAttempt = reconnect.attempt,
+                                micUnavailable = micStatus == AudioBridge.MicStatus.UNAVAILABLE,
+                                talking = overlayTalking,
+                                micReady = micStatus == AudioBridge.MicStatus.RUNNING,
+                            ),
+                            inputLevel = inputLevel,
+                            expanded = isOverlayExpanded,
+                            view = overlayList,
+                            onViewChange = { overlayList = it },
+                            onToggleExpand = { toggleOverlayExpanded() },
+                            onDrag = { dx, dy -> moveOverlayBy(dx, dy) },
+                            onDragEnd = { snapOverlayToEdge() },
+                            onSizeChange = { width, height -> onOverlaySizeChanged(width, height) },
+                            onToggleMic = { audioBridge.toggleMute() },
+                            onToggleOutput = { audioBridge.toggleOutputMute() },
+                            // Holding the bubble talks: the app's own push-to-talk behaviour, which the
+                            // bubble only offers while the microphone starts out closed. Going through
+                            // the service keeps the microphone's state and the bubble's "live" ring in
+                            // step, and lets a window that disappears mid-hold close the microphone.
+                            onTalkStart = { startOverlayTalk() },
+                            onTalkStop = { stopOverlayTalk() },
+                            onOpenApp = { openAppFromOverlay() },
+                            onMoveToChannel = { channelId ->
+                                serviceScope.launch { runCatching { tsClient.moveToChannel(channelId) } }
+                            },
+                            onDisconnect = { disconnect() },
+                        )
                     }
                 }
-                
-                FloatingOverlayContent(
-                    connected = overlayConnected,
-                    channelName = overlayChannelName,
-                    activeSpeakerName = overlayActiveSpeakerName,
-                    activeSpeakerAvatar = overlayActiveSpeakerAvatar,
-                    isLocalVoiceActive = delayedLocalSpeaking,
-                    isExpanded = isOverlayExpanded,
-                    onToggleExpand = { 
-                        overlayLayoutParams?.let { layout ->
-                            if (!isOverlayExpanded) {
-                                // Saving position before expanding
-                                positionBeforeExpand = Pair(layout.x, layout.y)
-                                Log.d(TAG, "Saved position before expand: ${positionBeforeExpand}")
-                            } else {
-                                // Restore position when collapsing
-                                positionBeforeExpand?.let { (x, y) ->
-                                    layout.x = x
-                                    layout.y = y
-                                    try {
-                                        windowManager.updateViewLayout(this, layout)
-                                    } catch (_: Exception) {}
-                                    Log.d(TAG, "Restored position after collapse: ($x, $y)")
-                                }
-                                positionBeforeExpand = null
-                            }
-                        }
-                        isOverlayExpanded = !isOverlayExpanded 
-                    },
-                    onDrag = { dx, dy ->
-                        overlayLayoutParams?.let { layout ->
-                            val metrics = resources.displayMetrics
-                            val maxX = metrics.widthPixels - this.width
-                            val maxY = metrics.heightPixels - this.height
-
-                            layout.x = (layout.x + dx.toInt()).coerceIn(0, maxOf(0, maxX))
-                            layout.y = (layout.y + dy.toInt()).coerceIn(0, maxOf(0, maxY))
-                            
-                            // Update cached position for persistence
-                            lastSavedX = layout.x
-                            lastSavedY = layout.y
-                            
-                            try {
-                                windowManager.updateViewLayout(this, layout)
-                            } catch (_: Exception) {}
-                        }
-                    },
-                    onSizeChange = { w, h ->
-                        overlayLayoutParams?.let { layout ->
-                            val metrics = resources.displayMetrics
-                            val maxX = metrics.widthPixels - w
-                            val maxY = metrics.heightPixels - h
-
-                            val newX = layout.x.coerceIn(0, maxOf(0, maxX))
-                            val newY = layout.y.coerceIn(0, maxOf(0, maxY))
-
-                            if (layout.x != newX || layout.y != newY) {
-                                layout.x = newX
-                                layout.y = newY
-                                try {
-                                    windowManager.updateViewLayout(this, layout)
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    },
-                    channels = channels,
-                    users = users,
-                    isMicMuted = isMicMuted,
-                    isOutputMuted = isOutputMuted,
-                    reconnectAttempt = reconnect.attempt,
-                    micUnavailable = micStatus == AudioBridge.MicStatus.UNAVAILABLE,
-                    onToggleMic = { audioBridge.toggleMute() },
-                    onToggleOutput = { audioBridge.toggleOutputMute() },
-                    onChannelClick = { channelId -> tsClient.moveToChannel(channelId) },
-                    onClose = { hideFloatingWindow() }
-                )
             }
         }
 
         overlayView = composeView
         overlayLayoutParams = params
-        windowManager.addView(composeView, params)
+        try {
+            windowManager.addView(composeView, params)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to add the floating window", e)
+            overlayView = null
+            overlayLayoutParams = null
+        }
+    }
+
+    /** One snapshot of everything the window draws. */
+    private fun overlayState(
+        channels: List<Channel>,
+        users: List<User>,
+        serverName: String?,
+        micMuted: Boolean,
+        outputMuted: Boolean,
+        reconnecting: Boolean,
+        reconnectAttempt: Int,
+        micUnavailable: Boolean,
+        talking: Boolean,
+        micReady: Boolean,
+    ): FloatingOverlayState {
+        val myId = tsClient.clientId
+        val myUser = users.find { it.id == myId }
+        val myChannelId = myUser?.channelId ?: 0L
+        val speakerId = overlayActiveSpeakerId
+        val localSpeaking = delayedLocalSpeaking || speakerId == myId
+
+        return FloatingOverlayState(
+            connected = overlayConnected,
+            serverName = serverName,
+            channelName = overlayChannelName,
+            members = users
+                .filter { it.channelId == myChannelId && it.clientType.toInt() == 0 }
+                .map { user ->
+                    FloatingOverlayMember(
+                        id = user.id,
+                        nickname = user.nickname,
+                        avatar = user.uid?.takeIf { it.isNotEmpty() }?.let { avatarCache.getAvatar(it) },
+                        speaking = if (user.id == myId) localSpeaking else user.id == speakerId,
+                        micMuted = user.isInputMuted,
+                        outputMuted = user.isOutputMuted,
+                    )
+                },
+            channels = channels.map { FloatingOverlayChannel(it.id, it.name) },
+            currentChannelId = myChannelId,
+            localAvatar = myUser?.uid?.takeIf { it.isNotEmpty() }?.let { avatarCache.getAvatar(it) },
+            speakingAvatar = overlayActiveSpeakerAvatar,
+            speakingIsLocal = speakerId != null && speakerId == myId,
+            localSpeaking = localSpeaking,
+            remoteSpeaking = speakerId != null && speakerId != myId,
+            talking = talking,
+            micReady = micReady,
+            micMuted = micMuted,
+            outputMuted = outputMuted,
+            reconnecting = reconnecting,
+            reconnectAttempt = reconnectAttempt,
+            micUnavailable = micUnavailable,
+            unread = overlayUnread,
+        )
     }
 
     private fun updateOverlayChannelName() {
@@ -910,19 +1064,189 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         }
     }
 
-    private fun refreshActiveSpeakerName() {
-        overlayActiveSpeakerName = overlayActiveSpeakerId?.let { findUserNickname(it) }
+    /**
+     * Moves the window by one drag delta, clamped to the screen.
+     *
+     * A window is positioned in whole pixels, and a deliberately slow drag moves the finger by less
+     * than one of them per event. Truncating each delta on its own (which is what this did) threw
+     * that movement away event after event, so the bubble simply refused to follow a careful drag;
+     * the leftover fraction is carried to the next delta instead.
+     */
+    private fun moveOverlayBy(dx: Float, dy: Float) {
+        val layout = overlayLayoutParams ?: return
+        val view = overlayView ?: return
+        val metrics = resources.displayMetrics
+        val maxX = (metrics.widthPixels - view.width).coerceAtLeast(0)
+        val maxY = (metrics.heightPixels - view.height).coerceAtLeast(0)
+        val pendingX = dx + overlayDragRemainderX
+        val pendingY = dy + overlayDragRemainderY
+        val stepX = pendingX.toInt()
+        val stepY = pendingY.toInt()
+        overlayDragRemainderX = pendingX - stepX
+        overlayDragRemainderY = pendingY - stepY
+        layout.x = (layout.x + stepX).coerceIn(0, maxX)
+        layout.y = (layout.y + stepY).coerceIn(0, maxY)
+        lastSavedX = layout.x
+        lastSavedY = layout.y
+        try {
+            windowManager.updateViewLayout(view, layout)
+        } catch (_: Exception) {
+        }
     }
 
-    private fun findUserNickname(userId: Int): String? {
-        return tsClient.users.value.firstOrNull { it.id == userId }?.nickname
+    /**
+     * Docks the window to the nearer side edge once a drag ends — what every floating bubble does, and
+     * what keeps it out of the way of whatever is underneath.
+     *
+     * Snapping is instant on purpose: moving a window frame by frame from an animation was one more
+     * way to touch the WindowManager mid-frame, and it has to survive being dragged first.
+     */
+    private fun snapOverlayToEdge() {
+        val layout = overlayLayoutParams ?: return
+        val view = overlayView ?: return
+        val metrics = resources.displayMetrics
+        val margin = (EDGE_MARGIN_DP * metrics.density).toInt()
+        layout.x = if (layout.x + view.width / 2 < metrics.widthPixels / 2) {
+            margin
+        } else {
+            (metrics.widthPixels - view.width - margin).coerceAtLeast(margin)
+        }
+        layout.y = layout.y.coerceIn(0, (metrics.heightPixels - view.height).coerceAtLeast(0))
+        lastSavedX = layout.x
+        lastSavedY = layout.y
+        try {
+            windowManager.updateViewLayout(view, layout)
+        } catch (_: Exception) {
+        }
+        saveCachedPosition()
+    }
+
+    /**
+     * Expanding and collapsing changes the window's size, which only lands after the next layout —
+     * and, since the content animates its size, over the whole [REVEAL_ANIMATION_MS] that follows.
+     *
+     * The anchor captured here is therefore applied on *every* size change until the animation window
+     * closes, so the docked edge stays put while the window grows or shrinks. It is applied from
+     * [onOverlaySizeChanged], posted, never inline: a window must not be moved from inside a layout
+     * callback, and the service's coroutine scope has no frame clock — waiting for a frame with
+     * `withFrameNanos` throws and takes the process with it.
+     */
+    private fun toggleOverlayExpanded() {
+        val layout = overlayLayoutParams
+        val view = overlayView
+        if (layout != null && view != null) {
+            overlayToggleAnchorX = layout.x
+            overlayToggleAnchorWidth = view.width
+            overlayToggleDockedRight =
+                layout.x + view.width / 2 >= resources.displayMetrics.widthPixels / 2
+            overlayAnchorPending = true
+            // A little longer than the content animation, so the last frame is anchored too.
+            view.postDelayed({ overlayAnchorPending = false }, REVEAL_ANIMATION_MS + 150L)
+        }
+        isOverlayExpanded = !isOverlayExpanded
+    }
+
+    private fun applyOverlayToggleAnchor() {
+        val layout = overlayLayoutParams ?: return
+        val view = overlayView ?: return
+        val metrics = resources.displayMetrics
+        val width = view.width
+        val height = view.height
+        layout.x = if (overlayToggleDockedRight) {
+            overlayToggleAnchorX + overlayToggleAnchorWidth - width
+        } else {
+            overlayToggleAnchorX
+        }
+        layout.x = layout.x.coerceIn(0, (metrics.widthPixels - width).coerceAtLeast(0))
+        layout.y = layout.y.coerceIn(0, (metrics.heightPixels - height).coerceAtLeast(0))
+        lastSavedX = layout.x
+        lastSavedY = layout.y
+        try {
+            windowManager.updateViewLayout(view, layout)
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Only records the size — and, while an expand/collapse is pending, applies its anchor *posted*.
+     *
+     * This is called from the layout pass: calling `updateViewLayout` from here is what killed the
+     * process as soon as the bubble was dragged (a drag and a size change land in the same frame).
+     * `View.post` is the safe way out of that callback.
+     */
+    private fun onOverlaySizeChanged(width: Int, height: Int) {
+        overlayWidth = width
+        overlayHeight = height
+        // While a reveal is animating, the window has to be re-anchored for every frame of it.
+        if (overlayAnchorPending) {
+            overlayView?.post { applyOverlayToggleAnchor() }
+        }
+    }
+
+    /** Brings the app to the front from the overlay: the bubble's long press, or the header's ⌂. */
+    private fun openAppFromOverlay() {
+        try {
+            startActivity(
+                Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                },
+            )
+        } catch (e: Throwable) {
+            Log.w(TAG, "Could not open the app from the overlay", e)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val view = overlayView ?: return
+        // Rotation must not leave the window half off screen, and the re-dock is posted for the same
+        // reason as the toggle anchor: this callback can arrive mid-layout, and the scope has no frame
+        // clock to wait on.
+        overlayWidth = 0
+        view.post {
+            snapOverlayToEdge()
+            clampOverlayIntoBounds()
+        }
+    }
+
+    private fun clampOverlayIntoBounds() {
+        val layout = overlayLayoutParams ?: return
+        val view = overlayView ?: return
+        val metrics = resources.displayMetrics
+        layout.x = layout.x.coerceIn(0, (metrics.widthPixels - view.width).coerceAtLeast(0))
+        layout.y = layout.y.coerceIn(0, (metrics.heightPixels - view.height).coerceAtLeast(0))
+        try {
+            windowManager.updateViewLayout(view, layout)
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * A context with the app's chosen language applied.
+     *
+     * The service's own resources follow the system locale, while the rest of the app runs in the
+     * language picked in settings (the Activity applies it in `attachBaseContext`) — without this the
+     * floating window would be the one surface left in the wrong language.
+     */
+    private fun overlayStringsContext(): Context {
+        val languageTag = runCatching {
+            runBlocking { SettingsStore(this@TsConnectionService).language.first() }
+        }.getOrDefault("zh")
+        val locale = Locale.forLanguageTag(languageTag)
+        val configuration = resources.configuration
+        configuration.setLocale(locale)
+        configuration.setLocales(LocaleList(locale))
+        return createConfigurationContext(configuration)
     }
 
     fun hideFloatingWindow() {
-        Log.d(TAG, "hideFloatingWindow called")
+        // The bubble's hold opens the microphone, and a window that goes away takes the finger's
+        // release event with it. Closing here as well means the microphone can never be left open
+        // by a hold nobody is holding any more.
+        stopOverlayTalk()
         overlayView?.let { view ->
             try {
-                // Save current position before removing the view
+                // Save the current position before removing the view.
                 overlayLayoutParams?.let { params ->
                     lastSavedX = params.x
                     lastSavedY = params.y
@@ -934,367 +1258,32 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         }
         overlayView = null
         overlayLayoutParams = null
+        overlayWidth = 0
+        overlayHeight = 0
+        // The next time it appears it should be the bubble again, not a panel the user left open.
         isOverlayExpanded = false
     }
-    
+
+    /** Remembered per orientation: a docked spot in portrait makes no sense in landscape. */
     private fun saveCachedPosition() {
-        val prefs = getSharedPreferences("floating_window_prefs", Context.MODE_PRIVATE)
-        prefs.edit().apply {
-            putInt("position_x", lastSavedX)
-            putInt("position_y", lastSavedY)
-            apply()
-        }
-        Log.d(TAG, "Saved floating window position: ($lastSavedX, $lastSavedY)")
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        getSharedPreferences("floating_window_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putInt(if (landscape) "position_x_land" else "position_x", lastSavedX)
+            .putInt(if (landscape) "position_y_land" else "position_y", lastSavedY)
+            .apply()
     }
-    
+
     private fun loadSavedPosition() {
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val prefs = getSharedPreferences("floating_window_prefs", Context.MODE_PRIVATE)
-        lastSavedX = prefs.getInt("position_x", 100)
-        lastSavedY = prefs.getInt("position_y", 300)
-        Log.d(TAG, "Loaded floating window position: ($lastSavedX, $lastSavedY)")
-    }
-
-    override fun onDestroy() {
-        instance = null
-        serviceViewModelStore.clear()
-        hideFloatingWindow()
-        audioBridge.stopCapture()
-        releaseWakeLock()
-        WhisperManager.reset()
-        try {
-            tsClient.disconnect()
-        } catch (e: Throwable) {
-            Log.w(TAG, "Best-effort disconnect during service destroy failed", e)
-        }
-        audioBridge.release()
-        serviceScope.cancel()
-        super.onDestroy()
-    }
-
-    @Composable
-    private fun FloatingOverlayContent(
-        connected: Boolean,
-        channelName: String?,
-        activeSpeakerName: String?,
-        activeSpeakerAvatar: ImageBitmap?,
-        isLocalVoiceActive: Boolean,
-        isExpanded: Boolean,
-        onToggleExpand: () -> Unit,
-        onDrag: (Float, Float) -> Unit,
-        onSizeChange: (Int, Int) -> Unit,
-        channels: List<Channel>,
-        users: List<User>,
-        isMicMuted: Boolean,
-        isOutputMuted: Boolean,
-        reconnectAttempt: Int,
-        micUnavailable: Boolean,
-        onToggleMic: () -> Unit,
-        onToggleOutput: () -> Unit,
-        onChannelClick: (Long) -> Unit,
-        onClose: () -> Unit
-    ) {
-        val CardBackgroundTransparent = Color(0x991A1A1A) // ~60% alpha dark glass base
-        val SurfaceMutedTransparent = Color(0x33FFFFFF) // Subdued element backgrounds
-        val reconnecting = reconnectAttempt > 0
-
-        // Find current channel users
-        val myId = tsClient.clientId
-        val currentChannelId = users.find { it.id == myId }?.channelId
-        val activeUsers = users.filter { it.channelId == currentChannelId }
-
-        Box(
-            modifier = Modifier
-                .wrapContentSize()
-                .background(Color.Transparent) // Force the root container token to be 100% transparent
-                .onSizeChanged { size -> onSizeChange(size.width, size.height) }
-        ) {
-            if (!isExpanded) {
-                // --- COLLAPSED AVATAR BUBBLE ---
-                // Try to get local user avatar even when not speaking
-                val localUser = myId?.let { users.find { u -> u.id == it } }
-                val localUid = localUser?.uid
-                
-                // Check if local user is speaking:
-                // 1. Local audio activity (may fail after screen off on some devices)
-                // 2. Server-reported talk status (reliable even after screen off)
-                val isLocalUserSpeaking = myId != null && (isLocalVoiceActive || overlayActiveSpeakerId == myId)
-                // Check if remote user is speaking based on activeSpeakerName
-                val isRemoteUserSpeaking = !activeSpeakerName.isNullOrEmpty() && (myId == null || overlayActiveSpeakerId != myId)
-                // Combined speaking state
-                val isSpeaking = isLocalUserSpeaking || isRemoteUserSpeaking
-                
-                // Determine which avatar to show in the bubble
-                val displayAvatar = if (isLocalUserSpeaking) {
-                    // When local user is speaking, show our own avatar
-                    if (!localUid.isNullOrEmpty()) {
-                        val cached = avatarCache.getAvatar(localUid)
-                        if (cached != null) cached else activeSpeakerAvatar
-                    } else {
-                        activeSpeakerAvatar
-                    }
-                } else if (isRemoteUserSpeaking) {
-                    // When remote user is speaking, show their avatar
-                    activeSpeakerAvatar
-                } else {
-                    // When nobody is speaking, still show local user avatar
-                    if (!localUid.isNullOrEmpty()) {
-                        avatarCache.getAvatar(localUid)
-                    } else null
-                }
-                
-                val borderColor = if (isSpeaking) Color(0xFF2196F3) else Color(0x4DFFFFFF)
-                val borderWidth = if (isSpeaking) 2.dp else 1.dp
-                
-                Surface(
-                    modifier = Modifier
-                        .size(40.dp) // Make smaller
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                onDrag(dragAmount.x, dragAmount.y)
-                            }
-                        }
-                        .clickable { onToggleExpand() },
-                    shape = CircleShape,
-                    color = CardBackgroundTransparent, // Semitransparent ring
-                    border = BorderStroke(borderWidth, borderColor)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        // Render Avatar Circle + Mini Speaker Waveform Indicator
-                        if (displayAvatar != null) {
-                            // Have an avatar available: show it
-                            androidx.compose.foundation.Image(
-                                bitmap = displayAvatar,
-                                contentDescription = "Avatar",
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                contentScale = ContentScale.Crop,
-                                alpha = 1.0f
-                            )
-                        } else if (isSpeaking) {
-                            // Speaking but no avatar: show person icon
-                            Icon(
-                                Icons.Default.Person,
-                                contentDescription = "Active Speaker",
-                                tint = Color.White,
-                                modifier = Modifier.align(Alignment.Center)
-                            )
-                        } else {
-                            // No speaker: Show software logo
-                            androidx.compose.foundation.Image(
-                                painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_launcher_foreground),
-                                contentDescription = "Open Panel",
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxSize(0.8f),
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-                    }
-                }
-            } else {
-                // --- EXPANDED MINIMALIST PANEL ---
-                Card(
-                    modifier = Modifier
-                        .width(200.dp)
-                        .height(240.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = CardBackgroundTransparent), // Blends flawlessly over game/desktop backgrounds
-                    border = BorderStroke(1.dp, Color(0x33FFFFFF)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                        // 1. Header Row (Title + Minimize Button)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .pointerInput(Unit) {
-                                    detectDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        onDrag(dragAmount.x, dragAmount.y)
-                                    }
-                                }
-                                .padding(bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .background(
-                                        if (connected) Color(0xFF4CAF50) else Color(0xFFF44336),
-                                        CircleShape
-                                    )
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = channelName ?: "Offline",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            IconButton(onClick = onToggleExpand, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Minimize", tint = Color.White)
-                            }
-                        }
-
-                        // Health warnings (reconnecting / microphone unavailable)
-                        if (reconnecting || micUnavailable) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0x66F44336), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFCDD2),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (reconnecting) {
-                                        stringResource(R.string.reconnect_in_progress, maxOf(reconnectAttempt, 1))
-                                    } else {
-                                        stringResource(R.string.mic_unavailable_short)
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFFFFCDD2),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
-
-                        Divider(color = SurfaceMutedTransparent, thickness = 1.dp)
-
-                        // 2. Simplified Channel User List (Scrollable, clean list items)
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                        ) {
-                            items(activeUsers) { user ->
-                                val isSpeaking = if (user.id == myId) (isLocalVoiceActive || overlayActiveSpeakerId == myId) else user.nickname == activeSpeakerName
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp, horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Use smaller avatar for the expanded list instead of green dot
-                                    var avatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-                                    
-                                    LaunchedEffect(user.uid) {
-                                        if (!user.uid.isNullOrEmpty()) {
-                                            val cached = avatarCache.getAvatar(user.uid)
-                                            if (cached != null) {
-                                                avatarBitmap = cached
-                                            } else if (!avatarCache.hasNoAvatar(user.uid)) {
-                                                avatarCache.loadAvatar(user.uid, tsClient)
-                                                avatarBitmap = avatarCache.getAvatar(user.uid)
-                                            }
-                                        }
-                                    }
-                                    
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .border(
-                                                width = if (isSpeaking) 2.dp else 0.dp,
-                                                color = if (isSpeaking) Color(0xFF2196F3) else Color.Transparent,
-                                                shape = CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (avatarBitmap != null) {
-                                            androidx.compose.foundation.Image(
-                                                bitmap = avatarBitmap!!,
-                                                contentDescription = null,
-                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Icon(
-                                                Icons.Default.Person,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = user.nickname,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (isSpeaking) Color.White else Color(0xCCFFFFFF),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-
-                        Divider(color = SurfaceMutedTransparent, thickness = 1.dp)
-
-                        // 4. Quick Actions Toolbar (Mute, Deafen, Disconnect) with alpha surfaces
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Mic Mute Toggle
-                            IconButton(
-                                onClick = onToggleMic,
-                                modifier = Modifier.background(
-                                    if (isMicMuted) Color(0x66F44336) else SurfaceMutedTransparent,
-                                    CircleShape
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = if (isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                                    contentDescription = "Toggle Mic",
-                                    tint = Color.White
-                                )
-                            }
-
-                            // Output Mute Toggle
-                            IconButton(
-                                onClick = onToggleOutput,
-                                modifier = Modifier.background(
-                                    if (isOutputMuted) Color(0x66F44336) else SurfaceMutedTransparent,
-                                    CircleShape
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = if (isOutputMuted) Icons.Default.HeadsetOff else Icons.Default.Headset,
-                                    contentDescription = "Toggle Output",
-                                    tint = Color.White
-                                )
-                            }
-
-                            // Disconnect
-                            IconButton(
-                                onClick = onClose,
-                                modifier = Modifier.background(SurfaceMutedTransparent, CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ExitToApp,
-                                    contentDescription = "Disconnect",
-                                    tint = Color(0xFFFF5252)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        lastSavedX = prefs.getInt(
+            if (landscape) "position_x_land" else "position_x",
+            if (landscape) 100 else 100,
+        )
+        lastSavedY = prefs.getInt(
+            if (landscape) "position_y_land" else "position_y",
+            if (landscape) 100 else 300,
+        )
     }
 }

@@ -2,6 +2,7 @@ package dev.tsdroid.ui.component
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.os.Environment
@@ -46,28 +47,47 @@ object WallpaperCacheManager {
         return files.random()
     }
 
-    suspend fun saveToCache(context: Context, imageUrl: String) = withContext(Dispatchers.IO) {
-        val dir = cacheDir ?: return@withContext
+    /**
+     * Fetches [imageUrl] and decodes it: one request, not two.
+     *
+     * The bytes are written straight into the file the cache would keep them in, and the bitmap is
+     * decoded from there. Filling the cache used to be a *second* download of the same image, which
+     * doubled both the data and the wait of every cold start — and that wait is the splash.
+     *
+     * The file is dropped again when the user's cache budget is already spent, or when the image does
+     * not decode (an error page, say): the wallpaper of this session is still shown, it is just not
+     * kept, and a broken image never becomes the random fallback of a later start.
+     */
+    suspend fun fetchAndDecode(context: Context, imageUrl: String): Bitmap? = withContext(Dispatchers.IO) {
+        val dir = cacheDir ?: return@withContext null
+        val file = File(dir, fileNameFor(imageUrl))
+        val wasCached = file.exists()
+        // Whether these bytes may stay. Measured before they are added, so a start on a cache that is
+        // already at the user's limit still shows a wallpaper without growing the cache any further.
+        val keep = wasCached ||
+            getCacheSizeBytes() < SettingsCacheSizeHelper.getMaxCacheSize(context) * 1024L * 1024L
         try {
-            val fileName = imageUrl.hashCode().toString() + ".jpg"
-            val file = File(dir, fileName)
-            if (file.exists()) return@withContext
-
-            val maxSizeBytes = SettingsCacheSizeHelper.getMaxCacheSize(context) * 1024L * 1024L
-            if (getCacheSizeBytes() >= maxSizeBytes) return@withContext
-
-            val conn = URL(imageUrl).openConnection() as HttpURLConnection
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-            conn.inputStream.use { input ->
-                file.outputStream().use { output ->
-                    input.copyTo(output)
+            if (!wasCached) {
+                val conn = URL(imageUrl).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.inputStream.use { input ->
+                    file.outputStream().use { output -> input.copyTo(output) }
                 }
+                conn.disconnect()
             }
-            conn.disconnect()
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            // A download that is not kept (or that would not decode) is dropped again: a broken file
+            // in the cache would only be picked up as the random fallback on some later start.
+            if (bitmap == null || !keep) file.delete()
+            bitmap
         } catch (_: Exception) {
+            if (!wasCached) file.delete()
+            null
         }
     }
+
+    private fun fileNameFor(imageUrl: String) = imageUrl.hashCode().toString() + ".jpg"
 
     fun clearCache() {
         cacheDir?.listFiles()?.forEach { it.delete() }

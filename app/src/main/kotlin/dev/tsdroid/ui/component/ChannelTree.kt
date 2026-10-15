@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import dev.tslib.Channel
 import dev.tslib.ChannelTree as JChannelTree
 import dev.tslib.User
+import dev.tsdroid.ui.icon.AppIcons
 
 sealed class TreeItem {
     data class ChannelNode(val channel: Channel, val depth: Int) : TreeItem()
@@ -48,7 +46,6 @@ fun ChannelTree(
     mutedUserIds: Set<Int> = emptySet(),
     channelIcons: Map<Long, ImageBitmap> = emptyMap(),
     userAvatars: Map<String, ImageBitmap> = emptyMap(),
-    onWhisperClick: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // Filter nulls early — JNI arrays can contain null elements
@@ -85,7 +82,6 @@ fun ChannelTree(
                     onClick = onUserClick?.let { { it(item.user) } },
                     onToggleMute = onUserLongClick?.let { { it(item.user) } },
                     isLocallyMuted = item.user.id in mutedUserIds,
-                    onWhisperClick = onWhisperClick,
                 )
             }
         }
@@ -165,7 +161,7 @@ private fun ChannelRow(
                 )
             } else {
                 Icon(
-                    if (userCount > 0) Icons.Default.FolderOpen else Icons.Default.Folder,
+                    AppIcons.Channel,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                 )

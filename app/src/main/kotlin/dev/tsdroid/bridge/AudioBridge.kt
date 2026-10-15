@@ -36,6 +36,8 @@ import java.util.ArrayDeque
 import java.util.Arrays
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.log10
+import kotlin.math.sqrt
 
 class AudioBridge(
     private val context: Context,
@@ -66,6 +68,20 @@ class AudioBridge(
         /** Reopen quickly at first, then settle into a slow poll so the mic can come back later. */
         private const val MAX_FAST_RECOVERY_ATTEMPTS = 5
         private const val SLOW_RECOVERY_INTERVAL_MS = 10_000L
+
+        /**
+         * The input meter bottoms out here. Mapped from dBFS by [publishInputLevel], a normal
+         * speaking voice then lands around the middle of the floating window's ring instead of
+         * pinned at either end.
+         */
+        private const val LEVEL_FLOOR_DB = -55.0
+
+        /** Fast attack, slow release: a meter that drops to zero between syllables reads as broken. */
+        private const val LEVEL_ATTACK = 0.6f
+        private const val LEVEL_RELEASE = 0.2f
+
+        /** Captured frames per published meter value — 50 Hz of updates is wasted on a ring. */
+        private const val LEVEL_FRAMES_PER_UPDATE = 3
     }
 
     /** Health of the capture path — logged (and available for UI surfacing). */
@@ -149,6 +165,23 @@ class AudioBridge(
     private val _isLocalVoiceActive = MutableStateFlow(false)
     val isLocalVoiceActive: StateFlow<Boolean> = _isLocalVoiceActive.asStateFlow()
 
+    /**
+     * How loud the microphone is hearing us, 0..1, while we are transmitting.
+     *
+     * A boolean "is speaking" leaves the user guessing whether their voice is actually getting
+     * through, so the floating window draws this instead of an on/off dot. Written from the
+     * capture loop, read by the overlay.
+     */
+    private val _inputLevel = MutableStateFlow(0f)
+    val inputLevel: StateFlow<Float> = _inputLevel.asStateFlow()
+
+    /** Smoothing state for [inputLevel]; only ever touched by the capture loop. */
+    @Volatile
+    private var smoothedLevel = 0f
+
+    @Volatile
+    private var levelFrameCount = 0
+
     private val _micStatus = MutableStateFlow(MicStatus.IDLE)
     val micStatus: StateFlow<MicStatus> = _micStatus.asStateFlow()
 
@@ -225,6 +258,7 @@ class AudioBridge(
             }
         }
         _isLocalVoiceActive.value = false
+        resetInputLevel()
         _micStatus.value = MicStatus.IDLE
         Log.i(TAG, "Capture stopped")
     }
@@ -292,6 +326,7 @@ class AudioBridge(
             if (isCurrentGeneration(generation)) {
                 _isCapturing.value = false
                 _isLocalVoiceActive.value = false
+                resetInputLevel()
                 _micStatus.value = MicStatus.IDLE
             }
             Log.i(TAG, "Capture loop finished (generation=$generation)")
@@ -361,6 +396,7 @@ class AudioBridge(
                 }
                 val rms = Math.sqrt(energy.toDouble() / read)
                 _isLocalVoiceActive.value = rms > 150.0 // Adjusted threshold for voice activity
+                publishInputLevel(rms)
 
                 if (isDigitalSilence(buffer, read)) {
                     silentFrames++
@@ -385,9 +421,36 @@ class AudioBridge(
             } else {
                 silentFrames = 0
                 _isLocalVoiceActive.value = false
+                resetInputLevel()
             }
         }
         return CaptureOutcome.STOP
+    }
+
+    /**
+     * Publishes the microphone's loudness for the floating window's meter.
+     *
+     * dBFS mapped from [LEVEL_FLOOR_DB] and then square-rooted, so a quiet voice still moves the
+     * ring visibly. Smoothed with a fast attack and a slow release, and published once every
+     * [LEVEL_FRAMES_PER_UPDATE] frames: the capture loop runs at 50 Hz and every published value
+     * redraws the bubble.
+     */
+    private fun publishInputLevel(rms: Double) {
+        val db = 20.0 * log10((rms / 32768.0).coerceAtLeast(1e-7))
+        val target = sqrt(((db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB).coerceIn(0.0, 1.0)).toFloat()
+        val rate = if (target > smoothedLevel) LEVEL_ATTACK else LEVEL_RELEASE
+        smoothedLevel += (target - smoothedLevel) * rate
+        if (++levelFrameCount >= LEVEL_FRAMES_PER_UPDATE) {
+            levelFrameCount = 0
+            _inputLevel.value = smoothedLevel
+        }
+    }
+
+    /** Nothing is being transmitted, so the meter reads zero — immediately. */
+    private fun resetInputLevel() {
+        smoothedLevel = 0f
+        levelFrameCount = 0
+        if (_inputLevel.value != 0f) _inputLevel.value = 0f
     }
 
     @SuppressLint("MissingPermission")

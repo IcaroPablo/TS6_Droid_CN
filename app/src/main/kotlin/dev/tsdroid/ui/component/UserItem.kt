@@ -22,11 +22,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,8 +42,8 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.absoluteValue
 import dev.tsdroid.han.R
 import dev.tslib.User
+import dev.tsdroid.ui.icon.AppIcons
 
-import dev.tsdroid.service.WhisperManager
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.IconButton
 
@@ -57,7 +54,6 @@ fun UserItem(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     onToggleMute: (() -> Unit)? = null,
-    onWhisperClick: ((Int) -> Unit)? = null,
     isLocallyMuted: Boolean = false,
 ) {
     Box(modifier = modifier) {
@@ -117,7 +113,7 @@ fun UserItem(
                     modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.VolumeOff,
+                        AppIcons.SpeakerOff,
                         contentDescription = stringResource(if (isLocallyMuted) R.string.unmute_user else R.string.mute_user),
                         modifier = Modifier.size(16.dp),
                         tint = if (isLocallyMuted) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
@@ -125,25 +121,12 @@ fun UserItem(
                 }
             } else if (isLocallyMuted) {
                 Icon(
-                    Icons.AutoMirrored.Filled.VolumeOff,
+                    AppIcons.SpeakerOff,
                     contentDescription = stringResource(R.string.user_muted),
                     modifier = Modifier.size(14.dp),
                     tint = Color(0xFFFF9800),
                 )
                 Spacer(Modifier.width(2.dp))
-            }
-            if (onWhisperClick != null) {
-                IconButton(
-                    onClick = { onWhisperClick(user.id) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Forum,
-                        contentDescription = "密聊",
-                        modifier = Modifier.size(16.dp),
-                        tint = if (WhisperManager.isWhisperActive && WhisperManager.whisperTargets.contains(user.id)) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
-                }
             }
         }
     }
@@ -220,7 +203,7 @@ private fun AvatarWithRing(
         }
         if (isInputMuted) {
             Icon(
-                Icons.Default.MicOff,
+                AppIcons.MicOff,
                 contentDescription = null,
                 modifier = Modifier
                     .size(14.dp)
@@ -233,7 +216,7 @@ private fun AvatarWithRing(
         }
         if (isOutputMuted) {
             Icon(
-                Icons.AutoMirrored.Filled.VolumeOff,
+                AppIcons.SpeakerOff,
                 contentDescription = null,
                 modifier = Modifier
                     .size(14.dp)

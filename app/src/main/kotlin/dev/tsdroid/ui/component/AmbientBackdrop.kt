@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +108,27 @@ private object FrostedWallpaperCache {
 }
 
 /**
+ * Builds the frosted copy before any pane has asked for it.
+ *
+ * The splash lays out in the same window-sized root the panes will use, so it can bake the material
+ * while it is still waiting on the wallpaper. Without it the first frames after the splash draw every
+ * card and bar as a transparent hole over the wallpaper and only then grow the frosted finish (see
+ * [LiquidGlassSurface], which paints nothing until the copy exists).
+ *
+ * A [rootSize] that turns out not to match the panes' root costs one wasted bake and nothing else:
+ * the copy is keyed by the root it was built for, so the panes simply build their own.
+ */
+internal suspend fun prewarmFrostedWallpaper(
+    source: ImageBitmap,
+    rootSize: IntSize,
+    density: Density,
+) {
+    if (rootSize.width <= 0 || rootSize.height <= 0) return
+    val radiusPx = with(density) { FROST_RADIUS_DP.dp.toPx() }
+    FrostedWallpaperCache.of(source, rootSize, radiusPx)
+}
+
+/**
  * The blurred wallpaper behind a pane, computed once per wallpaper and shared by every pane.
  *
  * [rootSize] is the layout the wallpaper fills; it is needed to lay the blurred copy out exactly as
@@ -178,7 +200,11 @@ private fun bakeFrosted(
 
         // The radius is scaled with the copy, which is drawn at FROST_SCALE times its own size.
         val radius = max(1, (radiusPx / FROST_SCALE).roundToInt())
-        repeat(FROST_PASSES) { boxBlur(pixels, width, height, radius) }
+        // One scratch buffer for both passes: at half the root's size it is a megabyte or two, and
+        // allocating a fresh one per pass was churn the collector had to deal with on the frame the
+        // app was starting on.
+        val scratch = IntArray(pixels.size)
+        repeat(FROST_PASSES) { boxBlur(pixels, width, height, radius, scratch) }
 
         var lumaSum = 0.0
         for (pixel in pixels) {
@@ -201,11 +227,12 @@ private fun bakeFrosted(
 /**
  * Separable box blur over ARGB pixels, edges clamped so the border does not fade out. Run twice it
  * is smooth enough to read as frosted glass, at a fraction of a Gaussian's cost.
+ *
+ * [scratch] is the caller's working buffer, large enough for [pixels] — see [bakeFrosted].
  */
-private fun boxBlur(pixels: IntArray, width: Int, height: Int, radius: Int) {
+private fun boxBlur(pixels: IntArray, width: Int, height: Int, radius: Int, scratch: IntArray) {
     if (radius <= 0 || width <= 0 || height <= 0) return
     val window = radius * 2 + 1
-    val scratch = IntArray(pixels.size)
 
     for (y in 0 until height) {
         val row = y * width

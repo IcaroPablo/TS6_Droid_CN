@@ -165,6 +165,7 @@ fun LiquidGlassNavBar(
     bottomMargin: Dp = 12.dp,
 ) {
     if (items.isEmpty()) return
+    val dark = isSystemInDarkTheme()
     val capsule = CircleShape
 
     BoxWithConstraints(
@@ -219,9 +220,11 @@ fun LiquidGlassNavBar(
                         .width(slotWidth - pillInset * 2)
                         .height(barHeight - 12.dp)
                         .clip(capsule)
-                        // A theme-tinted pill instead of the old white-alpha overlay: on the neutral
-                        // near-white bar a translucent white pill would be invisible.
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        // A brighter sliver of the same frosted material: a translucent white wash
+                        // over the bar's own backdrop, which composites into exactly what a smaller,
+                        // brighter pane of the same glass would look like. An opaque theme fill (the
+                        // previous secondaryContainer) read as a slab of a different material.
+                        .background(Color.White.copy(alpha = if (dark) 0.22f else 0.34f))
                         .border(
                             width = 0.75.dp,
                             color = MaterialTheme.colorScheme.outlineVariant,
@@ -316,11 +319,15 @@ private fun LiquidGlassSurface(
     shape: Shape,
     modifier: Modifier = Modifier,
     /**
-     * Painted behind the content when there is no wallpaper to blur. Defaults to a slightly
-     * translucent near-white/near-black; `Color.Transparent` leaves only the rim, for a pane that
-     * must stay fully see-through.
+     * Painted behind the content when there is no wallpaper to blur — and only then.
+     *
+     * Opaque on purpose, and a container token rather than `surface`: the page behind a pane *is*
+     * `surface`, so a translucent `surface` fill composites to exactly the background colour and the
+     * pane stops reading as a surface at all. With the anime background switched off, that left the
+     * cards and the floating bar as hollow outlines with their own shadow showing through the middle.
+     * `Color.Transparent` leaves only the rim, for a pane that must stay fully see-through.
      */
-    backgroundColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
 ) {
     val dark = isSystemInDarkTheme()

@@ -3,6 +3,7 @@ package dev.tsdroid.ui.component
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Folder
@@ -34,36 +36,40 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.bridge.TsFileEntry
+import dev.tsdroid.ui.icon.AppIcons
 import dev.tslib.Channel
 import dev.tslib.User
 import java.text.SimpleDateFormat
@@ -110,6 +116,14 @@ fun FileManagerDialog(
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     var shareTarget by remember { mutableStateOf<Pair<String, Long>?>(null) }
 
+    // The in-place frosted row menu: which entry, where its ⋯ sits (root pixels), plus the panel's own
+    // origin and size — those turn the row's root coordinates into the overlay's.
+    var menuEntry by remember { mutableStateOf<TsFileEntry?>(null) }
+    var menuAnchorRight by remember { mutableFloatStateOf(0f) }
+    var menuAnchorBottom by remember { mutableFloatStateOf(0f) }
+    var panelOrigin by remember { mutableStateOf(Offset.Zero) }
+    var panelSize by remember { mutableStateOf(IntSize.Zero) }
+
     val context = LocalContext.current
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -137,7 +151,12 @@ fun FileManagerDialog(
     // `contentColor` comes from the wallpaper actually behind the glass, so everything below
     // adapts through LocalContentColor instead of assuming a light backdrop.
     LiquidGlassPanel(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                panelOrigin = coordinates.positionInRoot()
+                panelSize = coordinates.size
+            },
         wallpaper = wallpaper,
         shape = RoundedCornerShape(0.dp),
         elevation = 0.dp,
@@ -149,24 +168,12 @@ fun FileManagerDialog(
                     .fillMaxSize()
                     .navigationBarsPadding(),
             ) {
-                // Top bar — transparent, otherwise its default opaque surface would cover the
-                // glass as a slab; its title and actions take the glass colour.
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                        titleContentColor = LocalContentColor.current,
-                        actionIconContentColor = LocalContentColor.current,
-                        navigationIconContentColor = LocalContentColor.current,
-                    ),
-                    title = {
-                        Text(
-                            currentPath,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                    },
+                // The same compact bar as the rest of the app, but its title and actions keep taking
+                // their colour from the glass behind them instead of from the theme.
+                CompactTopBar(
+                    title = currentPath,
+                    titleColor = LocalContentColor.current,
+                    iconColor = LocalContentColor.current,
                     navigationIcon = {
                         if (currentPath != "/") {
                             IconButton(onClick = onNavigateUp) {
@@ -225,14 +232,14 @@ fun FileManagerDialog(
                                     FileEntryRow(
                                         entry = entry,
                                         canDownload = canDownload,
-                                        canRename = canRename,
-                                        canDelete = canDelete,
                                         onFolderClick = { onNavigateToFolder(entry.name) },
                                         onDownload = { onDownload(entry.name) },
                                         onPreviewImage = { onPreviewImage(entry.name) },
-                                        onShare = { shareTarget = entry.name to entry.size },
-                                        onRename = { renameTarget = entry.name },
-                                        onDelete = { deleteTarget = entry.name },
+                                        onOpenMenu = { right, bottom ->
+                                            menuEntry = entry
+                                            menuAnchorRight = right
+                                            menuAnchorBottom = bottom
+                                        },
                                     )
                                 }
                             }
@@ -243,7 +250,67 @@ fun FileManagerDialog(
             }
         }
     }
-    // (end of LiquidGlassPanel) — dialogs below are still inside the function
+    // (end of LiquidGlassPanel) — menus and dialogs below are still inside the function
+
+    // File row menu, drawn here rather than as a DropdownMenu: a popup is a window of its own, where
+    // there is no wallpaper behind it to frost, and it would be clipped by the list it hangs from.
+    menuEntry?.let { entry ->
+        Box(modifier = Modifier.fillMaxSize().zIndex(3f)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { menuEntry = null },
+                    ),
+            )
+            GlassCard(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .width(176.dp)
+                    .offset {
+                        IntOffset(
+                            x = (menuAnchorRight - panelOrigin.x - panelSize.width).toInt(),
+                            y = (menuAnchorBottom - panelOrigin.y).toInt(),
+                        )
+                    },
+                wallpaper = wallpaper,
+                shape = RoundedCornerShape(18.dp),
+                elevation = 6.dp,
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                Column {
+                    if (entry.isFile && canDownload) {
+                        GlassMenuItem(Icons.Default.Download, stringResource(R.string.download)) {
+                            menuEntry = null
+                            onDownload(entry.name)
+                        }
+                        GlassMenuItem(Icons.Default.Share, stringResource(R.string.share_in_channel)) {
+                            menuEntry = null
+                            shareTarget = entry.name to entry.size
+                        }
+                    }
+                    if (canRename) {
+                        GlassMenuItem(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename)) {
+                            menuEntry = null
+                            renameTarget = entry.name
+                        }
+                    }
+                    if (canDelete) {
+                        GlassMenuItem(
+                            icon = Icons.Default.Delete,
+                            label = stringResource(R.string.delete_file),
+                            destructive = true,
+                        ) {
+                            menuEntry = null
+                            deleteTarget = entry.name
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // New folder dialog
     if (showNewFolderDialog) {
@@ -251,6 +318,7 @@ fun FileManagerDialog(
             title = stringResource(R.string.new_folder),
             label = stringResource(R.string.enter_folder_name),
             confirmText = stringResource(R.string.create),
+            wallpaper = wallpaper,
             onConfirm = { name ->
                 if (name.isNotBlank()) onCreateDirectory(name)
                 showNewFolderDialog = false
@@ -266,6 +334,7 @@ fun FileManagerDialog(
             label = stringResource(R.string.enter_new_name),
             initialValue = oldName,
             confirmText = stringResource(R.string.rename),
+            wallpaper = wallpaper,
             onConfirm = { newName ->
                 if (newName.isNotBlank() && newName != oldName) onRename(oldName, newName)
                 renameTarget = null
@@ -276,21 +345,28 @@ fun FileManagerDialog(
 
     // Delete confirmation dialog
     deleteTarget?.let { name ->
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.delete_file)) },
-            text = { Text(stringResource(R.string.confirm_delete, name)) },
+            title = stringResource(R.string.delete_file),
+            wallpaper = wallpaper,
+            body = {
+                Text(
+                    text = stringResource(R.string.confirm_delete, name),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete(name)
                     deleteTarget = null
                 }) {
-                    Text(stringResource(R.string.delete_file))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(stringResource(R.string.cancel))
+                    Text(stringResource(R.string.delete_file), color = MaterialTheme.colorScheme.error)
                 }
             },
         )
@@ -301,6 +377,7 @@ fun FileManagerDialog(
         ShareTargetDialog(
             fileName = fileName,
             users = users,
+            wallpaper = wallpaper,
             onSelect = { target ->
                 onShareFile(target, fileName, fileSize)
                 shareTarget = null
@@ -314,14 +391,16 @@ fun FileManagerDialog(
 private fun ShareTargetDialog(
     fileName: String,
     users: List<User>,
+    wallpaper: ImageBitmap?,
     onSelect: (ShareTarget) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    GlassDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.share_file_title, fileName)) },
-        text = {
-            LazyColumn {
+        title = stringResource(R.string.share_file_title, fileName),
+        wallpaper = wallpaper,
+        body = {
+            LazyColumn(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(max = 360.dp)) {
                 // Channel option
                 item {
                     Row(
@@ -370,7 +449,6 @@ private fun ShareTargetDialog(
                 }
             }
         },
-        confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))
@@ -383,16 +461,12 @@ private fun ShareTargetDialog(
 private fun FileEntryRow(
     entry: TsFileEntry,
     canDownload: Boolean = true,
-    canRename: Boolean = true,
-    canDelete: Boolean = true,
     onFolderClick: () -> Unit,
     onDownload: () -> Unit,
     onPreviewImage: () -> Unit,
-    onShare: () -> Unit,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
+    /** Hands the ⋯ button's position (root pixels) up, where the frosted menu is drawn. */
+    onOpenMenu: (right: Float, bottom: Float) -> Unit,
 ) {
-    var showMenu by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -409,7 +483,7 @@ private fun FileEntryRow(
         val icon = when {
             !entry.isFile -> Icons.Default.Folder
             isImageFile(entry.name) -> Icons.Default.Image
-            else -> Icons.Default.Description
+            else -> AppIcons.File
         }
         val tint = if (!entry.isFile) MaterialTheme.colorScheme.primary
             else LocalContentColor.current.copy(alpha = 0.78f)
@@ -446,51 +520,24 @@ private fun FileEntryRow(
             }
         }
 
-        // Menu button
-        Box {
-            IconButton(onClick = { showMenu = true }) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-            ) {
-                if (entry.isFile && canDownload) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.download)) },
-                        onClick = { showMenu = false; onDownload() },
-                        leadingIcon = { Icon(Icons.Default.Download, null) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.share_in_channel)) },
-                        onClick = { showMenu = false; onShare() },
-                        leadingIcon = { Icon(Icons.Default.Share, null) },
-                    )
-                }
-                if (canRename) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.rename)) },
-                        onClick = { showMenu = false; onRename() },
-                        leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) },
-                    )
-                }
-                if (canDelete) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.delete_file)) },
-                        onClick = { showMenu = false; onDelete() },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Delete, null,
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        },
-                    )
-                }
-            }
+        // Menu button — the menu itself is drawn at the root of this panel, further down: a
+        // DropdownMenu is a window of its own (nothing behind it to frost) and would be clipped by
+        // the list it belongs to.
+        var anchorRight by remember { mutableFloatStateOf(0f) }
+        var anchorBottom by remember { mutableFloatStateOf(0f) }
+        IconButton(
+            onClick = { onOpenMenu(anchorRight, anchorBottom) },
+            modifier = Modifier.onGloballyPositioned { coordinates ->
+                val position = coordinates.positionInRoot()
+                anchorRight = position.x + coordinates.size.width
+                anchorBottom = position.y + coordinates.size.height
+            },
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }
@@ -501,22 +548,35 @@ private fun InputDialog(
     label: String,
     initialValue: String = "",
     confirmText: String,
+    wallpaper: ImageBitmap? = null,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var text by remember { mutableStateOf(initialValue) }
 
-    AlertDialog(
+    GlassDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
+        title = title,
+        wallpaper = wallpaper,
+        body = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
                 label = { Text(label) },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                // Translucent, so the panel's frost shows through the field instead of the field
+                // sitting on it as an opaque slab.
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.26f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.44f),
+                ),
             )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
         },
         confirmButton = {
             TextButton(
@@ -524,11 +584,6 @@ private fun InputDialog(
                 enabled = text.isNotBlank(),
             ) {
                 Text(confirmText)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
             }
         },
     )

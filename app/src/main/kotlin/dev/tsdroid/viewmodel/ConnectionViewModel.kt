@@ -84,20 +84,29 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun loadBookmarkIcons(bookmarks: List<ServerBookmark>) {
-        val iconsDir = File(getApplication<Application>().cacheDir, "icons")
-        if (!iconsDir.exists()) return
-        val newIcons = mutableMapOf<Long, ImageBitmap>()
-        for (b in bookmarks) {
-            if (b.iconId == 0L) continue
-            if (_bookmarkIcons.value.containsKey(b.iconId)) continue
-            val file = File(iconsDir, b.iconId.toString())
-            if (file.exists() && file.length() > 0) {
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                if (bitmap != null) {
-                    newIcons[b.iconId] = bitmap.asImageBitmap()
+    /**
+     * Reads the cached server icons off disk.
+     *
+     * On [Dispatchers.IO]: this runs as soon as the connection screen appears — the first screen after
+     * the splash — and file reads plus bitmap decodes were landing on exactly those frames.
+     */
+    private suspend fun loadBookmarkIcons(bookmarks: List<ServerBookmark>) {
+        val newIcons = withContext(Dispatchers.IO) {
+            val iconsDir = File(getApplication<Application>().cacheDir, "icons")
+            if (!iconsDir.exists()) return@withContext emptyMap()
+            val found = mutableMapOf<Long, ImageBitmap>()
+            for (b in bookmarks) {
+                if (b.iconId == 0L) continue
+                if (_bookmarkIcons.value.containsKey(b.iconId)) continue
+                val file = File(iconsDir, b.iconId.toString())
+                if (file.exists() && file.length() > 0) {
+                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    if (bitmap != null) {
+                        found[b.iconId] = bitmap.asImageBitmap()
+                    }
                 }
             }
+            found
         }
         if (newIcons.isNotEmpty()) {
             _bookmarkIcons.value = _bookmarkIcons.value + newIcons
@@ -455,10 +464,16 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun getOrCreateIdentity(): Identity {
+    /**
+     * The saved identity, or a fresh one on first use.
+     *
+     * On [Dispatchers.IO]: this reads — or generates and writes — the key file, and it is on the way
+     * into a connection, including the automatic one a start with auto-reconnect does.
+     */
+    private suspend fun getOrCreateIdentity(): Identity = withContext(Dispatchers.IO) {
         val context = getApplication<Application>()
         val identityFile = File(context.filesDir, "identity.ini")
-        return if (identityFile.exists()) {
+        if (identityFile.exists()) {
             Identity.load(identityFile.absolutePath)
         } else {
             val identity = Identity()
@@ -483,23 +498,5 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             current = current.cause
         }
         return false
-    }
-
-    fun showFloatingWindow() {
-        if (_connectionState.value != ConnectionState.CONNECTED) {
-            Log.d(TAG, "showFloatingWindow skipped: not connected (state=${_connectionState.value})")
-            return
-        }
-        Log.d(TAG, "showFloatingWindow: connected, invoking overlay")
-        TsConnectionService.instance?.showFloatingWindow() ?: run {
-            Log.d(TAG, "showFloatingWindow: no instance, cannot show overlay")
-        }
-    }
-
-    fun hideFloatingWindow() {
-        Log.d(TAG, "hideFloatingWindow")
-        TsConnectionService.instance?.hideFloatingWindow() ?: run {
-            Log.d(TAG, "hideFloatingWindow: no instance, cannot hide overlay")
-        }
     }
 }

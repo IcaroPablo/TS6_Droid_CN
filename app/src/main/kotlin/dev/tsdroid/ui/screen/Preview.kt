@@ -13,6 +13,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.TsDroidTheme
 
 @Preview(name = "Chat Panel", showBackground = true, widthDp = 360, heightDp = 600)
@@ -147,13 +148,13 @@ private fun PreviewBottomNav() {
             NavigationBarItem(
                 selected = true,
                 onClick = {},
-                icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                icon = { Icon(AppIcons.Home, contentDescription = null) },
                 label = { Text("主页") },
             )
             NavigationBarItem(
                 selected = false,
                 onClick = {},
-                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                icon = { Icon(AppIcons.Settings, contentDescription = null) },
                 label = { Text("设置") },
             )
         }

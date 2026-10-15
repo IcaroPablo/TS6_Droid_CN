@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
@@ -32,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -45,6 +48,7 @@ import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.GlassCard
+import dev.tsdroid.ui.component.GlassDialog
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
 import dev.tsdroid.ui.component.WallpaperExporter
@@ -64,7 +68,7 @@ fun SettingsPage(
     val showLinkThumbnails by settingsStore.showLinkThumbnails.collectAsStateWithLifecycle(initialValue = false)
     val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = true)
     val enableFloatingWindow by settingsStore.enableFloatingWindow.collectAsStateWithLifecycle(initialValue = false)
-    val animeBackground by settingsStore.animeBackground.collectAsStateWithLifecycle(initialValue = true)
+    val animeBackground by settingsStore.animeBackground.collectAsStateWithLifecycle(initialValue = false)
     val noiseSuppression by settingsStore.noiseSuppression.collectAsStateWithLifecycle(initialValue = true)
     val audioGain by settingsStore.audioGain.collectAsStateWithLifecycle(initialValue = 1.0f)
 
@@ -82,11 +86,22 @@ fun SettingsPage(
 
     pendingLanguageTag?.let { languageTag ->
         val label = languageOptions.firstOrNull { it.first == languageTag }?.second ?: languageTag
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { pendingLanguageTag = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.language_change_title)) },
-            text = { Text(stringResource(R.string.language_change_message, label)) },
+            title = stringResource(R.string.language_change_title),
+            wallpaper = rememberGlassBackdrop(animeBackground),
+            body = {
+                Text(
+                    text = stringResource(R.string.language_change_message, label),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingLanguageTag = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
@@ -96,11 +111,6 @@ fun SettingsPage(
                     pendingLanguageTag = null
                 }) {
                     Text(stringResource(R.string.restart))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingLanguageTag = null }) {
-                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -124,7 +134,25 @@ fun SettingsPage(
                 SettingsSwitchRow(
                     label = stringResource(R.string.enable_floating_window),
                     checked = enableFloatingWindow,
-                    onCheckedChange = { scope.launch { settingsStore.setEnableFloatingWindow(it) } },
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.setEnableFloatingWindow(enabled) }
+                        if (enabled && !canDrawOverlays(context)) {
+                            // The window cannot appear without this, and only the system settings can
+                            // grant it — so say why, and open that page. Previously the app asked for
+                            // it on the way to the background, where the prompt came out of nowhere.
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.overlay_permission_needed),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}"),
+                                ),
+                            )
+                        }
+                    },
                 )
 
                 // 动漫背景
@@ -136,10 +164,10 @@ fun SettingsPage(
 
                 if (animeBackground) {
                     // 自定义背景
-                    CustomBackgroundSection(context)
+                    CustomBackgroundSection(context, rememberGlassBackdrop(animeBackground))
 
                     // 壁纸缓存
-                    WallpaperCacheSection(context)
+                    WallpaperCacheSection(context, rememberGlassBackdrop(animeBackground))
                 }
             }
         }
@@ -216,43 +244,34 @@ fun SettingsPage(
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_more))
 
-                // 语言切换
+                // 语言切换：就地展开选项，而不是弹 DropdownMenu —— 下拉菜单是独立窗口，背后没有
+                // 壁纸可模糊；三个固定选项铺开在卡片上也更好点。
                 SettingsClickableRow(
                     label = stringResource(R.string.language_change_title),
+                    onClick = { languageMenuExpanded = !languageMenuExpanded },
                     trailing = {
-                        Box {
-                            Text(
-                                text = selectedLanguageLabel,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = LocalContentColor.current.copy(alpha = 0.72f),
-                                modifier = Modifier.clickable { languageMenuExpanded = true },
-                            )
-                            DropdownMenu(
-                                expanded = languageMenuExpanded,
-                                onDismissRequest = { languageMenuExpanded = false },
-                            ) {
-                                languageOptions.forEach { (tag, label) ->
-                                    DropdownMenuItem(
-                                        text = { Text(label) },
-                                        onClick = {
-                                            pendingLanguageTag = tag
-                                            languageMenuExpanded = false
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                        Text(
+                            text = selectedLanguageLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LocalContentColor.current.copy(alpha = 0.72f),
+                        )
                     },
                 )
-
-                // 关于软件
-                SettingsClickableRow(
-                    label = stringResource(R.string.about_software),
-                    onClick = onNavigateToAbout,
-                )
+                if (languageMenuExpanded) {
+                    languageOptions.forEach { (tag, label) ->
+                        LanguageOptionRow(
+                            label = label,
+                            selected = tag == selectedLanguageTag,
+                            onClick = {
+                                languageMenuExpanded = false
+                                pendingLanguageTag = tag
+                            },
+                        )
+                    }
+                }
 
                 // 检查更新
-                UpdateCheckRow(context)
+                UpdateCheckRow(context, rememberGlassBackdrop(animeBackground))
 
                 // 后台运行：电池优化白名单（避免系统限制后台录音与网络）
                 BatteryOptimizationRow(context)
@@ -262,6 +281,12 @@ fun SettingsPage(
                     label = stringResource(R.string.app_details_settings),
                     subtitle = stringResource(R.string.app_details_settings_desc),
                     onClick = { openAppDetailsSettings(context) },
+                )
+
+                // 关于软件 — last row of the page, where a footer item belongs.
+                SettingsClickableRow(
+                    label = stringResource(R.string.about_software),
+                    onClick = onNavigateToAbout,
                 )
             }
         }
@@ -350,7 +375,50 @@ private fun SettingsClickableRow(
     }
 }
 
+/**
+ * One language choice, unfolded under the "语言切换" row.
+ *
+ * Drawn as part of the card so it is frosted like everything else on it — a `DropdownMenu` would be
+ * a window of its own, with no wallpaper behind it to blur.
+ */
+@Composable
+private fun LanguageOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            // Indented one step further than the row it belongs to, so the choice reads as a
+            // sub-item rather than as another setting.
+            .padding(start = 32.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) MaterialTheme.colorScheme.primary
+            else LocalContentColor.current.copy(alpha = 0.85f),
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
 // ── 后台运行相关（电池优化 / 应用详情） ──
+
+/** Whether the app may draw over other apps, i.e. whether the floating window can appear at all. */
+private fun canDrawOverlays(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
     val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
@@ -411,28 +479,23 @@ private fun BatteryOptimizationRow(context: Context) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // The state is on the subtitle; the row itself keeps the same trailing chevron as every other
+    // navigable row, instead of a second label competing with it.
     SettingsClickableRow(
         label = stringResource(R.string.battery_optimization),
-        subtitle = stringResource(R.string.battery_optimization_desc),
+        subtitle = stringResource(
+            if (ignoring) R.string.battery_optimization_allowed
+            else R.string.battery_optimization_desc
+        ),
         onClick = { requestIgnoreBatteryOptimizations(context) },
-        trailing = {
-            Text(
-                text = stringResource(
-                    if (ignoring) R.string.battery_optimization_allowed
-                    else R.string.battery_optimization_action
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (ignoring) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error,
-            )
-        },
     )
 }
 
 // ── 自定义背景区 ──
 
 @Composable
-private fun CustomBackgroundSection(context: Context) {
+private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
+    val scope = rememberCoroutineScope()
     var showCropScreen by remember { mutableStateOf(false) }
     var cropBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var hasCustom by remember { mutableStateOf(dev.tsdroid.background.CustomBackgroundManager.hasCustomBackground(context)) }
@@ -471,7 +534,11 @@ private fun CustomBackgroundSection(context: Context) {
                     val success = dev.tsdroid.background.CustomBackgroundManager.cropAndSave(context, cropBitmap!!, left, top, right, bottom)
                     if (success) {
                         hasCustom = true
-                        dev.tsdroid.ui.component.AnimeWallpaperState.refreshCustomBackground(context)
+                        // Decoding the freshly written file happens off the main thread now, so the
+                        // new background appears a frame later instead of stalling this one.
+                        scope.launch {
+                            dev.tsdroid.ui.component.AnimeWallpaperState.refreshCustomBackground(context)
+                        }
                         Toast.makeText(context, context.getString(R.string.custom_bg_saved), Toast.LENGTH_SHORT).show()
                     }
                     cropBitmap?.recycle()
@@ -488,23 +555,34 @@ private fun CustomBackgroundSection(context: Context) {
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.custom_bg_delete)) },
-            text = { Text(stringResource(R.string.custom_bg_delete_confirm)) },
+            title = stringResource(R.string.custom_bg_delete),
+            wallpaper = wallpaper,
+            body = {
+                Text(
+                    text = stringResource(R.string.custom_bg_delete_confirm),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     dev.tsdroid.background.CustomBackgroundManager.deleteBackground(context)
                     hasCustom = false
                     showDeleteConfirm = false
+                    // Drops the deleted image from memory too: it is no longer on disk, so the state
+                    // has to fall back to the online wallpaper instead of painting it until restart.
+                    scope.launch {
+                        dev.tsdroid.ui.component.AnimeWallpaperState.refreshCustomBackground(context)
+                    }
                 }) {
                     Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -541,7 +619,7 @@ private fun CustomBackgroundSection(context: Context) {
 // ── 壁纸缓存区 ──
 
 @Composable
-private fun WallpaperCacheSection(context: Context) {
+private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
     val cacheSizeMB = remember { mutableFloatStateOf(WallpaperCacheManager.getCacheSizeMB()) }
     val cacheCount = remember { mutableIntStateOf(WallpaperCacheManager.getCachedFilesCount()) }
     val maxSize = remember { mutableLongStateOf(SettingsCacheSizeHelper.getMaxCacheSize(context)) }
@@ -549,11 +627,22 @@ private fun WallpaperCacheSection(context: Context) {
     var showClearConfirm by remember { mutableStateOf(false) }
 
     if (showClearConfirm) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { showClearConfirm = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.wallpaper_clear_cache)) },
-            text = { Text(stringResource(R.string.wallpaper_clear_cache_confirm)) },
+            title = stringResource(R.string.wallpaper_clear_cache),
+            wallpaper = wallpaper,
+            body = {
+                Text(
+                    text = stringResource(R.string.wallpaper_clear_cache_confirm),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     WallpaperCacheManager.clearCache()
@@ -562,11 +651,6 @@ private fun WallpaperCacheSection(context: Context) {
                     showClearConfirm = false
                 }) {
                     Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -591,18 +675,27 @@ private fun WallpaperCacheSection(context: Context) {
             }
         }
 
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { showCacheViewer = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("${stringResource(R.string.wallpaper_view_cache)} (${cachedFiles.size})") },
-            text = {
+            title = "${stringResource(R.string.wallpaper_view_cache)} (${cachedFiles.size})",
+            wallpaper = wallpaper,
+            body = {
                 if (cachedFiles.isEmpty()) {
-                    Text(stringResource(R.string.wallpaper_cache_empty))
+                    Text(
+                        text = stringResource(R.string.wallpaper_cache_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
+                        // A grid needs a bounded height inside the dialog's column.
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                            .heightIn(max = 360.dp),
                     ) {
                         items(cachedFiles.size, key = { cachedFiles[it].name }) { index ->
                             val file = cachedFiles[index]
@@ -635,15 +728,15 @@ private fun WallpaperCacheSection(context: Context) {
                     }
                 }
             },
-            confirmButton = {
-                Row {
-                    if (cachedFiles.isNotEmpty()) {
-                        TextButton(onClick = { export(cachedFiles.toList()) }) {
-                            Text(stringResource(R.string.wallpaper_export_all))
-                        }
+            dismissButton = {
+                if (cachedFiles.isNotEmpty()) {
+                    TextButton(onClick = { export(cachedFiles.toList()) }) {
+                        Text(stringResource(R.string.wallpaper_export_all))
                     }
-                    TextButton(onClick = { showCacheViewer = false }) { Text(stringResource(R.string.close)) }
                 }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCacheViewer = false }) { Text(stringResource(R.string.close)) }
             },
         )
     }
@@ -684,7 +777,7 @@ private fun WallpaperCacheSection(context: Context) {
 // ── 检查更新 ──
 
 @Composable
-private fun UpdateCheckRow(context: Context) {
+private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
     val scope = rememberCoroutineScope()
     val versionName = try {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
@@ -699,12 +792,18 @@ private fun UpdateCheckRow(context: Context) {
     var downloadError by remember { mutableStateOf<String?>(null) }
 
     if (showUpdateDialog && updateInfo != null) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { if (!isDownloading) { showUpdateDialog = false } },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.update_available, updateInfo!!.versionName)) },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            title = stringResource(R.string.update_available, updateInfo!!.versionName),
+            wallpaper = wallpaper,
+            body = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     if (isDownloading) {
                         Text("${stringResource(R.string.update_downloading)} ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(8.dp))
@@ -721,6 +820,9 @@ private fun UpdateCheckRow(context: Context) {
                         )
                     }
                 }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateDialog = false }) { Text(stringResource(R.string.update_later)) }
             },
             confirmButton = {
                 if (!isDownloading) {
@@ -746,9 +848,6 @@ private fun UpdateCheckRow(context: Context) {
                         }
                     }) { Text(stringResource(R.string.update_download)) }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUpdateDialog = false }) { Text(stringResource(R.string.update_later)) }
             },
         )
     }

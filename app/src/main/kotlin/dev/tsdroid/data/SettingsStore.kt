@@ -18,6 +18,7 @@ private val KEY_LANGUAGE = stringPreferencesKey("language")
 private val KEY_ENABLE_FLOATING_WINDOW = booleanPreferencesKey("enable_floating_window")
 private val KEY_ANIME_BACKGROUND = booleanPreferencesKey("anime_background")
 private val KEY_NOISE_SUPPRESSION = booleanPreferencesKey("noise_suppression")
+private val KEY_PUSH_TO_TALK = booleanPreferencesKey("push_to_talk")
 
 class SettingsStore(private val context: Context) {
 
@@ -36,8 +37,12 @@ class SettingsStore(private val context: Context) {
     val enableFloatingWindow: Flow<Boolean> = context.settingsDataStore.data
         .map { it[KEY_ENABLE_FLOATING_WINDOW] ?: true }
 
+    /**
+     * Off by default: the app is a normal Material surface until the user asks for the wallpaper,
+     * which also keeps the first launch free of a network fetch for an image.
+     */
     val animeBackground: Flow<Boolean> = context.settingsDataStore.data
-        .map { it[KEY_ANIME_BACKGROUND] ?: true }
+        .map { it[KEY_ANIME_BACKGROUND] ?: false }
 
     suspend fun setAudioGain(gain: Float) {
         context.settingsDataStore.edit { it[KEY_AUDIO_GAIN] = gain }
@@ -65,6 +70,20 @@ class SettingsStore(private val context: Context) {
 
     val noiseSuppression: Flow<Boolean> = context.settingsDataStore.data
         .map { it[KEY_NOISE_SUPPRESSION] ?: true }
+
+    /**
+     * Push-to-talk instead of voice activity.
+     *
+     * Persisted (rather than living in the server screen's view model) because the floating window
+     * needs it too: without knowing the mode it cannot offer a talk button that does not fight the
+     * voice-activity setting.
+     */
+    val pushToTalk: Flow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_PUSH_TO_TALK] ?: true }
+
+    suspend fun setPushToTalk(enabled: Boolean) {
+        context.settingsDataStore.edit { it[KEY_PUSH_TO_TALK] = enabled }
+    }
 
     suspend fun setNoiseSuppression(enabled: Boolean) {
         context.settingsDataStore.edit { it[KEY_NOISE_SUPPRESSION] = enabled }

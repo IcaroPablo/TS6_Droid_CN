@@ -3,6 +3,9 @@ package dev.tsdroid.ui.component
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.SystemClock
+import android.util.Log
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -23,111 +27,186 @@ import coil.request.ImageRequest
 import coil.request.ImageResult
 import coil.request.SuccessResult
 import dev.tsdroid.background.CustomBackgroundManager
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
 object AnimeWallpaperState {
+
+    private const val TAG = "AnimeWallpaper"
+
+    /** The anime wallpaper endpoint; it answers with a redirect to a random image. */
+    private const val WALLPAPER_ENDPOINT = "https://www.loliapi.com/acg/pe/"
+
+    /** Edge of the square reduction the theme colour is measured from. */
+    private const val COLOR_SAMPLE = 48
+
     val currentUrl = mutableStateOf<String?>(null)
-    val customBitmap = mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    val customBitmap = mutableStateOf<ImageBitmap?>(null)
     val dominantColor = mutableStateOf<Color?>(null)
 
     /**
      * Latest decoded wallpaper (online or cached file). Used as the blurred backdrop of the
      * liquid-glass surfaces, so they never have to decode the image a second time.
      */
-    val wallpaperBitmap = mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    val wallpaperBitmap = mutableStateOf<ImageBitmap?>(null)
 
     /** The image the background is actually painting right now, if any. */
-    val activeBitmap: androidx.compose.ui.graphics.ImageBitmap?
+    val activeBitmap: ImageBitmap?
         get() = customBitmap.value ?: wallpaperBitmap.value
 
-    private var fetched = false
+    /**
+     * True once there is an image to paint.
+     *
+     * This is what the splash waits on: the app is only let in when the wallpaper behind it is
+     * already decoded, because entering earlier means watching it arrive.
+     */
+    val paintReady: Boolean
+        get() = activeBitmap != null
 
-    suspend fun ensureFetched(context: Context) {
-        if (fetched) return
-        fetched = true
-        WallpaperCacheManager.init(context)
-        refreshCustomBackground(context)
-        if (customBitmap.value == null) {
-            fetchOnlineWallpaper(context)
+    /**
+     * The pipeline runs in a scope of its own, not in the caller's.
+     *
+     * Neither the splash nor the activity that started it lives long enough to be trusted with it:
+     * the splash hands over before a slow download has finished, and a rotation rebuilds the whole
+     * activity. Cancelling the fetch with either of them used to leave the session with no wallpaper
+     * at all, because the "already fetched" flag stayed set while the work it guarded was gone.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private var started = false
+
+    /**
+     * Starts the wallpaper pipeline — the user's own background, or a fresh image off the network
+     * with the cache as its fallback — at most once per process.
+     *
+     * [wanted] is the wallpaper setting. With it off nothing is downloaded: the app never paints a
+     * wallpaper then, so the fetch would only cost data and hold the start up for an image nobody
+     * will ever see.
+     */
+    fun ensureFetched(context: Context, wanted: Boolean) {
+        if (started || !wanted) return
+        started = true
+        // Held across the whole fetch: the pipeline must not keep a destroyed activity alive.
+        val appContext = context.applicationContext
+        scope.launch {
+            WallpaperCacheManager.init(appContext)
+            refreshCustomBackground(appContext)
+            if (customBitmap.value == null) {
+                fetchOnlineWallpaper(appContext)
+            }
         }
     }
 
-    fun refreshCustomBackground(context: Context) {
+    /**
+     * Re-reads the user's own background image, if there is one.
+     *
+     * The decode is off the main thread: it is a full-size JPEG and it runs while the splash is on
+     * screen, which is the one place a stalled frame is impossible to miss.
+     */
+    suspend fun refreshCustomBackground(context: Context) {
         val customFile = CustomBackgroundManager.getActiveBackground(context)
-        if (customFile != null) {
-            val bm = BitmapFactory.decodeFile(customFile.absolutePath)
-            if (bm != null) {
-                customBitmap.value = bm.asImageBitmap()
-                extractColorFromBitmap(bm)
-            }
+        val bitmap = customFile?.let { file ->
+            withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.absolutePath) }
+        }
+        if (bitmap != null) {
+            // Published before it is recorded as the custom background: `paintReady`, which the splash
+            // hands over on, is set in the same step as the theme colour, so the app cannot open on a
+            // palette that is still to arrive.
+            publishWallpaper(bitmap)
+            customBitmap.value = bitmap.asImageBitmap()
         } else {
+            // No background of their own — or one that no longer decodes. Cleared rather than left
+            // in place, so `ensureFetched` falls through to the online wallpaper instead of painting
+            // a stale image over a file the user has since deleted.
             customBitmap.value = null
         }
     }
 
     private suspend fun fetchOnlineWallpaper(context: Context) {
-        withContext(Dispatchers.IO) {
-            var networkSuccess = false
-            try {
-                val url = URL("https://www.loliapi.com/acg/pe/")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = false
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                val redirect = conn.getHeaderField("Location")
-                val finalUrl = if (!redirect.isNullOrBlank()) redirect else conn.url.toString()
-                conn.disconnect()
-                currentUrl.value = finalUrl
+        val startedAt = SystemClock.elapsedRealtime()
+        val bitmap = withContext(Dispatchers.IO) {
+            val finalUrl = resolveWallpaperUrl() ?: return@withContext null
+            currentUrl.value = finalUrl
+            WallpaperCacheManager.fetchAndDecode(context, finalUrl)
+        }
 
-                val imgConn = URL(finalUrl).openConnection() as HttpURLConnection
-                imgConn.connectTimeout = 8000
-                imgConn.readTimeout = 8000
-                val bitmap = BitmapFactory.decodeStream(imgConn.inputStream)
-                imgConn.disconnect()
-                if (bitmap != null) {
-                    extractColorFromBitmap(bitmap)
-                    WallpaperCacheManager.saveToCache(context, finalUrl)
-                    networkSuccess = true
-                }
-            } catch (_: Exception) {
-            }
-            if (!networkSuccess) {
-                WallpaperCacheManager.getRandomCachedFile()?.let { cached ->
-                    BitmapFactory.decodeFile(cached.absolutePath)?.let { bm ->
-                        currentUrl.value = "file://${cached.absolutePath}"
-                        extractColorFromBitmap(bm)
-                    }
+        if (bitmap != null) {
+            publishWallpaper(bitmap)
+            Log.i(TAG, "wallpaper ready in ${SystemClock.elapsedRealtime() - startedAt} ms")
+            return
+        }
+
+        // Offline, or an image that arrived broken: whatever the cache already holds becomes the
+        // wallpaper, picked at random so consecutive starts do not all show the same picture.
+        withContext(Dispatchers.IO) {
+            WallpaperCacheManager.getRandomCachedFile()?.let { cached ->
+                BitmapFactory.decodeFile(cached.absolutePath)?.let { fallback ->
+                    currentUrl.value = "file://${cached.absolutePath}"
+                    publishWallpaper(fallback)
                 }
             }
         }
     }
 
-    private fun extractColorFromBitmap(bitmap: Bitmap) {
+    /** The image URL the wallpaper endpoint redirects to, or null when it cannot be reached. */
+    private fun resolveWallpaperUrl(): String? = try {
+        val conn = URL(WALLPAPER_ENDPOINT).openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = false
+        conn.connectTimeout = 5000
+        conn.readTimeout = 5000
+        val redirect = conn.getHeaderField("Location")
+        val url = if (!redirect.isNullOrBlank()) redirect else conn.url.toString()
+        conn.disconnect()
+        url
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Publishes [bitmap] as the wallpaper and measures the colour the theme is seeded with.
+     *
+     * Both happen off the main thread. The measurement also no longer copies the whole image first:
+     * a custom background is decoded on the way into the app, and that copy plus a `getPixel` call
+     * per sample was megabytes of allocation and thousands of JNI round trips on a frame that was
+     * only just starting up.
+     */
+    private suspend fun publishWallpaper(bitmap: Bitmap) {
+        val color = withContext(Dispatchers.Default) { averageColorOf(bitmap) }
         wallpaperBitmap.value = bitmap.asImageBitmap()
-        val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return
-        val scaled = Bitmap.createScaledBitmap(mutable, 48, 48, true)
-        var r = 0; var g = 0; var b = 0; var count = 0
-        for (x in 0 until scaled.width) {
-            for (y in 0 until scaled.height) {
-                val pixel = scaled.getPixel(x, y)
-                if (android.graphics.Color.alpha(pixel) > 128) {
-                    r += android.graphics.Color.red(pixel)
-                    g += android.graphics.Color.green(pixel)
-                    b += android.graphics.Color.blue(pixel)
-                    count++
-                }
+        if (color != null) dominantColor.value = color
+    }
+
+    /** Mean colour of the opaque pixels of [bitmap], measured from a [COLOR_SAMPLE]² reduction. */
+    private fun averageColorOf(bitmap: Bitmap): Color? {
+        val scaled = Bitmap.createScaledBitmap(bitmap, COLOR_SAMPLE, COLOR_SAMPLE, true)
+        val pixels = IntArray(COLOR_SAMPLE * COLOR_SAMPLE)
+        scaled.getPixels(pixels, 0, COLOR_SAMPLE, 0, 0, COLOR_SAMPLE, COLOR_SAMPLE)
+        // `createScaledBitmap` hands back the source itself when it is already the right size.
+        if (scaled !== bitmap) scaled.recycle()
+
+        var r = 0L
+        var g = 0L
+        var b = 0L
+        var count = 0
+        for (pixel in pixels) {
+            if (android.graphics.Color.alpha(pixel) > 128) {
+                r += android.graphics.Color.red(pixel)
+                g += android.graphics.Color.green(pixel)
+                b += android.graphics.Color.blue(pixel)
+                count++
             }
         }
-        if (count > 0) {
-            dominantColor.value = Color(
-                red = (r.toFloat() / count / 255f).coerceIn(0f, 1f),
-                green = (g.toFloat() / count / 255f).coerceIn(0f, 1f),
-                blue = (b.toFloat() / count / 255f).coerceIn(0f, 1f),
-            )
-        }
+        if (count == 0) return null
+        return Color(
+            red = (r.toFloat() / count / 255f).coerceIn(0f, 1f),
+            green = (g.toFloat() / count / 255f).coerceIn(0f, 1f),
+            blue = (b.toFloat() / count / 255f).coerceIn(0f, 1f),
+        )
     }
 
     fun extractDominantColor(result: ImageResult) {
@@ -136,7 +215,7 @@ object AnimeWallpaperState {
         // BitmapDrawable bailed out silently, which left `wallpaperBitmap` empty: every glass
         // surface then fell back to its opaque material while the wallpaper still displayed.
         val bitmap = runCatching { result.drawable.toBitmap() }.getOrNull() ?: return
-        extractColorFromBitmap(bitmap)
+        scope.launch { publishWallpaper(bitmap) }
     }
 }
 
@@ -147,17 +226,35 @@ fun AnimeBackground(enabled: Boolean) {
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
-        AnimeWallpaperState.ensureFetched(context)
+        AnimeWallpaperState.ensureFetched(context, wanted = true)
     }
 
-    val customBmp = AnimeWallpaperState.customBitmap.value
+    // Painted from the decoded bitmap, never from the URL. The splash does not hand over until this
+    // bitmap is in memory, so the first frame behind it already shows the wallpaper; giving the URL
+    // to Coil instead downloaded the same image a second time and faded it in over 600 ms, which is
+    // the wallpaper arriving after the app that the splash is supposed to rule out.
+    val wallpaper = AnimeWallpaperState.activeBitmap
     val url = AnimeWallpaperState.currentUrl.value
 
-    var imageLoaded by remember { mutableStateOf(false) }
-    val imageAlpha by animateFloatAsState(
-        targetValue = if (imageLoaded) 1f else 0f,
+    // No fade when it is already there (the normal case — anything else is a late arrival the splash
+    // gave up on, and that one fades in rather than snapping on under the UI).
+    var appeared by remember { mutableStateOf(wallpaper != null) }
+    val wallpaperAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
         animationSpec = tween(durationMillis = 600),
         label = "bgFadeIn",
+    )
+    LaunchedEffect(wallpaper) {
+        if (wallpaper != null) appeared = true
+    }
+
+    // Coil is the last resort now: a URL whose image never became a bitmap, i.e. a download that
+    // failed here but may still succeed on a second try.
+    var fallbackLoaded by remember { mutableStateOf(false) }
+    val fallbackAlpha by animateFloatAsState(
+        targetValue = if (fallbackLoaded) 1f else 0f,
+        animationSpec = tween(durationMillis = 600),
+        label = "bgFadeInFallback",
     )
 
     Box(
@@ -167,13 +264,14 @@ fun AnimeBackground(enabled: Boolean) {
             // softening the wallpaper also washed out every pane that samples it.
             .alpha(1f)
     ) {
-        if (customBmp != null) {
-            imageLoaded = true
-            androidx.compose.foundation.Image(
-                bitmap = customBmp,
+        if (wallpaper != null) {
+            Image(
+                bitmap = wallpaper,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = wallpaperAlpha },
             )
         } else if (url != null) {
             AsyncImage(
@@ -184,9 +282,9 @@ fun AnimeBackground(enabled: Boolean) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = imageAlpha },
+                    .graphicsLayer { alpha = fallbackAlpha },
                 onSuccess = { state ->
-                    imageLoaded = true
+                    fallbackLoaded = true
                     AnimeWallpaperState.extractDominantColor(state.result)
                 },
             )

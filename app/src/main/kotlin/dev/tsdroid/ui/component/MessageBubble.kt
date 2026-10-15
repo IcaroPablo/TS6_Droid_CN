@@ -9,6 +9,7 @@ import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -73,6 +75,12 @@ import java.util.Locale
  * Provided by the screen that hosts the glass (see `ServerScreen.ChatPanel`).
  */
 val LocalGlassWallpaper = compositionLocalOf<ImageBitmap?> { null }
+
+/**
+ * Widest a bubble may get. Bubbles hug their text; only this cap keeps a long message from spanning
+ * the whole panel, and it is also what a media bubble grows to.
+ */
+private val BubbleMaxWidth = 300.dp
 
 // Match BBCode [img]URL[/img]
 private val IMG_BBCODE = Regex("""\[img](.*?)\[/img]""", RegexOption.IGNORE_CASE)
@@ -132,78 +140,84 @@ fun MessageBubble(
     val bubbleTint = if (isMe) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surfaceVariant
 
-    GlassCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(
-                start = if (isMe) 48.dp else 0.dp,
-                end = if (isMe) 0.dp else 48.dp,
-            ),
-        // The wallpaper this screen is actually painting, published by the panel that hosts the
-        // chat: reading the decoded wallpaper directly would frost a bubble even while the anime
-        // background is switched off.
-        wallpaper = LocalGlassWallpaper.current,
-        shape = RoundedCornerShape(12.dp),
-        elevation = 3.dp,
+    // A chat bubble hugs its text and sits on its sender's side.
+    //
+    // It used to be `fillMaxWidth()` with a fixed 48dp indent on one side: a two-character message
+    // then printed a screen-wide band — the glass card *plus* the side tint inside it, the "two
+    // layers" — and the sender's own text still started at the left edge, so it read like the other
+    // party's message. Content that is genuinely wide (attachments, images) still fills the bubble.
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        Column(
-            modifier = Modifier
-                // The side tint still carries the meaning ("mine" vs "theirs"), but as a thin
-                // translucent wash over the glass instead of an opaque container fill.
-                .background(bubbleTint.copy(alpha = 0.45f))
-                .padding(8.dp),
+        GlassCard(
+            modifier = Modifier.widthIn(max = BubbleMaxWidth),
+            // The wallpaper this screen is actually painting, published by the panel that hosts the
+            // chat: reading the decoded wallpaper directly would frost a bubble even while the anime
+            // background is switched off.
+            wallpaper = LocalGlassWallpaper.current,
+            shape = RoundedCornerShape(12.dp),
+            elevation = 3.dp,
         ) {
-            if (!isMe) {
+            Column(
+                modifier = Modifier
+                    // The side tint still carries the meaning ("mine" vs "theirs"), but as a thin
+                    // translucent wash over the glass instead of an opaque container fill.
+                    .background(bubbleTint.copy(alpha = 0.45f))
+                    .padding(8.dp),
+            ) {
+                if (!isMe) {
+                    Text(
+                        text = message.sender,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                if (message.fileAttachment != null) {
+                    FileAttachmentCard(message.fileAttachment, onDownload, autoLoadImages)
+                } else {
+                    // Text content
+                    if (parsed.text.isNotBlank()) {
+                        Text(
+                            text = parsed.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+
+                    // Video thumbnails
+                    for (thumbUrl in parsed.thumbnailUrls) {
+                        AsyncImage(
+                            model = thumbUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.FillWidth,
+                        )
+                    }
+
+                    // Images
+                    for (imageUrl in parsed.imageUrls) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = stringResource(R.string.image),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.FillWidth,
+                        )
+                    }
+                }
+
                 Text(
-                    text = message.sender,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = timeFormat.format(Date(message.timestamp)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalContentColor.current.copy(alpha = 0.7f),
                 )
             }
-
-            if (message.fileAttachment != null) {
-                FileAttachmentCard(message.fileAttachment, onDownload, autoLoadImages)
-            } else {
-                // Text content
-                if (parsed.text.isNotBlank()) {
-                    Text(
-                        text = parsed.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-
-                // Video thumbnails
-                for (thumbUrl in parsed.thumbnailUrls) {
-                    AsyncImage(
-                        model = thumbUrl,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.FillWidth,
-                    )
-                }
-
-                // Images
-                for (imageUrl in parsed.imageUrls) {
-                    AsyncImage(
-                        model = imageUrl,
-                        contentDescription = stringResource(R.string.image),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.FillWidth,
-                    )
-                }
-            }
-
-            Text(
-                text = timeFormat.format(Date(message.timestamp)),
-                style = MaterialTheme.typography.labelSmall,
-                color = LocalContentColor.current.copy(alpha = 0.7f),
-            )
         }
     }
 }

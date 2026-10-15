@@ -26,7 +26,6 @@ import dev.tsdroid.data.MessageStore
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.service.ReconnectStatus
 import dev.tsdroid.service.TsConnectionService
-import dev.tsdroid.service.WhisperManager
 import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.Event
@@ -110,8 +109,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private val _mutedUserIds = MutableStateFlow<Set<Int>>(emptySet())
     val mutedUserIds: StateFlow<Set<Int>> = _mutedUserIds.asStateFlow()
 
-    // Whisper (密聊) state — bridged from WhisperManager
-
     // Users with isTalking patched from talk status events
     private val _users = MutableStateFlow<List<User>>(emptyList())
     val users: StateFlow<List<User>> = _users.asStateFlow()
@@ -132,8 +129,12 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val privateMessages: StateFlow<Map<Int, List<ChatMessage>>> = _privateMessages.asStateFlow()
 
     // Separate PTT mode from actual mute state
-    private val _isPttMode = MutableStateFlow(true) // true = PTT, false = voice activity
-    val isPttMode: StateFlow<Boolean> = _isPttMode.asStateFlow()
+    /**
+     * Push-to-talk vs voice activity. Persisted, because the floating window has to render the same
+     * mode: a talk button that mutes on release would fight voice activity.
+     */
+    val isPttMode: StateFlow<Boolean> = settingsStore.pushToTalk
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     private val _isOutputMuted = MutableStateFlow(false)
     val isOutputMuted: StateFlow<Boolean> = _isOutputMuted.asStateFlow()
@@ -170,7 +171,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     val animeBackground: StateFlow<Boolean> = settingsStore.animeBackground
-        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val noiseSuppression: StateFlow<Boolean> = settingsStore.noiseSuppression
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -622,19 +623,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         scheduleSave()
     }
 
-    // ── Whisper (密聊) ──────────────────────────────────────────
-
-    fun toggleWhisper(userId: Int) {
-        WhisperManager.toggleWhisper(userId)
-    }
-
-    fun sendWhisperMessage(text: String) {
-        WhisperManager.sendWhisperMessage(text)
-    }
-
-    val whisperCandidateUsers: List<User>
-        get() = _users.value.filter { it.id != tsClient?.clientId }
-
     fun moveToChannel(channelId: Long) {
         tsClient?.moveToChannel(channelId)
     }
@@ -665,8 +653,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleVoiceMode() {
-        val newPttMode = !_isPttMode.value
-        _isPttMode.value = newPttMode
+        val newPttMode = !isPttMode.value
+        viewModelScope.launch { settingsStore.setPushToTalk(newPttMode) }
         // When switching to PTT mode, mute. When switching to VA, unmute.
         audioBridge?.setMuted(newPttMode)
     }
