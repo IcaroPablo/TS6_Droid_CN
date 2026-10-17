@@ -66,19 +66,25 @@ jobs:
 
       - name: Rename APK and compute SHA-256
         run: |
-          NAME="TS6-Mobile-${GITHUB_REF_NAME}-release.apk"
+          # 资产名沿用本仓库既有约定（此前为 TS6_Droid_Han-2.1.5.apk）：
+          # 去掉 tag 的 v 前缀与 -Han 后缀，得到 TS6_Droid_Han-<版本>.apk
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION%-Han}"
+          NAME="TS6_Droid_Han-${VERSION}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$NAME"
           sha256sum "$NAME" > "$NAME.sha256"
           echo "ASSET=$NAME" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: TS6 Droid 简中版 v${{ env.VERSION }}-Han
           files: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
           body: |
-            TS6 Mobile ${{ github.ref_name }}
+            TS6 Droid 简中版 ${{ github.ref_name }}
 
             - 正式签名安装包：`${{ env.ASSET }}`（可直接覆盖更新）
             - SHA-256 校验值见同名 `.sha256` 文件
