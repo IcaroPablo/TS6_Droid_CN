@@ -208,12 +208,18 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             val service = TsConnectionService.instance
             if (service == null) {
                 _connectionState.value = ConnectionState.DISCONNECTED
-                _error.value = "Failed to start background service."
+                _error.value = getApplication<Application>().getString(R.string.error_service_start_failed)
                 return@launch
             }
 
             try {
                 val identity = getOrCreateIdentity()
+                // NOTE: this identity is deliberately NOT closed here. The service
+                // keeps it in SessionParams and borrows the native handle again on
+                // every auto-reconnect attempt; Identity.borrow() throws once
+                // close() has been called, so closing it would silently kill
+                // auto-reconnect. Destruction is deferred by the borrow protocol
+                // until the last client releases it.
                 val pw = password.value.trim().takeIf { it.isNotEmpty() }
                 var connectionFailure = service.connect(addr, identity, nick, pw)
                 if (connectionFailure?.isTooManyClonesFailure() == true) {
@@ -370,55 +376,63 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             try {
                 val channels = withContext(Dispatchers.IO) {
-                    val identity = getOrCreateIdentity()
-                    val pw = password.value.trim().takeIf { it.isNotEmpty() }
-                    var lastFailure: Throwable? = null
+                    // Probe with a throwaway identity: browsing must not sign
+                    // in with the user's persistent identity — the server log
+                    // records the quick joins, and an active session with the
+                    // same identity risks a toomanyclones kick
+                    val identity = Identity()
+                    try {
+                        val pw = password.value.trim().takeIf { it.isNotEmpty() }
+                        var lastFailure: Throwable? = null
 
-                    for (attempt in 0 until MAX_NICKNAME_COLLISION_ATTEMPTS) {
-                        val candidateNick = nicknameWithCollisionSuffix(nick, attempt)
-                        var client: Client? = null
-                        try {
+                        for (attempt in 0 until MAX_NICKNAME_COLLISION_ATTEMPTS) {
+                            val candidateNick = nicknameWithCollisionSuffix(nick, attempt)
+                            var client: Client? = null
                             try {
-                                identity.setNickname(candidateNick)
-                            } catch (e: Throwable) {
-                                if (e is CancellationException) throw e
-                                Log.w(TAG, "Failed to update identity nickname before browsing", e)
-                            }
-                            val c = Client(addr, identity, candidateNick, pw, null)
-                            client = c
-                            c.waitConnected()
-                            // Pump events until channels are available (or timeout)
-                            val deadline = System.currentTimeMillis() + 5000
-                            while (System.currentTimeMillis() < deadline) {
-                                c.processEvents()
-                                val raw = c.channels
-                                if (raw != null && raw.isNotEmpty()) break
-                                Thread.sleep(20)
-                            }
+                                try {
+                                    identity.setNickname(candidateNick)
+                                } catch (e: Throwable) {
+                                    if (e is CancellationException) throw e
+                                    Log.w(TAG, "Failed to update identity nickname before browsing", e)
+                                }
+                                val c = Client(addr, identity, candidateNick, pw, null)
+                                client = c
+                                c.waitConnected()
+                                // Pump events until channels are available (or timeout)
+                                val deadline = System.currentTimeMillis() + 5000
+                                while (System.currentTimeMillis() < deadline) {
+                                    c.processEvents()
+                                    val raw = c.channels
+                                    if (raw != null && raw.isNotEmpty()) break
+                                    Thread.sleep(20)
+                                }
 
-                            if (hasNicknameCollision(c.users, c.clientId, candidateNick)) {
-                                lastFailure = IllegalStateException("Nickname already in use: $candidateNick")
+                                if (hasNicknameCollision(c.users, c.clientId, candidateNick)) {
+                                    lastFailure = IllegalStateException("Nickname already in use: $candidateNick")
+                                    disconnectAndClose(c)
+                                    client = null
+                                    continue
+                                }
+
+                                val ch = c.channels?.filterNotNull() ?: emptyList()
                                 disconnectAndClose(c)
                                 client = null
-                                continue
+                                return@withContext ch
+                            } catch (e: Throwable) {
+                                if (e is CancellationException) throw e
+                                lastFailure = e
+                            } finally {
+                                client?.let { closeQuietly(it) }
                             }
-
-                            val ch = c.channels?.filterNotNull() ?: emptyList()
-                            disconnectAndClose(c)
-                            client = null
-                            return@withContext ch
-                        } catch (e: Throwable) {
-                            if (e is CancellationException) throw e
-                            lastFailure = e
-                        } finally {
-                            client?.let { closeQuietly(it) }
                         }
-                    }
 
-                    throw Exception(
-                        "Browse failed after trying unique nicknames",
-                        lastFailure,
-                    )
+                        throw Exception(
+                            "Browse failed after trying unique nicknames",
+                            lastFailure,
+                        )
+                    } finally {
+                        identity.close()
+                    }
                 }
                 browsedChannels.value = channels
                 showChannelPicker.value = true

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,8 +14,8 @@ android {
         applicationId = "com.yuaxi.ts6droid.cn"
         minSdk = 29
         targetSdk = 35
-        versionCode = 10
-        versionName = "2.1.5-Han"
+        versionCode = 11
+        versionName = "2.1.6-Han"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -28,12 +30,28 @@ android {
     }
 
     signingConfigs {
-        if (file("${rootDir}/release.keystore").exists()) {
+        // Signing credentials come from environment variables (CI) or from a
+        // gitignored keystore.properties next to release.keystore (local
+        // builds). No password is ever stored in this repository. Without
+        // either source the build falls back to the debug key, so plain
+        // `assembleDebug` keeps working out of the box.
+        val keystoreFile = file(System.getenv("SIGNING_KEYSTORE_FILE") ?: "${rootDir}/release.keystore")
+        val localProps = Properties().apply {
+            val f = file("${rootDir}/keystore.properties")
+            if (f.exists()) f.inputStream().use { load(it) }
+        }
+        fun credential(envName: String, propName: String): String? =
+            System.getenv(envName) ?: localProps.getProperty(propName)
+
+        val storePass = credential("SIGNING_STORE_PASSWORD", "storePassword")
+        val keyAliasName = credential("SIGNING_KEY_ALIAS", "keyAlias")
+        val keyPass = credential("SIGNING_KEY_PASSWORD", "keyPassword")
+        if (keystoreFile.exists() && storePass != null && keyAliasName != null && keyPass != null) {
             create("release") {
-                storeFile = file("${rootDir}/release.keystore")
-                storePassword = "ts6droid"
-                keyAlias = "ts6droid"
-                keyPassword = "ts6droid"
+                storeFile = keystoreFile
+                storePassword = storePass
+                keyAlias = keyAliasName
+                keyPassword = keyPass
             }
         }
     }
@@ -45,13 +63,29 @@ android {
             }
         }
         release {
-            isMinifyEnabled = false
+            // Shrinking is what keeps the APK near ~15 MB instead of ~70 MB:
+            // without it every unused class is packaged, including the ~11k
+            // Material icon classes (see proguard-rules.pro for the JNI keep
+            // rule). Crash reports then need mapping.txt to be readable, which
+            // the release workflow archives.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
             if (signingConfigs.names.contains("release")) {
                 signingConfig = signingConfigs.getByName("release")
+            } else {
+                // No release credentials on this machine: fall back to the debug
+                // key so `assembleRelease` still emits an installable APK for
+                // local size/behaviour testing. The release workflow always
+                // injects the real keystore, so published builds are unaffected.
+                logger.warn(
+                    "release: SIGNING_* credentials are not set — signing with the " +
+                        "DEBUG key. Do not distribute this APK."
+                )
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
     }
@@ -113,5 +147,14 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
+    implementation(libs.mikepenz.markdown.m3)
     debugImplementation(libs.androidx.ui.tooling)
+
+    testImplementation(libs.junit)
+}
+
+tasks.withType<Test>().configureEach {
+    // Non-ASCII project paths on Windows break class loading unless the
+    // test worker reads paths as UTF-8
+    jvmArgs("-Dfile.encoding=UTF-8")
 }

@@ -5,12 +5,14 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioRecordingConfiguration
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Handler
 import android.os.Looper
@@ -47,10 +49,31 @@ class AudioBridge(
         private const val TAG = "AudioBridge"
         const val SAMPLE_RATE = 48000
         const val CODEC_OPUS_VOICE = 4
+        const val CODEC_OPUS_MUSIC = 5
+
+        /** Output volume multiplier while another app holds transient focus (can-duck). */
+        private const val DUCK_FACTOR = 0.3f
+
+        /**
+         * Output gain stage with a soft knee: linear below half scale
+         * (unity listening is untouched), smoothly compressed above — an
+         * boosted mix tops out near full scale instead of hard-clipping.
+         * Slope-continuous at the knee (k=2 keeps the derivative at 1).
+         */
+        internal fun softClip(x: Float): Short {
+            val t = x / 32767f
+            val limited = when {
+                t > 0.5f -> 0.5f + 0.5f * (1f - 1f / (1f + (t - 0.5f) * 2f))
+                t < -0.5f -> -(0.5f + 0.5f * (1f - 1f / (1f + (-t - 0.5f) * 2f)))
+                else -> t
+            }
+            return (limited * 32767f).toInt().toShort()
+        }
         private const val FRAME_SIZE_MS = 20
         private const val FRAME_SIZE_SAMPLES = SAMPLE_RATE * FRAME_SIZE_MS / 1000 // 960
         private const val FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2 // 16-bit PCM = 2 bytes/sample
         private const val MAX_QUEUE_FRAMES = 10 // Max buffered frames per user
+    private const val TRACK_BUFFER_FRAMES = 8 // 160ms of output capacity
 
         /**
          * Exact digital silence for this long means the system muted/silenced our
@@ -96,8 +119,31 @@ class AudioBridge(
     private val userDecoders = ConcurrentHashMap<Int, OpusCodec>()
     private val userQueues = ConcurrentHashMap<Int, ArrayDeque<ByteArray>>()
 
+    /**
+     * Wake signal for the playback loop. Capacity 1: the loop only needs to know
+     * "there is something to do", and a full slot means it has not woken up yet,
+     * so dropping extra offers is correct. This is what lets the idle branch wait
+     * for up to 250 ms instead of polling 50 times a second.
+     */
+    private val playbackWake = java.util.concurrent.ArrayBlockingQueue<Boolean>(1)
+
     private var audioTrack: AudioTrack? = null
     private var noiseSuppressor: NoiseSuppressor? = null
+    private var acousticEchoCanceler: AcousticEchoCanceler? = null
+
+    private var audioFocusRequest: AudioFocusRequest? = null
+
+    // Retry job for focus acquisition after a permanent loss (the system never
+    // dispatches GAIN for those)
+    private var focusRetryJob: Job? = null
+
+    // Output pause while another app holds audio focus (navigation, calls…)
+    @Volatile
+    private var outputSuspendedByFocus = false
+
+    // Output volume reduction while another app plays a short prompt (can-duck)
+    @Volatile
+    private var duckedByFocus = false
 
     private var playbackJob: Job? = null
 
@@ -150,8 +196,59 @@ class AudioBridge(
     @Volatile
     var gainFactor: Float = 1.0f
 
+    /**
+     * Manual mic gain multiplier applied to captured samples before VAD and
+     * encoding. 1.0 = unity; 0 = mic off (the capture loop skips VAD and
+     * transmission entirely); values above 1 are soft-clipped against
+     * full scale so a loud room cannot hard-clip the boosted signal.
+     */
+    @Volatile
+    var micGainFactor: Float = 1.0f
+
+    @Volatile
+    var micMode: MicMode = MicMode.PTT
+        private set
+
+    @Volatile
+    var vadThresholdDb: Float = VadGate.DEFAULT_THRESHOLD_DB
+        private set
+
+    private val vadGate = VadGate()
+
+    fun setMicMode(mode: MicMode) {
+        micMode = mode
+        vadGate.reset()
+    }
+
+    fun setVadThresholdDb(db: Float) {
+        vadThresholdDb = db
+    }
+
     @Volatile
     private var mutedUserIds: Set<Int> = emptySet()
+
+    // Per-user playback gain in dB (keyed by client id, session-scoped)
+    private val userGainsDb = ConcurrentHashMap<Int, Float>()
+
+    fun setUserGainDb(userId: Int, db: Float) {
+        if (db == 0f) userGainsDb.remove(userId) else userGainsDb[userId] = db
+    }
+
+    /**
+     * Drop queues, decoders and gains for clients that are no longer on the
+     * server, so recycled client ids never inherit old state.
+     */
+    fun pruneUsers(activeIds: Set<Int>) {
+        for (id in userDecoders.keys) {
+            if (id !in activeIds) {
+                userDecoders.remove(id)?.let { decoder ->
+                    try { decoder.close() } catch (_: Exception) {}
+                }
+            }
+        }
+        userQueues.keys.retainAll(activeIds)
+        userGainsDb.keys.retainAll(activeIds)
+    }
 
     private val _isMuted = MutableStateFlow(true) // Start muted (PTT default)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
@@ -195,8 +292,19 @@ class AudioBridge(
             encoder = OpusCodec(audioConfig)
             initAudioTrack()
             startPlaybackLoop()
+            // Field diagnostics: a silent session with the volume keys still
+            // showing media almost always means this line says track=null or
+            // callVol=0 — the init error (if any) is logged just above.
+            audioManager?.let { manager ->
+                Log.i(
+                    TAG,
+                    "Voice path init: mode=${manager.mode} track=${audioTrack != null} " +
+                        "callVol=${manager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)}/" +
+                        manager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL),
+                )
+            }
         } catch (e: Exception) {
-            android.util.Log.e("TS6_DEBUG", "Caught audio initialization friction safely", e)
+            Log.e(TAG, "Audio init failed — playback stays down until re-join", e)
             // We don't throw here to prevent JE_AppCustomException
         }
     }
@@ -225,6 +333,7 @@ class AudioBridge(
             _micStatus.value = MicStatus.STARTING
             val generation = ++captureGeneration
             registerRecordingCallback()
+            requestAudioFocus()
             captureJob = captureScope.launch { runCaptureLoop(generation) }
             Log.i(TAG, "Capture requested (generation=$generation, noiseSuppression=$noiseSuppressionEnabled)")
         }
@@ -260,6 +369,12 @@ class AudioBridge(
         _isLocalVoiceActive.value = false
         resetInputLevel()
         _micStatus.value = MicStatus.IDLE
+        // Focus and echo cancellation belong to the session, so they are released
+        // here rather than in the capture loop.
+        abandonAudioFocus()
+        acousticEchoCanceler?.release()
+        acousticEchoCanceler = null
+        vadGate.reset()
         Log.i(TAG, "Capture stopped")
     }
 
@@ -389,13 +504,23 @@ class AudioBridge(
                 return CaptureOutcome.RECOVER
             }
 
-            if (!_isMuted.value) {
+            if (!_isMuted.value && micGainFactor != 0f) {
+                // Microphone gain is applied before the VAD gate and the encoder
+                // so "turn it up and be heard" behaves the same in every mic mode.
+                // (micGainFactor == 0 means the user pulled the slider to 0%.)
+                val micGain = micGainFactor
+                if (micGain != 1f) {
+                    for (i in 0 until read) {
+                        // softClip keeps a boosted signal from wrapping around
+                        buffer[i] = softClip(buffer[i] * micGain)
+                    }
+                }
+
                 var energy = 0L
                 for (i in 0 until read) {
                     energy += buffer[i].toLong() * buffer[i].toLong()
                 }
                 val rms = Math.sqrt(energy.toDouble() / read)
-                _isLocalVoiceActive.value = rms > 150.0 // Adjusted threshold for voice activity
                 publishInputLevel(rms)
 
                 if (isDigitalSilence(buffer, read)) {
@@ -412,14 +537,34 @@ class AudioBridge(
                     silentFrames = 0
                 }
 
-                val pcmBytes = shortsToBytes(buffer)
-                try {
-                    val encoded = codec.encode(pcmBytes)
-                    tsClient.sendAudio(encoded, CODEC_OPUS_VOICE)
-                } catch (_: Exception) {
+                if (micMode == MicMode.VAD) {
+                    // Voice activation: the gate — not this loop — decides which
+                    // frames leave the device, and it replays the pre-roll so a
+                    // word onset that started below the threshold is not clipped.
+                    vadGate.openThresholdDb = vadThresholdDb
+                    val toSend = vadGate.process(buffer, System.currentTimeMillis())
+                    if (toSend != null) {
+                        for (frame in toSend) {
+                            try {
+                                tsClient.sendAudio(codec.encode(shortsToBytes(frame)), CODEC_OPUS_VOICE)
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                    _isLocalVoiceActive.value = vadGate.isActive
+                } else {
+                    _isLocalVoiceActive.value = rms > 150.0 // Adjusted threshold for voice activity
+
+                    val pcmBytes = shortsToBytes(buffer)
+                    try {
+                        val encoded = codec.encode(pcmBytes)
+                        tsClient.sendAudio(encoded, CODEC_OPUS_VOICE)
+                    } catch (_: Exception) {
+                    }
                 }
             } else {
                 silentFrames = 0
+                vadGate.reset()
                 _isLocalVoiceActive.value = false
                 resetInputLevel()
             }
@@ -484,6 +629,7 @@ class AudioBridge(
             throw IllegalStateException("AudioRecord did not start recording (state=$state)")
         }
         attachNoiseSuppressor(record)
+        attachEchoCanceler(record)
         return MicHandle(record)
     }
 
@@ -569,6 +715,121 @@ class AudioBridge(
 
     private enum class CaptureOutcome { STOP, RECOVER }
 
+    /**
+     * Attach echo cancellation for the session, independently of the
+     * noise-suppression toggle: without it, speaker playback bleeds into the
+     * microphone and remote users hear themselves. USAGE_VOICE_COMMUNICATION
+     * implies AEC on most devices, but that is not guaranteed everywhere, so
+     * attach the effect whenever the platform offers one.
+     */
+    private fun attachEchoCanceler(record: AudioRecord) {
+        acousticEchoCanceler?.release()
+        acousticEchoCanceler = null
+        if (AcousticEchoCanceler.isAvailable()) {
+            try {
+                AcousticEchoCanceler.create(record.audioSessionId)?.also {
+                    acousticEchoCanceler = it
+                    Log.i(TAG, "AcousticEchoCanceler enabled (session=${record.audioSessionId})")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to create AcousticEchoCanceler", e)
+            }
+        } else {
+            Log.i(TAG, "AcousticEchoCanceler not available on this device")
+        }
+    }
+
+    /**
+     * Hold audio focus for the duration of a voice session: without it, incoming
+     * calls, navigation prompts and other media apps play over (or under) the
+     * voice stream with no coordination.
+     */
+    private fun requestAudioFocus() {
+        if (audioFocusRequest != null) return
+        val manager = audioManager
+        if (manager == null) {
+            Log.w(TAG, "No AudioManager; skipping audio focus request")
+            return
+        }
+        val focusAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        val listener = AudioManager.OnAudioFocusChangeListener { change ->
+            when (change) {
+                // Permanent loss never gets a GAIN callback afterwards — duck the
+                // output and keep re-requesting in the background until focus comes
+                // back, so a finished call or closed media app restores full volume
+                // without needing a reconnect.
+                AudioManager.AUDIOFOCUS_LOSS -> {
+                    duckedByFocus = true
+                    suspendOutput(false)
+                    startFocusRetry()
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> suspendOutput(true)
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> duckedByFocus = true
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    duckedByFocus = false
+                    suspendOutput(false)
+                    focusRetryJob?.cancel()
+                    focusRetryJob = null
+                }
+            }
+        }
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(focusAttributes)
+            .setOnAudioFocusChangeListener(listener)
+            .build()
+        // Keep the request object even when denied: the retry loop re-uses it
+        audioFocusRequest = request
+        if (manager.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.w(TAG, "Audio focus not granted; ducking output until focus is available")
+            duckedByFocus = true
+            startFocusRetry()
+        }
+    }
+
+    /** Re-request focus with exponential backoff until it is granted again. */
+    private fun startFocusRetry() {
+        if (focusRetryJob?.isActive == true) return
+        focusRetryJob = captureScope.launch {
+            var backoffMs = 2_000L
+            while (isActive && _isCapturing.value) {
+                delay(backoffMs)
+                backoffMs = (backoffMs * 2).coerceAtMost(15_000L)
+                val manager = audioManager ?: break
+                val request = audioFocusRequest ?: break
+                if (manager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    Log.i(TAG, "Audio focus regained after retry")
+                    duckedByFocus = false
+                    suspendOutput(false)
+                    break
+                }
+            }
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        focusRetryJob?.cancel()
+        focusRetryJob = null
+        audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+        audioFocusRequest = null
+        suspendOutput(false)
+        duckedByFocus = false
+    }
+
+    private fun suspendOutput(suspend: Boolean) {
+        if (outputSuspendedByFocus == suspend) return
+        outputSuspendedByFocus = suspend
+        if (suspend) {
+            // Discard anything queued — a resume after a focus gap must not replay
+            // audio the user has already missed.
+            for ((_, queue) in userQueues) {
+                synchronized(queue) { queue.clear() }
+            }
+        }
+    }
+
     /** Owns one [AudioRecord]; [close] is idempotent so either owner may call it. */
     private class MicHandle(val record: AudioRecord) {
         private val closed = AtomicBoolean(false)
@@ -593,7 +854,19 @@ class AudioBridge(
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
-        audioTrack = AudioTrack.Builder()
+        audioTrack = buildAudioTrack(minBuf, lowLatency = true)
+        if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+            // Some devices reject PERFORMANCE_MODE_LOW_LATENCY for voice-usage
+            // tracks — fall back to a plain track rather than going silent
+            Log.w(TAG, "Low-latency voice track not initialized; retrying without performance mode")
+            audioTrack?.release()
+            audioTrack = buildAudioTrack(minBuf, lowLatency = false)
+        }
+        audioTrack?.play()
+    }
+
+    private fun buildAudioTrack(minBuf: Int, lowLatency: Boolean): AudioTrack {
+        val builder = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_GAME)
@@ -607,10 +880,11 @@ class AudioBridge(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(maxOf(minBuf, FRAME_SIZE_BYTES * 4))
-            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-            .build()
-        audioTrack?.play()
+            .setBufferSizeInBytes(maxOf(minBuf, FRAME_SIZE_BYTES * TRACK_BUFFER_FRAMES))
+        if (lowLatency) {
+            builder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+        }
+        return builder.build()
     }
 
     /**
@@ -634,31 +908,48 @@ class AudioBridge(
                         val pcmBytes = decoder.decode(opusData)
                         bytesToShorts(pcmBytes, decodeBuffer)
                         hasData = true
-                        // Mix: sum with clipping
-                        for (i in mixBuffer.indices) {
-                            val sum = mixBuffer[i].toInt() + decodeBuffer[i].toInt()
-                            mixBuffer[i] = sum.coerceIn(
-                                Short.MIN_VALUE.toInt(),
-                                Short.MAX_VALUE.toInt(),
-                            ).toShort()
+                        // Per-user gain (dB) applied before summing
+                        val gainDb = userGainsDb[userId]
+                        if (gainDb != null && gainDb != 0f) {
+                            val g = VadGate.dbToGain(gainDb)
+                            for (i in mixBuffer.indices) {
+                                val sum = mixBuffer[i] + (decodeBuffer[i] * g).toInt()
+                                mixBuffer[i] = sum.coerceIn(
+                                    Short.MIN_VALUE.toInt(),
+                                    Short.MAX_VALUE.toInt(),
+                                ).toShort()
+                            }
+                        } else {
+                            // Mix: sum with clipping
+                            for (i in mixBuffer.indices) {
+                                val sum = mixBuffer[i].toInt() + decodeBuffer[i].toInt()
+                                mixBuffer[i] = sum.coerceIn(
+                                    Short.MIN_VALUE.toInt(),
+                                    Short.MAX_VALUE.toInt(),
+                                ).toShort()
+                            }
                         }
                     } catch (_: Exception) {}
                 }
 
-                if (hasData) {
-                    val gain = gainFactor
+                if (hasData && !outputSuspendedByFocus) {
+                    // Focus ducking multiplies the user gain — audio stays
+                    // faintly audible under another app's short prompt
+                    val gain = gainFactor * (if (duckedByFocus) DUCK_FACTOR else 1f)
                     if (gain != 1.0f) {
                         for (i in mixBuffer.indices) {
-                            mixBuffer[i] = (mixBuffer[i] * gain).toInt()
-                                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                                .toShort()
+                            mixBuffer[i] = softClip(mixBuffer[i] * gain)
                         }
                     }
                     val bytes = shortsToBytes(mixBuffer)
                     audioTrack?.write(bytes, 0, bytes.size)
                 } else {
-                    // No audio data — sleep briefly to avoid busy-waiting
-                    delay(5)
+                    // No audio data — block until a frame arrives (playAudio
+                    // offers the wake signal) or the idle safety-net timeout
+                    // elapses. Speech onset stays instant because the offer
+                    // wakes this loop immediately; the long timeout only keeps
+                    // pure silence at ~4 wakeups/s instead of 50.
+                    playbackWake.poll(250, java.util.concurrent.TimeUnit.MILLISECONDS)
                 }
             }
         }
@@ -675,6 +966,8 @@ class AudioBridge(
     fun playAudio(userId: Int, opusData: ByteArray) {
         if (userId in mutedUserIds) return
         if (_isOutputMuted.value) return // Global output mute — discard incoming audio
+        if (gainFactor == 0f) return // Speaker slider at 0% — same as muted, skip the work
+        if (outputSuspendedByFocus) return // Another app holds focus — discard instead of queueing
         val queue = userQueues.getOrPut(userId) { ArrayDeque() }
         synchronized(queue) {
             // Keep the queue bounded and always favour the freshest audio: once it is full,
@@ -686,6 +979,9 @@ class AudioBridge(
             }
             queue.addLast(opusData)
         }
+        // Wake the playback loop out of its idle wait so onset is immediate.
+        // Offer (never put) so a full slot can never block the audio callback.
+        playbackWake.offer(true)
     }
 
     fun setMuted(muted: Boolean) {
@@ -723,6 +1019,8 @@ class AudioBridge(
         audioTrack = null
         noiseSuppressor?.release()
         noiseSuppressor = null
+        acousticEchoCanceler?.release()
+        acousticEchoCanceler = null
         encoder?.close()
         encoder = null
         // Close per-user decoders

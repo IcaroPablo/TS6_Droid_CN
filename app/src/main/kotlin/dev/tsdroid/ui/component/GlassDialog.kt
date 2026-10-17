@@ -1,8 +1,12 @@
 package dev.tsdroid.ui.component
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,8 +16,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -25,16 +33,21 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 
 /**
  * The screen's overlay slot: at most one [GlassDialog] draws here at a time.
@@ -189,6 +202,121 @@ private fun GlassDialogPanel(
                         dismissButton?.invoke()
                         confirmButton()
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A bottom sheet in the app's frosted material.
+ *
+ * Material's `ModalBottomSheet` opens a window of its own, so — exactly like `AlertDialog` — there
+ * is no wallpaper inside it to blur and it can only ever be an opaque slab. This draws the same
+ * [LiquidGlassPanel] the dialogs use, anchored to the bottom edge, and routes through
+ * [LocalGlassOverlayHost] so it covers the floating bars too.
+ *
+ * Compose it inside an `if` to own its lifetime. Drag down (or tap the scrim, or use the back
+ * gesture) to dismiss.
+ */
+@Composable
+fun GlassBottomSheet(
+    onDismissRequest: () -> Unit,
+    wallpaper: ImageBitmap? = null,
+    modifier: Modifier = Modifier,
+    zIndex: Float = 4f,
+    body: @Composable ColumnScope.() -> Unit,
+) {
+    val host = LocalGlassOverlayHost.current
+    if (host == null) {
+        GlassBottomSheetPanel(onDismissRequest, wallpaper, modifier, zIndex, body)
+        return
+    }
+
+    SideEffect {
+        host.show {
+            GlassBottomSheetPanel(onDismissRequest, wallpaper, modifier, zIndex, body)
+        }
+    }
+    DisposableEffect(host) { onDispose { host.clear() } }
+}
+
+@Composable
+private fun GlassBottomSheetPanel(
+    onDismissRequest: () -> Unit,
+    wallpaper: ImageBitmap?,
+    modifier: Modifier,
+    zIndex: Float,
+    body: @Composable ColumnScope.() -> Unit,
+) {
+    BackHandler(enabled = true) { onDismissRequest() }
+
+    // Drag-to-dismiss. The offset is plain state while the finger is down (the sheet has to track
+    // it exactly, which an animation cannot do), and is animated back only on release.
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val dismissThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
+
+    Box(modifier = modifier.fillMaxSize().zIndex(zIndex)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.42f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismissRequest,
+                ),
+        )
+        LiquidGlassPanel(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .offset { IntOffset(0, dragOffset.roundToInt()) }
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        dragOffset = (dragOffset + delta).coerceAtLeast(0f)
+                    },
+                    onDragStopped = {
+                        if (dragOffset > dismissThresholdPx) {
+                            onDismissRequest()
+                        } else {
+                            // Suspend animation: no scope needed, and it runs to completion
+                            // before the next drag can start.
+                            animate(initialValue = dragOffset, targetValue = 0f) { value, _ ->
+                                dragOffset = value
+                            }
+                        }
+                    },
+                ),
+            wallpaper = wallpaper,
+            // Only the top corners are rounded: the panel meets the bottom edge of the screen.
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            elevation = 10.dp,
+            contentPadding = PaddingValues(0.dp),
+        ) { contentColor ->
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // The glass itself reaches the bottom edge; only its content has to
+                        // clear the gesture bar, otherwise the panel would float above it.
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 10.dp)
+                        .padding(bottom = 24.dp),
+                ) {
+                    // Grabber: the drag affordance Material's sheet draws, so the sheet still
+                    // reads as draggable now that it is our own panel.
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(bottom = 12.dp)
+                            .size(width = 32.dp, height = 4.dp)
+                            .clip(CircleShape)
+                            .background(LocalContentColor.current.copy(alpha = 0.28f)),
+                    )
+                    body()
                 }
             }
         }

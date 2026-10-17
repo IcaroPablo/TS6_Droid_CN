@@ -43,6 +43,8 @@
     <string name="settings">Paramètres</string>
     <string name="audio_gain">Gain audio</string>
     <string name="audio_gain_value">×%1$.1f</string>
+    <string name="mic_gain">Gain micro</string>
+    <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Miniatures des liens vidéo</string>
     <string name="auto_load_images">Charger les images automatiquement</string>
     <string name="enable_floating_window">Activer la fenêtre flottante</string>
@@ -101,6 +103,31 @@
     <string name="crop_hint">Glissez le cadre blanc pour sélectionner la zone</string>
     <string name="section_appearance">Apparence</string>
     <string name="section_audio">Audio</string>
+    <!-- 身份导出/导入 -->
+    <string name="identity_section">Identité</string>
+    <string name="identity_uid">UID de l\'identité : %1$s</string>
+    <string name="identity_uid_none">Pas encore générée (créée à la première connexion)</string>
+    <string name="identity_export">Exporter</string>
+    <string name="identity_import">Importer</string>
+    <string name="identity_export_success">Identité exportée</string>
+    <string name="identity_export_failed">Échec de l\'export : aucune identité</string>
+    <string name="identity_import_success">Importé ; effectif à la prochaine connexion</string>
+    <string name="identity_import_failed">Échec de l\'import : fichier d\'identité invalide</string>
+    <string name="identity_warning">L\'identité est votre identifiant de compte : l\'importer change votre identité sur les serveurs, et le fichier exporté doit être conservé en sécurité.</string>
+    <string name="mic_mode">Mode du micro</string>
+    <string name="mic_mode_vad">Activation vocale</string>
+    <string name="mic_mode_open">Micro ouvert</string>
+    <string name="vad_threshold">Seuil de déclenchement : %1$d dB</string>
+    <string name="vad_threshold_hint">Les niveaux au-dessus du seuil déclenchent la transmission. -45 dB convient à la plupart des environnements.</string>
+    <string name="user_uid">ID unique</string>
+    <string name="user_platform">Plateforme</string>
+    <string name="user_version">Version</string>
+    <string name="user_country">Pays</string>
+    <string name="user_talkpower">Puissance de parole</string>
+    <string name="user_volume">Volume :</string>
+    <string name="volume_default">par défaut</string>
+    <string name="volume_reset">Réinitialiser le volume</string>
+    <string name="private_message">Message privé</string>
     <string name="section_chat">Chat</string>
     <string name="section_more">Plus</string>
     <string name="update_check">Vérifier les mises à jour</string>
@@ -132,6 +159,9 @@
     <string name="download_not_supported">Téléchargement non pris en charge</string>
     <string name="tap_to_download">Appuyer pour télécharger</string>
     <string name="tap_to_view">Appuyer pour afficher</string>
+    <string name="tap_to_load_images">Appuyez pour charger les images</string>
+    <string name="retry">Réessayer</string>
+    <string name="file_too_large">Fichier supérieur à la limite de 10 Mo — envoi annulé</string>
     <string name="tap_to_open">Appuyer pour ouvrir</string>
     <string name="downloading">Téléchargement\u2026</string>
     <string name="download">Télécharger</string>
@@ -170,9 +200,19 @@
     <string name="error_nickname_too_short">Le pseudo doit contenir au moins 3 caractères</string>
     <string name="connection_failed">Échec de la connexion</string>
     <string name="browse_failed">Échec du parcours des channels</string>
+    <string name="error_overlay_permission_required">Veuillez accorder l\'autorisation « Superposition » pour la fenêtre flottante</string>
+    <string name="error_service_start_failed">Impossible de démarrer le service en arrière-plan</string>
+    <string name="error_not_connected">Non connecté au serveur</string>
+    <string name="download_failed">Échec du téléchargement</string>
+
+
+    <!-- Crash report overlay -->
+    <string name="crash_report_title">Fermeture anormale détectée</string>
+    <string name="common_copy">Copier</string>
+    <string name="common_copied">Copié</string>
 
     <!-- AboutScreen -->
-    <string name="about_software">À propos / About</string>
+    <string name="about_software">À propos</string>
     <string name="about_back">← Retour</string>
     <string name="about_credits_title">Crédits &amp; Origines</string>
     <string name="about_credits_desc">Ce projet est basé sur l\'excellent projet open-source de Grégory D, avec une localisation approfondie et des améliorations de fonctionnalités. Un grand merci à l\'auteur original pour ses contributions exceptionnelles à la communauté vocale open-source !</string>
@@ -200,5 +240,22 @@
     <string name="battery_optimization_action">Régler</string>
     <string name="app_details_settings">Autorisations et démarrage auto</string>
     <string name="app_details_settings_desc">Sur les ROM Xiaomi/Huawei/OPPO/vivo, autorisez ici le démarrage auto, l\'exécution illimitée en arrière-plan et les fenêtres contextuelles</string>
-    <string name="error_overlay_permission_required">Veuillez autoriser l\'affichage par-dessus les autres applications pour utiliser la fenêtre flottante.</string>
+
+    <!-- 应用内日志查看器 -->
+    <string name="diag_log_title">Journal de diagnostic</string>
+    <string name="diag_log_hint">Affiche uniquement le journal de ce processus (sans adb). Appuyez sur actualiser pour recharger.</string>
+    <string name="diag_log_refresh">Actualiser</string>
+    <string name="diag_log_clear">Effacer</string>
+    <string name="diag_log_empty">Aucune entrée de journal</string>
+    <string name="diag_log_loading">Chargement\u2026</string>
+    <string name="back">Retour</string>
+
+    <!-- 服务器信息卡 -->
+    <string name="server_info">Infos du serveur</string>
+    <string name="server_platform_version">Plateforme / version</string>
+    <string name="server_clients">Clients en ligne</string>
+    <string name="server_clients_format">%1$d / %2$d</string>
+    <string name="server_channels">Salons</string>
+    <string name="server_uptime">Disponibilité</string>
+    <string name="server_welcome">Message de bienvenue</string>
 </resources>

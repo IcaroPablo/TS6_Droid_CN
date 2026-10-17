@@ -1,6 +1,9 @@
 package dev.tsdroid.service
 
 import android.graphics.PixelFormat
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -120,6 +123,9 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         private const val RECONNECT_MAX_DELAY_MS = 60000L
         private const val RECONNECT_CHANNEL_RESTORE_DELAY_MS = 1500L
 
+        /** One network handover fires several callbacks; collapse them into one reconnect. */
+        private const val NETWORK_SWITCH_DEBOUNCE_MS = 4000L
+
         /**
          * Longest push-to-talk hold the service will honour.
          *
@@ -133,6 +139,12 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
 
         /** Must match the overlay's reveal animation; the anchor lives for this long after a toggle. */
         private const val REVEAL_ANIMATION_MS = 200L
+
+        /** Poke notifications get unique ids above the fixed connection one. */
+        private const val POKE_NOTIFICATION_BASE_ID = 1000
+
+        /** Reconnect at most once per burst of network-change callbacks. */
+        private const val NETWORK_RECONNECT_DEBOUNCE_MS = 5_000L
 
         var instance: TsConnectionService? = null
             private set
@@ -237,6 +249,18 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private val _reconnect = MutableStateFlow(ReconnectStatus())
     val reconnectStatus: StateFlow<ReconnectStatus> = _reconnect.asStateFlow()
 
+    // Network-switch handling: reconnect as soon as a usable network appears
+    // instead of waiting for the keepalive to time out.
+    private var lastNetworkSwitchReconnectAt = 0L
+    private val connectivityManager by lazy {
+        getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    }
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            forceImmediateReconnect()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         isStopping = false
@@ -252,9 +276,20 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         avatarCache = AvatarCache(applicationContext.cacheDir)
         audioBridge = AudioBridge(applicationContext, tsClient)
         audioBridge.initialize()
-        
+
         // Load saved floating window position
         loadSavedPosition()
+
+        // Reconnect the moment the platform hands us a different network. Failure to
+        // register is not fatal: the keepalive timeout still recovers the session.
+        try {
+            connectivityManager?.registerNetworkCallback(
+                NetworkRequest.Builder().build(),
+                networkCallback,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Network callback registration failed; falling back to timeout reconnect", e)
+        }
 
         // Listen for audio events, talk status, and play per-user mixing
         tsClient.events.onEach { event ->
@@ -324,6 +359,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
 
         tsClient.state.onEach { state ->
             overlayConnected = state == dev.tslib.ConnectionState.CONNECTED
+            if (state == dev.tslib.ConnectionState.CONNECTED) {
+            }
             updateOverlayChannelName()
             updateNotification()
             // A session that drops while the window is up has to take it away, and one that comes back
@@ -478,6 +515,36 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         reconnectJob = serviceScope.launch { runAutoReconnect(params, channelId) }
     }
 
+    /**
+     * A WiFi↔cellular handover kills the UDP session, but the client only notices
+     * when its keepalive times out — several seconds of silence. Reconnecting as
+     * soon as the platform reports a usable network turns that into a blip.
+     */
+    private fun forceImmediateReconnect() {
+        val params = sessionParams ?: return
+        if (isStopping || isIntentionalDisconnect) return
+        if (!autoReconnectEnabled) return
+        if (reconnectJob?.isActive == true) return
+        // A handover fires several callbacks (one per network); collapse them.
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNetworkSwitchReconnectAt < NETWORK_SWITCH_DEBOUNCE_MS) return
+        lastNetworkSwitchReconnectAt = now
+
+        Log.i(TAG, "Network changed; forcing an immediate reconnect to ${params.address}")
+        _reconnect.value = ReconnectStatus(active = true)
+        val channelId = currentChannelId()
+        serviceScope.launch {
+            // Drop the dead socket first so the new attempt is not competing with it.
+            // That also flips the state to DISCONNECTED, which normally starts the
+            // loop through maybeStartAutoReconnect(); starting it here covers the case
+            // where the state did not change because the socket still looked alive.
+            runCatching { tsClient.disconnect() }
+            if (reconnectJob?.isActive != true) {
+                reconnectJob = launch { runAutoReconnect(params, channelId, immediateFirstAttempt = true) }
+            }
+        }
+    }
+
     private fun currentChannelId(): Long? {
         val myId = tsClient.clientId ?: return null
         return tsClient.users.value.find { it.id == myId }?.channelId
@@ -498,7 +565,11 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         }
     }
 
-    private suspend fun runAutoReconnect(params: SessionParams, channelId: Long?) {
+    private suspend fun runAutoReconnect(
+        params: SessionParams,
+        channelId: Long?,
+        immediateFirstAttempt: Boolean = false,
+    ) {
         Log.i(TAG, "Auto-reconnect loop started (address=${params.address})")
         // Offline: no point capturing, and let the CPU sleep between attempts.
         audioBridge.stopCapture()
@@ -514,7 +585,12 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                     nextRetrySeconds = (delayMs / 1000).toInt(),
                 )
                 updateNotification()
-                delay(delayMs)
+                // A network handover already told us the old socket is dead, so the
+                // first attempt goes out at once; the backoff only applies after a
+                // failed try.
+                if (attempt > 1 || !immediateFirstAttempt) {
+                    delay(delayMs)
+                }
                 if (isStopping || isIntentionalDisconnect) break
 
                 Log.i(TAG, "Auto-reconnect attempt $attempt to ${params.address}")
@@ -834,9 +910,23 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         if (instance == this) {
             instance = null
         }
+        unregisterNetworkCallback()
         hideFloatingWindow()
         audioBridge.stopCapture()
         releaseWakeLock()
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            connectivityManager?.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {
+            // Never registered, or the platform already dropped it.
+        }
+    }
+
+    override fun onDestroy() {
+        unregisterNetworkCallback()
+        super.onDestroy()
     }
 
     private fun cleanupFailedConnection() {

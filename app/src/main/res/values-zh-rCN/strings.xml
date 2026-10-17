@@ -42,6 +42,8 @@
     <string name="settings">设置</string>
     <string name="audio_gain">音量增益</string>
     <string name="audio_gain_value">×%1$.1f</string>
+    <string name="mic_gain">麦克风增益</string>
+    <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">显示视频链接缩略图</string>
     <string name="auto_load_images">自动加载图片</string>
     <string name="enable_floating_window">启用悬浮窗</string>
@@ -100,6 +102,31 @@
     <string name="crop_hint">拖动白色方框选择保留区域</string>
     <string name="section_appearance">外观</string>
     <string name="section_audio">音频</string>
+    <!-- 身份导出/导入 -->
+    <string name="identity_section">身份</string>
+    <string name="identity_uid">身份 UID：%1$s</string>
+    <string name="identity_uid_none">尚未生成（首次连接服务器后自动创建）</string>
+    <string name="identity_export">导出</string>
+    <string name="identity_import">导入</string>
+    <string name="identity_export_success">身份已导出</string>
+    <string name="identity_export_failed">导出失败：尚无身份文件</string>
+    <string name="identity_import_success">导入成功，下次连接生效</string>
+    <string name="identity_import_failed">导入失败：无效的身份文件</string>
+    <string name="identity_warning">身份等同账号凭据：导入会切换服务器身份，导出的文件请妥善保管。</string>
+    <string name="mic_mode">麦克风模式</string>
+    <string name="mic_mode_vad">语音激活</string>
+    <string name="mic_mode_open">开放麦克风</string>
+    <string name="vad_threshold">触发阈值：%1$d dB</string>
+    <string name="vad_threshold_hint">说话声高于阈值时自动发送。-45 dB 适合大多数环境。</string>
+    <string name="user_uid">唯一 ID</string>
+    <string name="user_platform">平台</string>
+    <string name="user_version">版本</string>
+    <string name="user_country">国家/地区</string>
+    <string name="user_talkpower">说话功率</string>
+    <string name="user_volume">音量：</string>
+    <string name="volume_default">默认</string>
+    <string name="volume_reset">重置音量</string>
+    <string name="private_message">私信</string>
     <string name="section_chat">聊天</string>
     <string name="section_more">更多</string>
     <string name="update_check">点击检查更新</string>
@@ -131,6 +158,9 @@
     <string name="download_not_supported">不支持下载</string>
     <string name="tap_to_download">点击下载</string>
     <string name="tap_to_view">点击查看</string>
+    <string name="tap_to_load_images">点击加载图片</string>
+    <string name="retry">重试</string>
+    <string name="file_too_large">文件超过 10MB 上限，已取消上传</string>
     <string name="tap_to_open">点击打开</string>
     <string name="downloading">下载中…</string>
     <string name="download">下载</string>
@@ -169,9 +199,19 @@
     <string name="error_nickname_too_short">昵称至少需要3个字符</string>
     <string name="connection_failed">连接失败</string>
     <string name="browse_failed">浏览频道失败</string>
+    <string name="error_overlay_permission_required">请授予「显示在其他应用上层」权限以使用悬浮窗</string>
+    <string name="error_service_start_failed">后台服务启动失败</string>
+    <string name="error_not_connected">未连接到服务器</string>
+    <string name="download_failed">下载失败</string>
+
+
+    <!-- Crash report overlay -->
+    <string name="crash_report_title">检测到上次异常退出</string>
+    <string name="common_copy">复制</string>
+    <string name="common_copied">已复制</string>
 
     <!-- AboutScreen -->
-    <string name="about_software">关于软件 / About</string>
+    <string name="about_software">关于软件</string>
     <string name="about_back">← 返回</string>
     <string name="about_credits_title">致谢与开发源流</string>
     <string name="about_credits_desc">本项目基于 Grégory D 的优秀开源项目进行深度汉化、本地化适配与功能二次开发。由衷感谢原作者对开源语音社区做出的杰出贡献！</string>
@@ -199,5 +239,22 @@
     <string name="battery_optimization_action">去设置</string>
     <string name="app_details_settings">应用权限与自启动</string>
     <string name="app_details_settings_desc">小米/华为/OPPO/vivo 等 ROM 请在此允许「自启动」「后台运行/无限制」「后台弹出界面」</string>
-    <string name="error_overlay_permission_required">请授予「显示在其他应用上层」权限以使用悬浮窗</string>
+
+    <!-- 应用内日志查看器 -->
+    <string name="diag_log_title">诊断日志</string>
+    <string name="diag_log_hint">仅显示本应用进程的日志（无需 adb）。点右上角刷新可重新读取。</string>
+    <string name="diag_log_refresh">刷新</string>
+    <string name="diag_log_clear">清空</string>
+    <string name="diag_log_empty">暂无日志</string>
+    <string name="diag_log_loading">读取中…</string>
+    <string name="back">返回</string>
+
+    <!-- 服务器信息卡 -->
+    <string name="server_info">服务器信息</string>
+    <string name="server_platform_version">平台 / 版本</string>
+    <string name="server_clients">在线人数</string>
+    <string name="server_clients_format">%1$d / %2$d</string>
+    <string name="server_channels">频道数</string>
+    <string name="server_uptime">运行时长</string>
+    <string name="server_welcome">欢迎语</string>
 </resources>

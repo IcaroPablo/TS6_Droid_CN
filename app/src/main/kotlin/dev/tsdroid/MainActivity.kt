@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -19,6 +20,7 @@ import dev.tsdroid.ui.component.rememberGlassOverlayHostState
 import dev.tsdroid.ui.screen.AppNavigation
 import dev.tsdroid.ui.screen.SplashScreen
 import dev.tsdroid.ui.component.AnimeWallpaperState
+import dev.tsdroid.ui.component.CrashReportOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -61,21 +63,27 @@ class MainActivity : ComponentActivity() {
             val seedColor = AnimeWallpaperState.dominantColor.value
 
             TsDroidTheme(seedColor = if (showSplash) null else seedColor) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    val anime = animeBackground
-                    if (showSplash || anime == null) {
-                        SplashScreen(animeBackground = anime, onReady = { showSplash = false })
-                    } else {
-                        // One overlay slot for the whole app: a GlassDialog declared anywhere inside
-                        // the navigation graph lands here, at the root, so it can blur the wallpaper
-                        // and cover the floating bars instead of being clipped by whatever declared
-                        // it. See GlassDialog.kt.
-                        val overlayHost = rememberGlassOverlayHostState()
-                        CompositionLocalProvider(LocalGlassOverlayHost provides overlayHost) {
-                            AppNavigation(initialAnimeBackground = anime)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        val anime = animeBackground
+                        if (showSplash || anime == null) {
+                            SplashScreen(animeBackground = anime, onReady = { showSplash = false })
+                        } else {
+                            // One overlay slot for the whole app: a GlassDialog declared anywhere inside
+                            // the navigation graph lands here, at the root, so it can blur the wallpaper
+                            // and cover the floating bars instead of being clipped by whatever declared
+                            // it. See GlassDialog.kt.
+                            val overlayHost = rememberGlassOverlayHostState()
+                            CompositionLocalProvider(LocalGlassOverlayHost provides overlayHost) {
+                                AppNavigation(initialAnimeBackground = anime)
+                            }
+                            GlassOverlayHost(overlayHost)
                         }
-                        GlassOverlayHost(overlayHost)
                     }
+                    // Sits above everything, including the splash: an uncaught exception
+                    // from the previous run is written by TsDroidApp and surfaced here so
+                    // users without adb can still report the stack.
+                    CrashReportOverlay()
                 }
             }
         }

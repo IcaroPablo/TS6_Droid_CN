@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -42,8 +43,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mikepenz.markdown.m3.Markdown
 import coil.compose.AsyncImage
+import dev.tsdroid.bridge.IdentityFileStore
+import dev.tsdroid.bridge.MicMode
+import dev.tsdroid.bridge.VadGate
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
@@ -53,8 +59,11 @@ import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
 import dev.tsdroid.ui.component.WallpaperExporter
 import dev.tsdroid.ui.component.rememberGlassBackdrop
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsPage(
@@ -66,11 +75,17 @@ fun SettingsPage(
     val scope = rememberCoroutineScope()
     val settingsStore = remember { SettingsStore(context) }
     val showLinkThumbnails by settingsStore.showLinkThumbnails.collectAsStateWithLifecycle(initialValue = false)
-    val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = true)
-    val enableFloatingWindow by settingsStore.enableFloatingWindow.collectAsStateWithLifecycle(initialValue = false)
+    val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = false)
+    // Default matches the store default (enabled) so the switch does not
+    // flash off→on on first composition.
+    val enableFloatingWindow by settingsStore.enableFloatingWindow.collectAsStateWithLifecycle(initialValue = true)
+    // Stays false: v2.1.5 turned the anime background off by default.
     val animeBackground by settingsStore.animeBackground.collectAsStateWithLifecycle(initialValue = false)
     val noiseSuppression by settingsStore.noiseSuppression.collectAsStateWithLifecycle(initialValue = true)
     val audioGain by settingsStore.audioGain.collectAsStateWithLifecycle(initialValue = 1.0f)
+    val micGain by settingsStore.micGain.collectAsStateWithLifecycle(initialValue = 1.0f)
+    val micMode by settingsStore.micMode.collectAsStateWithLifecycle(initialValue = MicMode.PTT)
+    val vadThreshold by settingsStore.vadThresholdDb.collectAsStateWithLifecycle(initialValue = VadGate.DEFAULT_THRESHOLD_DB)
 
     val languageOptions = listOf(
         "zh" to stringResource(R.string.language_simplified_chinese),
@@ -82,6 +97,7 @@ fun SettingsPage(
         ?: stringResource(R.string.language_simplified_chinese)
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var pendingLanguageTag by remember { mutableStateOf<String?>(null) }
+    var showLogViewer by remember { mutableStateOf(false) }
     val activity = context as? Activity
 
     pendingLanguageTag?.let { languageTag ->
@@ -114,6 +130,62 @@ fun SettingsPage(
                 }
             },
         )
+    }
+
+    if (showLogViewer) {
+        LogViewerDialog(onDismiss = { showLogViewer = false })
+    }
+
+    // ── 身份导出/导入 ──
+    val identityStore = remember { IdentityFileStore(context) }
+    var identityUid by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        identityUid = withContext(Dispatchers.IO) { identityStore.readUniqueId() }
+    }
+    val exportIdentityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            identityStore.exportTo(out)
+                        } ?: false
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                Toast.makeText(
+                    context,
+                    if (ok) R.string.identity_export_success else R.string.identity_export_failed,
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+    val importIdentityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            identityStore.importFrom(input)
+                        } ?: false
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                if (ok) {
+                    identityUid = withContext(Dispatchers.IO) { identityStore.readUniqueId() }
+                    Toast.makeText(context, R.string.identity_import_success, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, R.string.identity_import_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     Column(
@@ -182,18 +254,37 @@ fun SettingsPage(
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.section_audio))
 
-                // 音量增益
+                // 扬声器音量增益（0% = 静音）
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    var gainValue by remember(audioGain) { mutableFloatStateOf(audioGain) }
                     Text(
-                        text = "${stringResource(R.string.audio_gain)} : ${stringResource(R.string.audio_gain_value, audioGain)}",
+                        text = "${stringResource(R.string.audio_gain)} : ${stringResource(R.string.gain_percent, (gainValue * 100).roundToInt())}",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(Modifier.height(4.dp))
                     Slider(
-                        value = audioGain,
-                        onValueChange = { scope.launch { settingsStore.setAudioGain(it) } },
-                        valueRange = 1.0f..8.0f,
-                        steps = 13,
+                        value = gainValue,
+                        onValueChange = { gainValue = it },
+                        onValueChangeFinished = { scope.launch { settingsStore.setAudioGain(gainValue) } },
+                        valueRange = 0.0f..8.0f,
+                        steps = 31,
+                    )
+                }
+
+                // 麦克风增益（0% = 关麦；超过 100% 由软限幅防破音）
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    var micGainValue by remember(micGain) { mutableFloatStateOf(micGain) }
+                    Text(
+                        text = "${stringResource(R.string.mic_gain)} : ${stringResource(R.string.gain_percent, (micGainValue * 100).roundToInt())}",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Slider(
+                        value = micGainValue,
+                        onValueChange = { micGainValue = it },
+                        onValueChangeFinished = { scope.launch { settingsStore.setMicGain(micGainValue) } },
+                        valueRange = 0.0f..4.0f,
+                        steps = 15,
                     )
                 }
 
@@ -203,6 +294,97 @@ fun SettingsPage(
                     checked = noiseSuppression,
                     onCheckedChange = { scope.launch { settingsStore.setNoiseSuppression(it) } },
                 )
+
+                // ── 麦克风模式：按住说话 / 语音激活 / 开放麦克风 ──
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(
+                        text = stringResource(R.string.mic_mode),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = micMode == MicMode.PTT,
+                            onClick = { scope.launch { settingsStore.setMicMode(MicMode.PTT) } },
+                            label = { Text(stringResource(R.string.push_to_talk)) },
+                        )
+                        FilterChip(
+                            selected = micMode == MicMode.VAD,
+                            onClick = { scope.launch { settingsStore.setMicMode(MicMode.VAD) } },
+                            label = { Text(stringResource(R.string.mic_mode_vad)) },
+                        )
+                        FilterChip(
+                            selected = micMode == MicMode.OPEN,
+                            onClick = { scope.launch { settingsStore.setMicMode(MicMode.OPEN) } },
+                            label = { Text(stringResource(R.string.mic_mode_open)) },
+                        )
+                    }
+                    if (micMode == MicMode.VAD) {
+                        var thresholdValue by remember(vadThreshold) { mutableFloatStateOf(vadThreshold) }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.vad_threshold, thresholdValue.roundToInt()),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Slider(
+                            value = thresholdValue,
+                            onValueChange = { thresholdValue = it },
+                            onValueChangeFinished = {
+                                scope.launch { settingsStore.setVadThresholdDb(thresholdValue) }
+                            },
+                            valueRange = -70f..-15f,
+                            steps = 54,
+                        )
+                        Text(
+                            text = stringResource(R.string.vad_threshold_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── 身份 ──
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                SettingsSectionTitle(stringResource(R.string.identity_section))
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(
+                        text = identityUid?.let { stringResource(R.string.identity_uid, it) }
+                            ?: stringResource(R.string.identity_uid_none),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(
+                            onClick = { exportIdentityLauncher.launch("ts6droid_identity.ini") },
+                            enabled = identityUid != null,
+                        ) {
+                            Text(stringResource(R.string.identity_export))
+                        }
+                        OutlinedButton(onClick = { importIdentityLauncher.launch(arrayOf("*/*")) }) {
+                            Text(stringResource(R.string.identity_import))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.identity_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
@@ -281,6 +463,14 @@ fun SettingsPage(
                     label = stringResource(R.string.app_details_settings),
                     subtitle = stringResource(R.string.app_details_settings_desc),
                     onClick = { openAppDetailsSettings(context) },
+                )
+
+                // 诊断日志 — reads this process's own logcat, so it also covers
+                // the native tslib output; the viewer handles refresh itself.
+                SettingsClickableRow(
+                    label = stringResource(R.string.diag_log_title),
+                    subtitle = stringResource(R.string.diag_log_hint),
+                    onClick = { showLogViewer = true },
                 )
 
                 // 关于软件 — last row of the page, where a footer item belongs.
@@ -805,19 +995,35 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                         .verticalScroll(rememberScrollState()),
                 ) {
                     if (isDownloading) {
-                        Text("${stringResource(R.string.update_downloading)} ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth())
+                        if (downloadProgress >= 0f) {
+                            Text("${stringResource(R.string.update_downloading)} ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth())
+                        } else {
+                            // Total size unknown (chunked transfer) — indeterminate progress
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.update_downloading), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
                         downloadError?.let {
                             Spacer(Modifier.height(8.dp))
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         }
                     } else {
                         val changelog = updateInfo!!.changelog
-                        Text(
-                            text = changelog.take(2000).ifBlank { stringResource(R.string.update_no_changelog) },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        if (changelog.isBlank()) {
+                            Text(
+                                text = stringResource(R.string.update_no_changelog),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        } else {
+                            Markdown(
+                                content = changelog.take(4000),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             },

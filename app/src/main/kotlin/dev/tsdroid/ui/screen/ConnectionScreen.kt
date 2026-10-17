@@ -327,7 +327,7 @@ fun ConnectionScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 16.dp)
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -352,24 +352,22 @@ fun ConnectionScreen(
                                                 )
                                             } else {
                                                 Icon(
-                                                    Icons.Default.Star,
+                                                    AppIcons.Server,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(32.dp),
                                                     tint = MaterialTheme.colorScheme.primary,
                                                 )
                                             }
                                             Spacer(Modifier.width(12.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    bookmark.serverName ?: bookmark.name,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                )
-                                                Text(
-                                                    bookmark.address,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = LocalContentColor.current.copy(alpha = 0.72f),
-                                                )
-                                            }
+                                            // Deliberately no address line: the home list is the screen users
+                                            // screenshot most, and a server's address is exactly what should not
+                                            // travel with that screenshot. The name (and the server's own icon
+                                            // above) is enough to pick the right entry.
+                                            Text(
+                                                text = bookmark.serverName ?: bookmark.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                modifier = Modifier.weight(1f),
+                                            )
                                             FilledTonalButton(
                                                 onClick = { viewModel.connectBookmark(bookmark, onConnected) },
                                                 enabled = !isConnecting,

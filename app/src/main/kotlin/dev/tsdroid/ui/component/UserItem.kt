@@ -47,12 +47,14 @@ import dev.tsdroid.ui.icon.AppIcons
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.IconButton
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun UserItem(
     user: User,
     avatar: ImageBitmap? = null,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     onToggleMute: (() -> Unit)? = null,
     isLocallyMuted: Boolean = false,
 ) {
@@ -60,7 +62,10 @@ fun UserItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick?.invoke() }
+                .combinedClickable(
+                    onClick = { onClick?.invoke() },
+                    onLongClick = { onLongClick?.invoke() },
+                )
                 .padding(vertical = 3.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

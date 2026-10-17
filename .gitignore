@@ -21,6 +21,8 @@ app/src/main/jniLibs/*
 # Signing
 *.keystore
 *.jks
+# Local signing credentials (CI passes them as environment variables instead)
+keystore.properties
 
 # OS
 .DS_Store

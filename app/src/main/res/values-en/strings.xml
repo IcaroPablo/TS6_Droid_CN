@@ -43,6 +43,8 @@
     <string name="settings">Settings</string>
     <string name="audio_gain">Audio gain</string>
     <string name="audio_gain_value">×%1$.1f</string>
+    <string name="mic_gain">Mic gain</string>
+    <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Video link thumbnails</string>
     <string name="auto_load_images">Auto-load images</string>
     <string name="enable_floating_window">Enable floating window</string>
@@ -100,6 +102,31 @@
     <string name="crop_hint">Drag the white frame to select the area</string>
     <string name="section_appearance">Appearance</string>
     <string name="section_audio">Audio</string>
+    <!-- 身份导出/导入 -->
+    <string name="identity_section">Identity</string>
+    <string name="identity_uid">Identity UID: %1$s</string>
+    <string name="identity_uid_none">Not created yet (generated on first connection)</string>
+    <string name="identity_export">Export</string>
+    <string name="identity_import">Import</string>
+    <string name="identity_export_success">Identity exported</string>
+    <string name="identity_export_failed">Export failed: no identity yet</string>
+    <string name="identity_import_success">Imported; takes effect on next connection</string>
+    <string name="identity_import_failed">Import failed: invalid identity file</string>
+    <string name="identity_warning">Your identity is your account credential: importing switches your server identity, and the exported file should be kept safe.</string>
+    <string name="mic_mode">Microphone mode</string>
+    <string name="mic_mode_vad">Voice activation</string>
+    <string name="mic_mode_open">Open microphone</string>
+    <string name="vad_threshold">Trigger threshold: %1$d dB</string>
+    <string name="vad_threshold_hint">Audio above the threshold is transmitted. -45 dB suits most environments.</string>
+    <string name="user_uid">Unique ID</string>
+    <string name="user_platform">Platform</string>
+    <string name="user_version">Version</string>
+    <string name="user_country">Country</string>
+    <string name="user_talkpower">Talk power</string>
+    <string name="user_volume">Volume:</string>
+    <string name="volume_default">default</string>
+    <string name="volume_reset">Reset volume</string>
+    <string name="private_message">Private message</string>
     <string name="section_chat">Chat</string>
     <string name="section_more">More</string>
     <string name="update_check">Check for updates</string>
@@ -130,6 +157,9 @@
     <string name="file_attachment_server">%1$s \u00B7 Server file</string>
     <string name="tap_to_download">Tap to download</string>
     <string name="tap_to_view">Tap to view</string>
+    <string name="tap_to_load_images">Tap to load images</string>
+    <string name="retry">Retry</string>
+    <string name="file_too_large">File exceeds the 10 MB limit — upload cancelled</string>
     <string name="tap_to_open">Tap to open</string>
     <string name="download_not_supported">Download not supported</string>
     <string name="downloading">Downloading\u2026</string>
@@ -169,9 +199,18 @@
     <string name="error_nickname_too_short">Nickname must be at least 3 characters long</string>
     <string name="connection_failed">Connection failed</string>
     <string name="browse_failed">Failed to browse channels</string>
+    <string name="error_service_start_failed">Failed to start the background service</string>
+    <string name="error_not_connected">Not connected to the server</string>
+    <string name="download_failed">Download failed</string>
+
+
+    <!-- Crash report overlay -->
+    <string name="crash_report_title">Previous abnormal exit detected</string>
+    <string name="common_copy">Copy</string>
+    <string name="common_copied">Copied</string>
 
     <!-- AboutScreen -->
-    <string name="about_software">About / 关于软件</string>
+    <string name="about_software">About</string>
     <string name="about_back">← Back</string>
     <string name="about_credits_title">Credits &amp; Origins</string>
     <string name="about_credits_desc">This project is based on the excellent open-source project by Grégory D, with deep localization and feature enhancements. Sincere thanks to the original author for his outstanding contributions to the open-source voice community!</string>
@@ -201,4 +240,22 @@
     <string name="battery_optimization_action">Set</string>
     <string name="app_details_settings">App permissions &amp; auto-start</string>
     <string name="app_details_settings_desc">On Xiaomi/Huawei/OPPO/vivo ROMs, allow auto-start, unrestricted background running and background pop-ups here</string>
+
+    <!-- 应用内日志查看器 -->
+    <string name="diag_log_title">Diagnostic log</string>
+    <string name="diag_log_hint">Shows this process log only (no adb needed). Tap refresh to reload.</string>
+    <string name="diag_log_refresh">Refresh</string>
+    <string name="diag_log_clear">Clear</string>
+    <string name="diag_log_empty">No log entries</string>
+    <string name="diag_log_loading">Loading\u2026</string>
+    <string name="back">Back</string>
+
+    <!-- 服务器信息卡 -->
+    <string name="server_info">Server info</string>
+    <string name="server_platform_version">Platform / version</string>
+    <string name="server_clients">Clients online</string>
+    <string name="server_clients_format">%1$d / %2$d</string>
+    <string name="server_channels">Channels</string>
+    <string name="server_uptime">Uptime</string>
+    <string name="server_welcome">Welcome message</string>
 </resources>

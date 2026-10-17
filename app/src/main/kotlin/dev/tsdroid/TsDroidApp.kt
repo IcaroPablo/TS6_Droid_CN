@@ -2,7 +2,9 @@ package dev.tsdroid
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import dev.tsdroid.data.SettingsStore
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -12,6 +14,11 @@ class TsDroidApp : Application() {
 
     companion object {
         const val CHANNEL_ID_CONNECTION = "ts_connection"
+        const val CHANNEL_ID_POKE = "ts_poke"
+
+        /** Activities currently started — pokes only notify when none exist. */
+        private var startedActivities = 0
+        val isAppForeground: Boolean get() = startedActivities > 0
 
         init {
             System.loadLibrary("tslib_jni")
@@ -42,6 +49,20 @@ class TsDroidApp : Application() {
     }
 
     override fun onCreate() {
+        // 崩溃陷阱：未捕获异常的堆栈写入 filesDir/last_crash.txt，下次启动在
+        // 界面上展示并可一键复制（无 adb 环境时也能拿到闪退原因）。
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runCatching {
+                File(filesDir, "last_crash.txt").writeText(
+                    buildString {
+                        appendLine("thread=${thread.name}")
+                        appendLine(Log.getStackTraceString(throwable))
+                    },
+                )
+            }
+            previous?.uncaughtException(thread, throwable)
+        }
         super.onCreate()
         preloadLanguage(this)
     }

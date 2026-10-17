@@ -1,5 +1,6 @@
 package dev.tsdroid.ui.screen
 
+import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
@@ -33,7 +34,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
@@ -69,6 +69,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -79,8 +80,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
 import dev.tsdroid.bridge.AudioBridge
+import dev.tsdroid.bridge.MicMode
 import dev.tslib.ConnectionState
 import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
@@ -93,13 +96,18 @@ import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassPanel
 import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.ShareTarget
+import dev.tsdroid.ui.component.ServerInfoSheet
+import dev.tsdroid.ui.component.UserPanelSheet
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
 import dev.tsdroid.viewmodel.ServerViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,6 +126,8 @@ fun ServerScreen(
     val channelMessages by viewModel.channelMessages.collectAsStateWithLifecycle()
     val privateMessages by viewModel.privateMessages.collectAsStateWithLifecycle()
     val isPttMode by viewModel.isPttMode.collectAsStateWithLifecycle()
+    val micMode by viewModel.micMode.collectAsStateWithLifecycle()
+    val userVolumes by viewModel.userVolumes.collectAsStateWithLifecycle()
     val isOutputMuted by viewModel.isOutputMuted.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val unreadChannel by viewModel.unreadChannel.collectAsStateWithLifecycle()
@@ -131,7 +141,7 @@ fun ServerScreen(
     val mutedUserIds by viewModel.mutedUserIds.collectAsStateWithLifecycle()
     val fileManagerOpen by viewModel.fileManagerOpen.collectAsStateWithLifecycle()
     val fileList by viewModel.fileList.collectAsStateWithLifecycle()
-    val previewImageBytes by viewModel.previewImageBytes.collectAsStateWithLifecycle()
+    val previewImageBitmap by viewModel.previewImageBitmap.collectAsStateWithLifecycle()
     val previewImageName by viewModel.previewImageName.collectAsStateWithLifecycle()
     val currentFilePath by viewModel.currentFilePath.collectAsStateWithLifecycle()
     val fileManagerLoading by viewModel.fileManagerLoading.collectAsStateWithLifecycle()
@@ -143,34 +153,46 @@ fun ServerScreen(
     var chatEverOpened by remember { mutableStateOf(false) }
     var chatTab by remember { mutableIntStateOf(0) }
     var messageText by remember { mutableStateOf("") }
-    var pmTargetId by remember { mutableStateOf<Int?>(null) }
+    // Conversations are identified by the peer's permanent uid, not by the session
+    // client id: a reconnect used to reassign the client id and split one person
+    // into several conversation chips.
+    var pmTargetUid by remember { mutableStateOf<String?>(null) }
+    var showServerInfo by remember { mutableStateOf(false) }
 
     // Resolve pmTarget User from users list
-    val pmTarget = pmTargetId?.let { id -> users.find { it.id == id } }
+    val pmTarget = pmTargetUid?.let { uid -> users.find { it.uid == uid } }
 
-    // Build PM conversation user list (id →name) from message map + users list
+    // Build PM conversation list (uid → display name) from the message map + users list
     val context = LocalContext.current
-    val pmConversationUsers = remember(privateMessages, users) {
-        privateMessages.keys.map { userId ->
-            val name = users.find { it.id == userId }?.nickname
-                ?: privateMessages[userId]?.lastOrNull { !it.isMe }?.sender
-                ?: context.getString(R.string.user_fallback, userId)
-            userId to name
+    val pmConversationUsers: List<Pair<String, String>> = remember(privateMessages, users) {
+        privateMessages.keys.map { peerKey ->
+            val name = users.find { it.uid == peerKey }?.nickname
+                ?: privateMessages[peerKey]?.lastOrNull { !it.isMe }?.sender
+                // A conversation that never resolved to a uid (the peer was not in
+                // the user list yet) keeps the old generic label.
+                ?: if (PrivateConversations.isLegacy(peerKey)) {
+                    context.getString(
+                        R.string.user_fallback,
+                        PrivateConversations.clientIdOf(peerKey) ?: 0,
+                    )
+                } else {
+                    peerKey
+                }
+            peerKey to name
         }
     }
 
     val totalUnreadPrivate = unreadPrivate.values.sum()
 
     // Sync chat state to ViewModel for unread tracking
-    LaunchedEffect(chatOpen, chatTab, pmTargetId) {
-        viewModel.setChatState(chatOpen, chatTab, pmTargetId)
+    LaunchedEffect(chatOpen, chatTab, pmTargetUid) {
+        viewModel.setChatState(chatOpen, chatTab, pmTargetUid)
     }
 
     DisposableEffect(Unit) {
         viewModel.bindToService()
         onDispose {}
     }
-
     // Leave this screen — home button or a session that ended on its own. Going home never drops the
     // connection; only the disconnect button above does that.
     // While the service is auto-reconnecting we stay here and show a banner instead.
@@ -185,10 +207,23 @@ fun ServerScreen(
     // when the app goes to the background. See TsConnectionService.setAppInForeground.
 
     val totalUnread = unreadChannel + totalUnreadPrivate
+    val serverAddressLabel by viewModel.serverAddressLabel.collectAsStateWithLifecycle()
 
     // Backdrop for the liquid-glass surfaces on this screen: only when the wallpaper is actually
     // painted behind them, exactly like ConnectionScreen does.
     val glassWallpaper = rememberGlassBackdrop(animeBackground)
+
+    // Per-user panel (volume / mute / info) — opened by long-pressing a row
+    var userPanelUserId by remember { mutableStateOf<Int?>(null) }
+
+    if (showServerInfo) {
+        ServerInfoSheet(
+            info = serverInfo,
+            address = serverAddressLabel,
+            wallpaper = glassWallpaper,
+            onDismiss = { showServerInfo = false },
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AnimeBackground(enabled = animeBackground)
@@ -210,6 +245,9 @@ fun ServerScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { showServerInfo = true }) {
+                            Icon(AppIcons.Info, contentDescription = stringResource(R.string.server_info))
+                        }
                         IconButton(onClick = { viewModel.toggleFileManager() }) {
                             Icon(AppIcons.File, contentDescription = stringResource(R.string.file_manager))
                         }
@@ -377,7 +415,15 @@ fun ServerScreen(
                         IconButton(onClick = { viewModel.toggleVoiceMode() }) {
                             Icon(
                                 if (isPttMode) AppIcons.MicOff else AppIcons.MicOn,
-                                contentDescription = stringResource(if (isPttMode) R.string.unmute_mic else R.string.mute_mic),
+                                // The three-way mode lives in Settings; here the
+                                // label only has to say what a tap will do.
+                                contentDescription = stringResource(
+                                    when {
+                                        isPttMode -> R.string.unmute_mic
+                                        micMode == MicMode.VAD -> R.string.mic_mode_vad
+                                        else -> R.string.mute_mic
+                                    }
+                                ),
                                 tint = if (isPttMode) MaterialTheme.colorScheme.error
                                 else MaterialTheme.colorScheme.primary,
                             )
@@ -408,11 +454,15 @@ fun ServerScreen(
                 users = users,
                 onChannelClick = { channelId -> viewModel.moveToChannel(channelId) },
                 onUserClick = { user ->
-                    pmTargetId = user.id
+                    pmTargetUid = user.uid
                     chatTab = 1
                     chatOpen = true
                 },
                 onUserLongClick = { user -> viewModel.toggleMuteUser(user.id) },
+                onUserLongPress = { user ->
+                    // Panel actions (volume/mute/PM) are meaningless on the own row
+                    if (user.id != viewModel.myClientId) userPanelUserId = user.id
+                },
                 mutedUserIds = mutedUserIds,
                 channelIcons = channelIcons,
                 userAvatars = userAvatars,
@@ -451,7 +501,7 @@ fun ServerScreen(
                         onShareFile = { target, name, size ->
                             when (target) {
                                 is ShareTarget.Channel -> viewModel.shareFile(null, name, size)
-                                is ShareTarget.PrivateMessage -> viewModel.shareFile(target.userId, name, size)
+                                is ShareTarget.PrivateMessage -> viewModel.shareFile(target.peerKey, name, size)
                             }
                         },
                         onDismiss = { viewModel.closeFileManager() },
@@ -482,19 +532,19 @@ fun ServerScreen(
                         onTabChange = { chatTab = it },
                         wallpaper = glassWallpaper,
                         channelMessages = channelMessages,
-                        privateMessages = pmTargetId?.let { id ->
-                            privateMessages[id] ?: emptyList()
+                        privateMessages = pmTargetUid?.let { uid ->
+                            privateMessages[uid] ?: emptyList()
                         } ?: privateMessages.values.flatten().sortedBy { it.timestamp },
                         messageText = messageText,
                         onMessageChange = { messageText = it },
                         pmTarget = pmTarget,
                         pmConversationUsers = pmConversationUsers,
-                        onSelectPmUser = { userId -> pmTargetId = userId },
-                        onClearPmTarget = { pmTargetId = null },
+                        onSelectPmUser = { uid -> pmTargetUid = uid },
+                        onClearPmTarget = { pmTargetUid = null },
                         onSend = {
                             when (chatTab) {
                                 0 -> viewModel.sendChannelMessage(messageText)
-                                1 -> pmTargetId?.let { viewModel.sendPrivateMessage(it, messageText) }
+                                1 -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
                             }
                             messageText = ""
                         },
@@ -506,7 +556,7 @@ fun ServerScreen(
                         autoLoadImages = autoLoadImages,
                         canUploadFiles = (channelPermissions and dev.tslib.Channel.PERM_FILE_UPLOAD) != 0L,
                         onUploadFile = { fileName, data ->
-                            viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetId)
+                            viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
                         },
                         onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
                     )
@@ -515,8 +565,33 @@ fun ServerScreen(
         }
     }
 
-    // Image preview overlay
-    if (previewImageBytes != null) {
+    // Per-user panel (volume / mute / info) — long-press a user row
+    val panelUser = users.find { it.id == userPanelUserId }
+    UserPanelSheet(
+        user = panelUser,
+        avatar = panelUser?.uid?.let { userAvatars[it] },
+        volumeDb = userPanelUserId?.let { userVolumes[it] } ?: 0f,
+        isMuted = userPanelUserId != null && userPanelUserId in mutedUserIds,
+        onVolumeChange = { db -> userPanelUserId?.let { viewModel.setUserVolumeDb(it, db, commit = false) } },
+        onVolumeCommit = { db -> userPanelUserId?.let { viewModel.setUserVolumeDb(it, db, commit = true) } },
+        onToggleMute = { userPanelUserId?.let { viewModel.toggleMuteUser(it) } },
+        onPrivateMessage = {
+            val id = userPanelUserId
+            if (id != null) {
+                // Open the conversation under the peer's uid, matching every other
+                // entry point into private chat.
+                users.find { it.id == id }?.let { pmTargetUid = it.uid }
+                chatTab = 1
+                chatOpen = true
+            }
+            userPanelUserId = null
+        },
+        onDismiss = { userPanelUserId = null },
+        wallpaper = glassWallpaper,
+    )
+
+    // Image preview overlay (bitmap is pre-decoded off the main thread)
+    if (previewImageBitmap != null) {
         Dialog(onDismissRequest = { viewModel.closePreview() }) {
             Box(
                 modifier = Modifier
@@ -526,18 +601,13 @@ fun ServerScreen(
                     .clickable { viewModel.closePreview() },
                 contentAlignment = Alignment.Center,
             ) {
-                previewImageBytes?.let { bytes ->
-                    val bitmap = remember(bytes) {
-                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    }
-                    if (bitmap != null) {
-                        androidx.compose.foundation.Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = previewImageName,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+                previewImageBitmap?.let { bitmap ->
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap,
+                        contentDescription = previewImageName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
             }
         }
@@ -556,14 +626,14 @@ fun ChatPanel(
     messageText: String,
     onMessageChange: (String) -> Unit,
     pmTarget: User?,
-    pmConversationUsers: List<Pair<Int, String>>,
-    onSelectPmUser: (Int) -> Unit,
+    pmConversationUsers: List<Pair<String, String>>,
+    onSelectPmUser: (String) -> Unit,
     onClearPmTarget: () -> Unit,
     onSend: () -> Unit,
     onClose: () -> Unit,
     unreadChannel: Int,
     unreadPrivateTotal: Int,
-    unreadPrivatePerUser: Map<Int, Int>,
+    unreadPrivatePerUser: Map<String, Int>,
     showLinkThumbnails: Boolean,
     autoLoadImages: Boolean = true,
     canUploadFiles: Boolean = true,
@@ -571,20 +641,44 @@ fun ChatPanel(
     onDownload: ((FileAttachment) -> StateFlow<DownloadState>)? = null,
 ) {
     val context = LocalContext.current
+    val uploadScope = rememberCoroutineScope()
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        try {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            val nameIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME) ?: -1
-            cursor?.moveToFirst()
-            val fileName = if (nameIndex >= 0) cursor?.getString(nameIndex) ?: "file" else "file"
-            cursor?.close()
-            val data = context.contentResolver.openInputStream(uri)?.readBytes() ?: return@rememberLauncherForActivityResult
-            if (data.size > 10_485_760) return@rememberLauncherForActivityResult // 10MB max
-            onUploadFile(fileName, data)
-        } catch (_: Exception) {}
+        uploadScope.launch {
+            var fileName: String? = null
+            var data: ByteArray? = null
+            var tooLarge = false
+            // Reading (up to 10 MB) must not happen on the main thread
+            withContext(Dispatchers.IO) {
+                try {
+                    val cursor = context.contentResolver.query(uri, null, null, null, null)
+                    val nameIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME) ?: -1
+                    val sizeIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.SIZE) ?: -1
+                    cursor?.moveToFirst()
+                    fileName = if (nameIndex >= 0) cursor?.getString(nameIndex) ?: "file" else "file"
+                    val fileSize = if (sizeIndex >= 0) cursor?.getLong(sizeIndex) ?: -1L else -1L
+                    cursor?.close()
+                    if (fileSize > 10_485_760) {
+                        tooLarge = true
+                        return@withContext
+                    }
+                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+                        ?: return@withContext
+                    if (bytes.size > 10_485_760) {
+                        tooLarge = true
+                    } else {
+                        data = bytes
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            when {
+                data != null && fileName != null -> onUploadFile(fileName!!, data!!)
+                tooLarge -> Toast.makeText(context, R.string.file_too_large, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
     // Full-screen glass panel: this used to be a near-opaque white slab, the cheapest-looking
     // surface in the app. `contentColor` is derived from the wallpaper actually behind the glass,
@@ -683,16 +777,16 @@ fun ChatPanel(
                                 ),
                             )
                         }
-                        // One chip per conversation user
-                        pmConversationUsers.forEach { (userId, nickname) ->
-                            val isSelected = pmTarget?.id == userId
-                            val userUnread = unreadPrivatePerUser[userId] ?: 0
+                        // One chip per conversation peer (keyed by uid)
+                        pmConversationUsers.forEach { (peerKey, nickname) ->
+                            val isSelected = pmTarget?.uid == peerKey
+                            val userUnread = unreadPrivatePerUser[peerKey] ?: 0
                             GlassFilterChip(selected = isSelected, wallpaper = wallpaper) {
                                 val chipColor = if (isSelected) LocalContentColor.current
                                     else LocalContentColor.current.copy(alpha = 0.78f)
                                 FilterChip(
                                     selected = isSelected,
-                                    onClick = { onSelectPmUser(userId) },
+                                    onClick = { onSelectPmUser(peerKey) },
                                     label = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(nickname, color = chipColor)

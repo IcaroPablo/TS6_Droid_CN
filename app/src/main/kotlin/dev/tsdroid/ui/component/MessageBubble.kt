@@ -198,17 +198,47 @@ fun MessageBubble(
                         )
                     }
 
-                    // Images
-                    for (imageUrl in parsed.imageUrls) {
-                        AsyncImage(
-                            model = imageUrl,
-                            contentDescription = stringResource(R.string.image),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.FillWidth,
-                        )
+                    // Inline images are remote fetches: they obey the
+                    // auto-load setting, and stay one tap away when it is off
+                    // so a chat message can never silently leak the user's IP
+                    // to a server the sender chose.
+                    if (parsed.imageUrls.isNotEmpty()) {
+                        var loadInlineImages by remember(message.text) { mutableStateOf(false) }
+                        if (autoLoadImages || loadInlineImages) {
+                            for (imageUrl in parsed.imageUrls) {
+                                AsyncImage(
+                                    model = imageUrl,
+                                    contentDescription = stringResource(R.string.image),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.FillWidth,
+                                )
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { loadInlineImages = true }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Default.Image,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.tap_to_load_images),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -237,6 +267,9 @@ private fun FileAttachmentCard(
     val context = LocalContext.current
     var downloadStateFlow by remember { mutableStateOf<StateFlow<DownloadState>?>(null) }
     val downloadState = downloadStateFlow?.collectAsStateWithLifecycle()?.value ?: DownloadState.Idle
+    // Only the bubble that started the download may auto-open the file;
+    // other bubbles showing the same attachment share the state flow
+    var initiatedHere by remember { mutableStateOf(false) }
 
     // Auto-load images (served from disk cache if available)
     LaunchedEffect(attachment, autoLoadImages) {
@@ -247,7 +280,7 @@ private fun FileAttachmentCard(
 
     // Auto-open non-image files after download completes
     LaunchedEffect(downloadState) {
-        if (downloadState is DownloadState.Done && !attachment.isImage && downloadState.fileUri != null) {
+        if (initiatedHere && downloadState is DownloadState.Done && !attachment.isImage && downloadState.fileUri != null) {
             openFile(context, downloadState.fileUri, attachment.fileName)
         }
     }
@@ -278,7 +311,10 @@ private fun FileAttachmentCard(
             .then(
                 when {
                     onDownload != null && downloadState is DownloadState.Idle ->
-                        Modifier.clickable { downloadStateFlow = onDownload(attachment) }
+                        Modifier.clickable {
+                            initiatedHere = true
+                            downloadStateFlow = onDownload(attachment)
+                        }
                     downloadState is DownloadState.Done && downloadState.fileUri != null -> {
                         val uri = downloadState.fileUri
                         Modifier.clickable { openFile(context, uri, attachment.fileName) }

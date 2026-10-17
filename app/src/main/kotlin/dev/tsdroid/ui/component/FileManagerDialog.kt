@@ -2,6 +2,7 @@ package dev.tsdroid.ui.component
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,13 +74,18 @@ import dev.tsdroid.bridge.TsFileEntry
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tslib.Channel
 import dev.tslib.User
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class ShareTarget {
     data object Channel : ShareTarget()
-    data class PrivateMessage(val userId: Int, val nickname: String) : ShareTarget()
+
+    /** [peerKey] is the peer's permanent uid, not the session client id. */
+    data class PrivateMessage(val peerKey: String, val nickname: String) : ShareTarget()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,21 +132,45 @@ fun FileManagerDialog(
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        try {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            val nameIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME) ?: -1
-            cursor?.moveToFirst()
-            val fileName = if (nameIndex >= 0) cursor?.getString(nameIndex) ?: "file" else "file"
-            cursor?.close()
-            val data = context.contentResolver.openInputStream(uri)?.readBytes()
-                ?: return@rememberLauncherForActivityResult
-            if (data.size > 10_485_760) return@rememberLauncherForActivityResult
-            onUploadFile(fileName, data)
-        } catch (_: Exception) {}
+        scope.launch {
+            var fileName: String? = null
+            var data: ByteArray? = null
+            var tooLarge = false
+            // Reading (up to 10 MB) must not happen on the main thread
+            withContext(Dispatchers.IO) {
+                try {
+                    val cursor = context.contentResolver.query(uri, null, null, null, null)
+                    val nameIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME) ?: -1
+                    val sizeIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.SIZE) ?: -1
+                    cursor?.moveToFirst()
+                    fileName = if (nameIndex >= 0) cursor?.getString(nameIndex) ?: "file" else "file"
+                    val fileSize = if (sizeIndex >= 0) cursor?.getLong(sizeIndex) ?: -1L else -1L
+                    cursor?.close()
+                    if (fileSize > 10_485_760) {
+                        tooLarge = true
+                        return@withContext
+                    }
+                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+                        ?: return@withContext
+                    if (bytes.size > 10_485_760) {
+                        tooLarge = true
+                    } else {
+                        data = bytes
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            when {
+                data != null && fileName != null -> onUploadFile(fileName!!, data!!)
+                tooLarge -> Toast.makeText(context, R.string.file_too_large, Toast.LENGTH_SHORT).show()
+                // else: unreadable content — previously silent, kept silent
+            }
+        }
     }
 
     // Sort: folders first, then files, alphabetically
@@ -429,7 +460,7 @@ private fun ShareTargetDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                onSelect(ShareTarget.PrivateMessage(user.id, user.nickname))
+                                onSelect(ShareTarget.PrivateMessage(user.uid, user.nickname))
                             }
                             .padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -467,6 +498,7 @@ private fun FileEntryRow(
     /** Hands the ⋯ button's position (root pixels) up, where the frosted menu is drawn. */
     onOpenMenu: (right: Float, bottom: Float) -> Unit,
 ) {
+    val context = LocalContext.current
 
     Row(
         modifier = Modifier
@@ -507,7 +539,7 @@ private fun FileEntryRow(
             if (entry.isFile) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = formatFileSize(entry.size),
+                        text = formatFileSize(context, entry.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalContentColor.current.copy(alpha = 0.7f),
                     )
@@ -594,19 +626,27 @@ private fun isImageFile(name: String): Boolean {
     return ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
 }
 
-private fun formatFileSize(bytes: Long): String {
+/**
+ * File sizes go through string resources so the units follow the UI language
+ * (the hardcoded "Ko"/"Mo"/"Go" were French-only).
+ */
+private fun formatFileSize(context: android.content.Context, bytes: Long): String {
     return when {
-        bytes < 1024 -> "$bytes o"
-        bytes < 1024 * 1024 -> "%.1f Ko".format(bytes / 1024.0)
-        bytes < 1024 * 1024 * 1024 -> "%.1f Mo".format(bytes / (1024.0 * 1024.0))
-        else -> "%.1f Go".format(bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes < 1024 -> context.getString(R.string.file_size_bytes, bytes)
+        bytes < 1024 * 1024 -> context.getString(R.string.file_size_kb, bytes / 1024.0)
+        bytes < 1024 * 1024 * 1024 -> context.getString(R.string.file_size_mb, bytes / (1024.0 * 1024.0))
+        else -> context.getString(R.string.file_size_gb, bytes / (1024.0 * 1024.0 * 1024.0))
     }
 }
 
+/** Locale-default short date + time instead of a hardcoded French day/month order. */
 private fun formatTimestamp(unixSeconds: Long): String {
     return try {
-        val sdf = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault())
-        sdf.format(Date(unixSeconds * 1000))
+        DateFormat.getDateTimeInstance(
+            DateFormat.SHORT,
+            DateFormat.SHORT,
+            Locale.getDefault(),
+        ).format(Date(unixSeconds * 1000))
     } catch (_: Exception) {
         ""
     }

@@ -12,8 +12,8 @@ import androidx.compose.ui.unit.dp
  * The app's own icon set: 24x24 viewport, 2-unit round-cap outlines, transcribed from the SVG
  * sources in the design hand-off.
  *
- * They stand in for the stock Material icons wherever the app means one of these ten concepts,
- * so the chrome reads as a single consistent set instead of two mixed families. Every vector is
+ * They stand in for the stock Material icons wherever the app means one of these concepts, so the
+ * chrome reads as a single consistent set instead of two mixed families. Every vector is
  * monochrome, so `Icon(tint = ...)` recolours it through a ColorFilter exactly like a Material
  * icon does.
  */
@@ -144,21 +144,62 @@ object AppIcons {
             ),
         )
     }
+
+    /** 信息 / 服务器信息 */
+    val Info: ImageVector by lazy {
+        icon(
+            name = "AppIcons.Info",
+            strokes = listOf(
+                // <circle cx=12 cy=12 r=10>
+                "M2 12a10 10 0 1 0 20 0 10 10 0 1 0-20 0z",
+                // <line x1=12 y1=16 x2=12 y2=12>
+                "M12 16v-4",
+            ),
+            // The source draws its stem endpoint as <line x1=12 y1=8 x2=12.01 y2=8>, a
+            // zero-length segment whose round cap renders as an r=1 disc. A filled-only
+            // path reproduces that exactly; going through [strokes] would add the shared
+            // 2-unit outline and double the dot.
+            plainFills = listOf("M11 8a1 1 0 1 0 2 0a1 1 0 1 0-2 0z"),
+        )
+    }
+
+    /** 服务器 / 机架 */
+    val Server: ImageVector by lazy {
+        icon(
+            name = "AppIcons.Server",
+            strokes = listOf(
+                // <rect x=2 y=2 width=20 height=8 rx=2 ry=2>
+                "M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z",
+                // <rect x=2 y=14 width=20 height=8 rx=2 ry=2>
+                "M4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z",
+            ),
+            // The two status LEDs are <line x1=6 y1=6 x2=6.01 y2=6> and the same at y=18:
+            // zero-length segments the round cap turns into r=1 discs, so they are filled
+            // only — the shared 2-unit outline would double them.
+            plainFills = listOf(
+                "M5 6a1 1 0 1 0 2 0a1 1 0 1 0-2 0z",
+                "M5 18a1 1 0 1 0 2 0a1 1 0 1 0-2 0z",
+            ),
+        )
+    }
 }
 
 /**
  * Builds one icon from SVG path data: [strokes] are drawn as round-capped outlines (the SVG's
- * 2px stroke), [fills] as solid shapes that *also* keep that outline.
+ * 2px stroke), [fills] as solid shapes that *also* keep that outline, and [plainFills] as solid
+ * shapes on their own.
  *
  * The source SVGs draw their dots and the channel hub with `fill="currentColor"` inside a group
  * that sets `stroke-width="2"`, so those elements are stroked and filled at once — a filled-only
- * path would come out visibly thinner than the original. Black is only a placeholder: `Icon`
- * recolours everything through its tint.
+ * path would come out visibly thinner than the original. [plainFills] is for the rarer element
+ * that is genuinely just a fill. Black is only a placeholder: `Icon` recolours everything through
+ * its tint.
  */
 private fun icon(
     name: String,
     strokes: List<String> = emptyList(),
     fills: List<String> = emptyList(),
+    plainFills: List<String> = emptyList(),
 ): ImageVector {
     val builder = ImageVector.Builder(
         name = name,
@@ -184,6 +225,12 @@ private fun icon(
             strokeLineWidth = 2f,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round,
+        )
+    }
+    plainFills.forEach { pathData ->
+        builder.addPath(
+            pathData = PathParser().parsePathString(pathData).toNodes(),
+            fill = SolidColor(Color.Black),
         )
     }
     return builder.build()
