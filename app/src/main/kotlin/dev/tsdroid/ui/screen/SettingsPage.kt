@@ -353,10 +353,12 @@ fun SettingsPage(
         Spacer(Modifier.height(12.dp))
 
         // ── 身份 ──
-        Card(
+        // Same frosted surface as the other groups: this card arrived with the
+        // identity export/import feature and was still a plain Material Card,
+        // which is the one place the settings page did not match.
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-            shape = MaterialTheme.shapes.large,
+            wallpaper = rememberGlassBackdrop(animeBackground),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SettingsSectionTitle(stringResource(R.string.identity_section))
