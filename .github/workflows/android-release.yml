@@ -92,7 +92,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: TS6 Droid 简中版 v${{ env.VERSION }}-Han
+          name: TS6 Droid Han v${{ env.VERSION }}
           files: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
