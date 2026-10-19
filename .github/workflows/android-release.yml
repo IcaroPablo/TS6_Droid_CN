@@ -76,6 +76,19 @@ jobs:
           echo "ASSET=$NAME" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Pick release notes
+        id: notes
+        run: |
+          # 每个标签可以带一份手写发行说明：release-notes/<tag>.md
+          # 没有就用下面的通用正文，发版不会因为缺文件失败。
+          NOTES="release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+            echo "Using $NOTES"
+          else
+            echo "No $NOTES; falling back to the generic body"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -83,11 +96,14 @@ jobs:
           files: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
+          # body_path 为空时 action 会退回 body
+          body_path: ${{ steps.notes.outputs.path }}
           body: |
             TS6 Droid 简中版 ${{ github.ref_name }}
 
             - 正式签名安装包：`${{ env.ASSET }}`（可直接覆盖更新）
             - SHA-256 校验值见同名 `.sha256` 文件
+            - 本次更新要点见 [README 更新日志](https://github.com/${{ github.repository }}/blob/main/README.md#更新日志)
             - 本 tag 对应完整源码（GPLv3）
           generate_release_notes: true
           fail_on_unmatched_files: true
