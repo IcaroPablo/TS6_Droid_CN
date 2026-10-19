@@ -8,6 +8,9 @@ on:
   push:
     tags:
       - 'v*.*.*-Han'
+  # 允许手动重跑：在 Actions 页面选择某个 tag 作为 ref 触发即可，
+  # GITHUB_REF_NAME 仍然是 tag 名，产物与推送 tag 完全一致。
+  workflow_dispatch:
 
 permissions:
   contents: write
