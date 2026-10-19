@@ -81,6 +81,21 @@ public class Client implements AutoCloseable {
     }
 
     /**
+     * Register a low-latency audio callback. Once set, received voice frames
+     * are delivered synchronously on a native pump thread instead of via
+     * {@code audio_received} events, which is what lets a receiver tell a
+     * whisper frame from a channel-broadcast one. Pass {@code null} to
+     * unregister.
+     *
+     * @param sink receiver or null
+     * @throws TsLibException on error
+     */
+    public void setAudioSink(AudioSink sink) {
+        checkNotClosed();
+        nativeSetAudioSink(nativePtr, sink);
+    }
+
+    /**
      * Disconnect from the server.
      *
      * @throws TsLibException on error
@@ -215,14 +230,68 @@ public class Client implements AutoCloseable {
     }
 
     /**
+     * Set the whisper (密聊) target set for outgoing voice. While the set is
+     * non-empty, every packet captured via {@link #sendAudio(byte[], int)} is
+     * sent as a whisper packet to exactly these clients, channels and server
+     * groups instead of the current channel — TS3 semantics: whispering and
+     * channel talk are mutually exclusive.
+     *
+     * <p>Server group targets are resolved on the native side for every packet,
+     * so a member who joins the group later starts receiving without this
+     * method being called again.
+     *
+     * @param clients  target client ids (empty to clear)
+     * @param channels target channel ids (empty to clear)
+     * @param groups   target server group ids (empty to clear)
+     * @throws TsLibException on error
+     */
+    public void setWhisperTargets(int[] clients, long[] channels, long[] groups) {
+        checkNotClosed();
+        nativeSetWhisperTargets(nativePtr, clients, channels, groups);
+    }
+
+    /**
+     * Server groups known to this connection, sorted by id.
+     *
+     * <p>Empty until the server answers the group list request that is sent
+     * when the connection comes up.
+     */
+    public ServerGroup[] getServerGroups() {
+        checkNotClosed();
+        return nativeGetServerGroups(nativePtr);
+    }
+
+    /**
+     * Channel groups known to this connection, sorted by id.
+     *
+     * <p>Empty until the server answers the group list request that is sent
+     * when the connection comes up.
+     */
+    public ChannelGroup[] getChannelGroups() {
+        checkNotClosed();
+        return nativeGetChannelGroups(nativePtr);
+    }
+
+    /**
      * Move to a different channel.
      *
      * @param channelId target channel ID
      * @throws TsLibException on error
      */
     public void moveToChannel(long channelId) {
+        moveToChannel(channelId, null);
+    }
+
+    /**
+     * Move to a different channel, optionally passing its password.
+     *
+     * @param channelId target channel ID
+     * @param password  channel password (may be {@code null})
+     * @throws TsLibException on error
+     */
+    public void moveToChannel(long channelId, String password) {
         checkNotClosed();
-        nativeMoveToChannel(nativePtr, channelId);
+        nativeMoveToChannel(nativePtr, channelId, password);
     }
 
     /**
@@ -233,6 +302,21 @@ public class Client implements AutoCloseable {
     public void syncState() {
         checkNotClosed();
         nativeSyncState(nativePtr);
+    }
+
+    /**
+     * Change our nickname for this session only.
+     *
+     * <p>Sent as {@code clientupdate client_nickname}. The server keeps it for
+     * the lifetime of the connection: the identity file and the next connect are
+     * untouched, which is what "temporary" means here.
+     *
+     * @param nickname the new display name
+     * @throws TsLibException on error
+     */
+    public void setNickname(String nickname) {
+        checkNotClosed();
+        nativeSetNickname(nativePtr, nickname);
     }
 
     /**
@@ -353,6 +437,7 @@ public class Client implements AutoCloseable {
     private static native void nativeDestroy(long ptr);
     private static native void nativeWaitConnected(long ptr);
     private static native Event[] nativeProcessEvents(long ptr);
+    private static native void nativeSetAudioSink(long ptr, AudioSink sink);
     private static native void nativeDisconnect(long ptr);
     private static native boolean nativeIsConnected(long ptr);
     private static native int nativeGetState(long ptr);
@@ -366,9 +451,13 @@ public class Client implements AutoCloseable {
     private static native void nativeSendServerMessage(long ptr, String msg);
     private static native void nativeSendChannelMessage(long ptr, String msg);
     private static native void nativeSendPrivateMessage(long ptr, int userId, String msg);
-    private static native void nativeMoveToChannel(long ptr, long channelId);
+    private static native void nativeSetWhisperTargets(long ptr, int[] clients, long[] channels, long[] groups);
+    private static native ServerGroup[] nativeGetServerGroups(long ptr);
+    private static native ChannelGroup[] nativeGetChannelGroups(long ptr);
+    private static native void nativeMoveToChannel(long ptr, long channelId, String password);
     private static native void nativeSyncState(long ptr);
     private static native void nativeSetInputMuted(long ptr, boolean muted);
+    private static native void nativeSetNickname(long ptr, String nickname);
     private static native void nativeSendAudio(long ptr, byte[] data, int codec);
     private static native void nativeDownloadFile(long ptr, long channelId, String path);
     private static native void nativeUploadFile(long ptr, long channelId, String path, byte[] data, boolean overwrite);

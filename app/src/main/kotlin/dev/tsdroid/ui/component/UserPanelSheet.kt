@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -34,6 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tsdroid.han.R
+import dev.tsdroid.service.UserGroups
+import dev.tslib.ChannelGroup
+import dev.tslib.ServerGroup
 import dev.tslib.User
 import kotlin.math.roundToInt
 
@@ -48,6 +54,21 @@ fun UserPanelSheet(
     onToggleMute: () -> Unit,
     onPrivateMessage: () -> Unit,
     onDismiss: () -> Unit,
+    /** True while this member is on the whisper target list. */
+    isWhisperTarget: Boolean = false,
+    onToggleWhisper: (() -> Unit)? = null,
+    /**
+     * True when the panel describes the local user. The own row can be opened to
+     * read its groups, but volume, mute, private message and whisper are all
+     * meaningless towards yourself, so they are left out.
+     */
+    isSelf: Boolean = false,
+    /** Server groups the connection knows (id + name), for naming [user]'s groups. */
+    knownServerGroups: List<ServerGroup> = emptyList(),
+    /** Channel groups the connection knows (id + name), for [User.getChannelGroup]. */
+    knownChannelGroups: List<ChannelGroup> = emptyList(),
+    /** Self panel only: open the temporary-nickname dialog. */
+    onChangeNickname: (() -> Unit)? = null,
     /** Backdrop for the frosted panel, so the sheet matches the cards behind it. */
     wallpaper: ImageBitmap? = null,
 ) {
@@ -63,6 +84,13 @@ fun UserPanelSheet(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
+            if (isSelf) {
+                Text(
+                    text = stringResource(R.string.user_panel_self),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
         Spacer(Modifier.height(10.dp))
@@ -72,6 +100,96 @@ fun UserPanelSheet(
         UserInfoRow(stringResource(R.string.user_version), user.version ?: "")
         UserInfoRow(stringResource(R.string.user_country), user.country ?: "")
         UserInfoRow(stringResource(R.string.user_talkpower), user.talkPower.toString())
+
+        // 服务器组: the groups this member holds. Long-pressing the own row shows
+        // the same list for yourself, which is how a user checks their own rights.
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = stringResource(R.string.user_server_groups) +
+                if (user.serverGroups.isNotEmpty()) " (${user.serverGroups.size})" else "",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(2.dp))
+        val groups = UserGroups.displayOrder(user.serverGroups.toList(), knownServerGroups)
+        if (groups.isEmpty()) {
+            Text(
+                text = stringResource(R.string.user_server_groups_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            // A member can hold a lot of groups; the sheet itself does not scroll,
+            // so this list gets its own bounded scroll area instead of pushing the
+            // controls off the screen.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 160.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                groups.forEach { (id, name) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = name ?: stringResource(R.string.user_server_group_unknown, id),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (name != null) {
+                            Text(
+                                text = "#$id",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 频道组: exactly one, and it is the one held in the channel the member is
+        // in right now — which is how the server reports it.
+        UserGroups.channelGroupOf(user.channelGroup, knownChannelGroups)?.let { (id, name) ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.user_channel_group),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = name ?: stringResource(R.string.user_channel_group_unknown, id),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                if (name != null) {
+                    Text(
+                        text = "#$id",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        if (isSelf) {
+            // Renaming is a self action (clientupdate on our own client), so it
+            // belongs here rather than on someone else's panel.
+            if (onChangeNickname != null) {
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = onChangeNickname) {
+                    Text(stringResource(R.string.self_change_nickname))
+                }
+            }
+            return@GlassBottomSheet
+        }
 
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 10.dp),
@@ -97,6 +215,22 @@ fun UserPanelSheet(
                 modifier = Modifier.weight(1f),
             )
             Switch(checked = isMuted, onCheckedChange = { onToggleMute() })
+        }
+
+        // 密聊 switch: the panel doorway next to the inline button on the row,
+        // with a label that spells out what whispering does to the microphone.
+        if (onToggleWhisper != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.whisper_switch_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(checked = isWhisperTarget, onCheckedChange = { onToggleWhisper() })
+            }
         }
 
         TextButton(onClick = onPrivateMessage) {

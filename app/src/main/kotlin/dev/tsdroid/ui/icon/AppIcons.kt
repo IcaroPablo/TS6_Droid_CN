@@ -182,6 +182,35 @@ object AppIcons {
             ),
         )
     }
+
+    /** 密聊 / 对指定对象说话（人与声波） */
+    val Whisper: ImageVector by lazy {
+        icon(
+            name = "AppIcons.Whisper",
+            strokes = listOf(
+                // Head: <circle cx=12 cy=7 r=4>.
+                "M8 7a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+                // Shoulders.
+                "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2",
+                // The whisper itself: a short wave leaving the speaker, so this
+                // reads as "voice aimed at someone" rather than plain "person".
+                "M20 5.5a3.5 3.5 0 0 1 0 5",
+            ),
+        )
+    }
+
+    /** 频道需要密码 */
+    val Lock: ImageVector by lazy {
+        icon(
+            name = "AppIcons.Lock",
+            strokes = listOf(
+                // Padlock body: <rect x=4 y=11 width=16 height=10 rx=2>.
+                "M6 11h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z",
+                // Shackle.
+                "M8 11V7a4 4 0 0 1 8 0v4",
+            ),
+        )
+    }
 }
 
 /**

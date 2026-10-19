@@ -53,4 +53,14 @@ class PrivateConversationsTest {
         assertNull(PrivateConversations.clientIdOf("W5s0R2=="))
         assertNull(PrivateConversations.clientIdOf("clid:notanumber"))
     }
+
+    @Test
+    fun `a live peer is keyed by uid, and by client id only while unknown`() {
+        // Both private conversations and the whisper list key peers through here,
+        // so the two features never disagree about who a target is.
+        assertEquals("W5s0R2==", PrivateConversations.keyFor("W5s0R2==", 42))
+        assertEquals("clid:42", PrivateConversations.keyFor(null, 42))
+        assertEquals("clid:42", PrivateConversations.keyFor("", 42))
+        assertEquals("clid:42", PrivateConversations.keyFor("   ", 42))
+    }
 }

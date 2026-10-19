@@ -22,6 +22,10 @@
     <string name="password_optional">Password (optional)</string>
     <string name="channel_optional">Channel (optional)</string>
     <string name="default_channel">Default channel</string>
+    <string name="channel_password_title">Channel password: %1$s</string>
+    <string name="channel_password_label">Password</string>
+    <string name="channel_join">Join</string>
+    <string name="channel_password_required">This channel needs a password</string>
     <string name="browse_channels">Browse channels</string>
     <string name="connecting">Connecting\u2026</string>
     <string name="connect">Connect</string>
@@ -123,6 +127,14 @@
     <string name="user_version">Version</string>
     <string name="user_country">Country</string>
     <string name="user_talkpower">Talk power</string>
+    <string name="user_server_groups">Server groups</string>
+    <string name="user_channel_group">Channel group</string>
+    <string name="user_channel_group_unknown">Channel group #%1$d</string>
+    <string name="user_server_group_unknown">Group #%1$d</string>
+    <string name="user_server_groups_none">No group information</string>
+    <string name="user_panel_self">You</string>
+    <string name="self_change_nickname">Change temporary nickname</string>
+    <string name="nickname_temporary_hint">Lasts until you disconnect; reconnecting restores the nickname you connected with</string>
     <string name="user_volume">Volume:</string>
     <string name="volume_default">default</string>
     <string name="volume_reset">Reset volume</string>
@@ -258,4 +270,31 @@
     <string name="server_channels">Channels</string>
     <string name="server_uptime">Uptime</string>
     <string name="server_welcome">Welcome message</string>
+
+    <!-- Whisper (voice whisper + text private message) -->
+    <string name="whisper_clear_list">Clear list</string>
+    <string name="whisper_hold_mic">Hold to whisper</string>
+    <string name="whisper_need_targets">The whisper list is empty - add targets before holding to talk</string>
+    <string name="whisper_banner">Whisper list: %1$s</string>
+    <string name="whisper_placeholder">Whisper to %1$s\u2026</string>
+    <string name="whisper_add_target">Add to whisper list</string>
+    <string name="whisper_switch_label">Whisper (voice to this user only)</string>
+    <string name="whisper_remove_target">Remove from whisper list</string>
+    <string name="whisper_channel_target">Channel is a whisper target</string>
+    <string name="whisper_member_added">Whispering to %1$s</string>
+    <string name="whisper_member_removed">Stopped whispering to %1$s</string>
+    <string name="whisper_channel_added">Whispering to channel %1$s</string>
+    <string name="whisper_channel_removed">Stopped whispering to channel %1$s</string>
+    <string name="whisper_list_full">A whisper list holds at most %1$d targets</string>
+    <string name="whisper_target_offline">(offline)</string>
+    <string name="whisper_talk_toast">%1$s is whispering to you</string>
+    <string name="whisper_list_title">Whisper list</string>
+    <string name="whisper_list_hint">With this list non-empty, hold the amber whisper button next to the microphone to talk to these targets only; typed messages go to them too. Release to return to the channel.</string>
+    <string name="whisper_section_groups">Server groups</string>
+    <string name="whisper_section_channels">Channels</string>
+    <string name="whisper_section_members">Members</string>
+    <string name="whisper_group_members">%1$d online</string>
+    <string name="whisper_group_fallback">Group #%1$d</string>
+    <string name="whisper_groups_unavailable">The server has not sent its group list yet</string>
+    <string name="whisper_no_members">No individually added members yet - use the whisper button on a member row</string>
 </resources>

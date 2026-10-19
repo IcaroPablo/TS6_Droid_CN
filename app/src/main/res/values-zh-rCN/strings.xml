@@ -21,6 +21,10 @@
     <string name="password_optional">密码（可选）</string>
     <string name="channel_optional">频道（可选）</string>
     <string name="default_channel">默认频道</string>
+    <string name="channel_password_title">频道密码：%1$s</string>
+    <string name="channel_password_label">密码</string>
+    <string name="channel_join">进入</string>
+    <string name="channel_password_required">该频道需要密码</string>
     <string name="browse_channels">浏览频道</string>
     <string name="connecting">正在连接…</string>
     <string name="connect">连接</string>
@@ -123,6 +127,14 @@
     <string name="user_version">版本</string>
     <string name="user_country">国家/地区</string>
     <string name="user_talkpower">说话功率</string>
+    <string name="user_server_groups">服务器组</string>
+    <string name="user_channel_group">频道组</string>
+    <string name="user_channel_group_unknown">频道组 #%1$d</string>
+    <string name="user_server_group_unknown">用户组 #%1$d</string>
+    <string name="user_server_groups_none">暂无用户组信息</string>
+    <string name="user_panel_self">本人</string>
+    <string name="self_change_nickname">修改临时昵称</string>
+    <string name="nickname_temporary_hint">仅本次连接有效，重连后恢复连接时使用的昵称</string>
     <string name="user_volume">音量：</string>
     <string name="volume_default">默认</string>
     <string name="volume_reset">重置音量</string>
@@ -257,4 +269,31 @@
     <string name="server_channels">频道数</string>
     <string name="server_uptime">运行时长</string>
     <string name="server_welcome">欢迎语</string>
+
+    <!-- 密聊（语音密语 + 文字私信） -->
+    <string name="whisper_clear_list">清空列表</string>
+    <string name="whisper_hold_mic">按住密聊说话</string>
+    <string name="whisper_need_targets">密语列表为空：先添加目标再按住说话</string>
+    <string name="whisper_banner">密语列表：%1$s</string>
+    <string name="whisper_placeholder">密聊 %1$s…</string>
+    <string name="whisper_add_target">加入密语列表</string>
+    <string name="whisper_switch_label">密聊（语音只发给对方）</string>
+    <string name="whisper_remove_target">移出密语列表</string>
+    <string name="whisper_channel_target">该频道在密语列表中</string>
+    <string name="whisper_member_added">已对 %1$s 密聊</string>
+    <string name="whisper_member_removed">已停止对 %1$s 密聊</string>
+    <string name="whisper_channel_added">已密语到频道 %1$s</string>
+    <string name="whisper_channel_removed">已停止密语频道 %1$s</string>
+    <string name="whisper_list_full">密语列表最多 %1$d 个目标</string>
+    <string name="whisper_target_offline">（离线）</string>
+    <string name="whisper_talk_toast">%1$s 正在密语</string>
+    <string name="whisper_list_title">密语列表</string>
+    <string name="whisper_list_hint">列表非空时，按住麦克风旁边的琥珀色密聊键说话只发给这些目标；输入的文字也发给它们。松手即恢复频道发言。</string>
+    <string name="whisper_section_groups">服务器组</string>
+    <string name="whisper_section_channels">频道</string>
+    <string name="whisper_section_members">成员</string>
+    <string name="whisper_group_members">%1$d 人在线</string>
+    <string name="whisper_group_fallback">用户组 #%1$d</string>
+    <string name="whisper_groups_unavailable">服务器尚未返回用户组列表</string>
+    <string name="whisper_no_members">还没有单独添加的成员，可在成员行点密聊按钮添加</string>
 </resources>

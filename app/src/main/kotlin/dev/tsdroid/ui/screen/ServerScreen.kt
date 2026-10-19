@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
@@ -68,6 +69,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -84,11 +86,17 @@ import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
 import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.bridge.MicMode
+import dev.tsdroid.service.WhisperManager
+import dev.tsdroid.service.WhisperRouting
+import dev.tsdroid.service.WhisperTargets
+import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChannelTree
+import dev.tsdroid.ui.component.ChannelPasswordDialog
+import dev.tsdroid.ui.component.NicknameDialog
 import dev.tsdroid.ui.component.ChatView
 import dev.tsdroid.ui.component.CompactTopBar
 import dev.tsdroid.ui.component.FileManagerDialog
@@ -98,6 +106,8 @@ import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.ShareTarget
 import dev.tsdroid.ui.component.ServerInfoSheet
 import dev.tsdroid.ui.component.UserPanelSheet
+import dev.tsdroid.ui.component.WhisperListSheet
+import dev.tsdroid.ui.component.parseSpacer
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.viewmodel.ChatMessage
@@ -139,6 +149,11 @@ fun ServerScreen(
         .collectAsStateWithLifecycle(initialValue = initialAnimeBackground)
     val noiseSuppression by viewModel.noiseSuppression.collectAsStateWithLifecycle()
     val mutedUserIds by viewModel.mutedUserIds.collectAsStateWithLifecycle()
+    val whisperTalkingUserIds by viewModel.whisperTalkingUserIds.collectAsStateWithLifecycle()
+    val serverGroups by viewModel.serverGroups.collectAsStateWithLifecycle()
+
+    // Channel groups (id + name) for the member panel's channel-group row.
+    val channelGroups by viewModel.channelGroups.collectAsStateWithLifecycle()
     val fileManagerOpen by viewModel.fileManagerOpen.collectAsStateWithLifecycle()
     val fileList by viewModel.fileList.collectAsStateWithLifecycle()
     val previewImageBitmap by viewModel.previewImageBitmap.collectAsStateWithLifecycle()
@@ -162,6 +177,18 @@ fun ServerScreen(
     // Resolve pmTarget User from users list
     val pmTarget = pmTargetUid?.let { uid -> users.find { it.uid == uid } }
 
+    // 密聊 target list lives in the manager singleton; reading its Compose state
+    // here is what repaints the indicators when a target is added or dropped.
+    val whisperTargets = WhisperManager.targets
+    val whisperHasTargets = whisperTargets.isNotEmpty
+    val whisperLabel = whisperTargetLabel(whisperTargets, users, channels, serverGroups)
+    var whisperSheetOpen by remember { mutableStateOf(false) }
+    // Channel waiting for its password (TS3 refuses the move without it).
+    var channelPasswordTarget by remember { mutableStateOf<dev.tslib.Channel?>(null) }
+    // Temporary-nickname dialog (own row's panel → 修改临时昵称).
+    var nicknameDialogOpen by remember { mutableStateOf(false) }
+
+
     // Build PM conversation list (uid → display name) from the message map + users list
     val context = LocalContext.current
     val pmConversationUsers: List<Pair<String, String>> = remember(privateMessages, users) {
@@ -183,6 +210,27 @@ fun ServerScreen(
     }
 
     val totalUnreadPrivate = unreadPrivate.values.sum()
+
+    // One entry point for the whisper toggle, shared by the member row's inline
+    // button and the long-press panel, so the feedback toast is identical.
+    val toggleWhisperWithFeedback: (User) -> Unit = { user ->
+        val toggled = viewModel.toggleWhisper(user)
+        val key = PrivateConversations.keyFor(user.uid, user.id)
+        val message = when {
+            viewModel.whisperTargets.hasClient(key) ->
+                context.getString(R.string.whisper_member_added, user.nickname)
+            toggled ->
+                context.getString(R.string.whisper_member_removed, user.nickname)
+            else ->
+                context.getString(R.string.whisper_list_full, WhisperRouting.MAX_TARGETS)
+        }
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    val whisperSelectedMembers = whisperTargets.clients.map { key ->
+        key to (users.firstOrNull { PrivateConversations.keyFor(it.uid, it.id) == key }?.nickname
+            ?: context.getString(R.string.whisper_target_offline))
+    }
 
     // Sync chat state to ViewModel for unread tracking
     LaunchedEffect(chatOpen, chatTab, pmTargetUid) {
@@ -245,6 +293,16 @@ fun ServerScreen(
                         }
                     },
                     actions = {
+                        // 密聊: green while a target set is live, and the way into
+                        // the whisper list editor (desktop's whisper list).
+                        IconButton(onClick = { whisperSheetOpen = true }) {
+                            Icon(
+                                AppIcons.Whisper,
+                                contentDescription = stringResource(R.string.whisper_list_title),
+                                tint = if (whisperHasTargets) Color(0xFF4CAF50)
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         IconButton(onClick = { showServerInfo = true }) {
                             Icon(AppIcons.Info, contentDescription = stringResource(R.string.server_info))
                         }
@@ -320,6 +378,26 @@ fun ServerScreen(
                                 }
                             }
                         }
+
+                        // Hold-to-whisper microphone, immediately left of the main
+                        // one: a second push-to-talk that only reaches the whisper
+                        // list, so nothing has to be switched on beforehand.
+                        WhisperHoldMic(
+                            enabled = whisperHasTargets,
+                            // The empty check happens in the ViewModel, at press
+                            // time: this gesture handler is created once and would
+                            // otherwise keep a stale "no targets" answer forever.
+                            onHold = {
+                                if (!viewModel.beginWhisperHold()) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.whisper_need_targets),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
+                            onRelease = { viewModel.endWhisperHold() },
+                        )
 
                         // Center button: PTT or Mute depending on MODE (not mute state)
                         if (isPttMode) {
@@ -452,7 +530,17 @@ fun ServerScreen(
             ChannelTree(
                 channels = channels,
                 users = users,
-                onChannelClick = { channelId -> viewModel.moveToChannel(channelId) },
+                onChannelClick = { channelId ->
+                    // A protected channel needs its password before the server
+                    // will accept the move; asking here keeps the tap from ending
+                    // in a bare server error.
+                    val channel = channels.find { it.id == channelId }
+                    if (channel?.hasPassword == true) {
+                        channelPasswordTarget = channel
+                    } else {
+                        viewModel.moveToChannel(channelId)
+                    }
+                },
                 onUserClick = { user ->
                     pmTargetUid = user.uid
                     chatTab = 1
@@ -460,12 +548,36 @@ fun ServerScreen(
                 },
                 onUserLongClick = { user -> viewModel.toggleMuteUser(user.id) },
                 onUserLongPress = { user ->
-                    // Panel actions (volume/mute/PM) are meaningless on the own row
-                    if (user.id != viewModel.myClientId) userPanelUserId = user.id
+                    // The own row opens the same panel to read your own server
+                    // groups; the interactive sections hide themselves for self.
+                    userPanelUserId = user.id
                 },
+                onChannelLongPress = { channel ->
+                    // Long-press a channel to whisper to everyone in it (TS3 whisper
+                    // list semantics: whole channels are targets too).
+                    val toggled = viewModel.toggleChannelWhisper(channel.id)
+                    val message = when {
+                        viewModel.whisperTargets.hasChannel(channel.id) ->
+                            context.getString(R.string.whisper_channel_added, channel.name)
+                        toggled ->
+                            context.getString(R.string.whisper_channel_removed, channel.name)
+                        else ->
+                            context.getString(
+                                R.string.whisper_list_full,
+                                WhisperRouting.MAX_TARGETS,
+                            )
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                },
+                onWhisperClick = { user -> toggleWhisperWithFeedback(user) },
                 mutedUserIds = mutedUserIds,
+                whisperChannelIds = whisperTargets.channels.toSet(),
+                whisperTargetKeys = whisperTargets.clients.toSet(),
+                whisperTalkingUserIds = whisperTalkingUserIds,
+                whisperModeActive = WhisperManager.isRouted,
                 channelIcons = channelIcons,
                 userAvatars = userAvatars,
+                selfId = viewModel.myClientId,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 8.dp),
@@ -542,9 +654,13 @@ fun ServerScreen(
                         onSelectPmUser = { uid -> pmTargetUid = uid },
                         onClearPmTarget = { pmTargetUid = null },
                         onSend = {
-                            when (chatTab) {
-                                0 -> viewModel.sendChannelMessage(messageText)
-                                1 -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
+                            when {
+                                // While密聊 is live the microphone is on the target
+                                // set, so the text follows the voice: it goes to
+                                // those same people as private messages.
+                                whisperHasTargets -> viewModel.sendWhisperMessage(messageText)
+                                chatTab == 0 -> viewModel.sendChannelMessage(messageText)
+                                else -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
                             }
                             messageText = ""
                         },
@@ -559,14 +675,87 @@ fun ServerScreen(
                             viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
                         },
                         onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
+                        isWhisperActive = whisperHasTargets,
+                        whisperTargetName = whisperLabel,
                     )
                 }
             }
         }
     }
 
+    // 密聊 list editor — desktop-equivalent target picker (clients / channels / groups)
+    if (whisperSheetOpen) {
+        LaunchedEffect(Unit) { viewModel.refreshGroupLists() }
+        WhisperListSheet(
+            targets = whisperTargets,
+            groups = serverGroups,
+            // Spacer channels are decoration, not destinations: nobody sits in them.
+            channels = channels.filter { parseSpacer(it.name) == null },
+            selectedMembers = whisperSelectedMembers,
+            membersOfGroup = { groupId -> viewModel.onlineMembersOfGroup(groupId) },
+            onToggleGroup = { groupId ->
+                // A group is one entry, so the cap only refuses a full list.
+                if (!viewModel.toggleGroupWhisper(groupId)) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.whisper_list_full, WhisperRouting.MAX_TARGETS),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
+            onToggleChannel = { channelId ->
+                if (!viewModel.toggleChannelWhisper(channelId)) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.whisper_list_full, WhisperRouting.MAX_TARGETS),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
+            onRemoveMember = { key ->
+                users.firstOrNull { PrivateConversations.keyFor(it.uid, it.id) == key }
+                    ?.let { toggleWhisperWithFeedback(it) }
+            },
+            onStop = { viewModel.stopWhisper() },
+            onDismiss = { whisperSheetOpen = false },
+            wallpaper = glassWallpaper,
+        )
+    }
+
+    // Temporary nickname: applies to this connection only, and the identity file
+    // is never touched (see ServerViewModel.changeTemporaryNickname).
+    if (nicknameDialogOpen) {
+        val selfName = users.firstOrNull { it.id == viewModel.myClientId }?.nickname ?: ""
+        NicknameDialog(
+            currentNickname = selfName,
+            wallpaper = glassWallpaper,
+            onConfirm = { nickname -> viewModel.changeTemporaryNickname(nickname) },
+            onDismiss = { nicknameDialogOpen = false },
+        )
+    }
+
+    // Password prompt for a protected channel: without it the tap only produced
+    // a server error and the client stayed where it was.
+    channelPasswordTarget?.let { channel ->
+        ChannelPasswordDialog(
+            channelName = channel.name,
+            wallpaper = glassWallpaper,
+            onConfirm = { password ->
+                viewModel.moveToChannel(channel.id, password)
+                channelPasswordTarget = null
+            },
+            onDismiss = { channelPasswordTarget = null },
+        )
+    }
+
     // Per-user panel (volume / mute / info) — long-press a user row
     val panelUser = users.find { it.id == userPanelUserId }
+
+    // The panel names the member's groups, and the answers to both group list
+    // requests may not have arrived yet when it opens.
+    LaunchedEffect(userPanelUserId) {
+        if (userPanelUserId != null) viewModel.refreshGroupLists()
+    }
     UserPanelSheet(
         user = panelUser,
         avatar = panelUser?.uid?.let { userAvatars[it] },
@@ -587,6 +776,18 @@ fun ServerScreen(
             userPanelUserId = null
         },
         onDismiss = { userPanelUserId = null },
+        isWhisperTarget = panelUser?.let {
+            viewModel.whisperTargets.hasClient(PrivateConversations.keyFor(it.uid, it.id))
+        } ?: false,
+        onToggleWhisper = { panelUser?.let { toggleWhisperWithFeedback(it) } },
+        isSelf = panelUser != null && panelUser.id == viewModel.myClientId,
+        knownServerGroups = serverGroups,
+        knownChannelGroups = channelGroups,
+        onChangeNickname = {
+            // Close the panel first: two glass overlays stacked read as a bug.
+            userPanelUserId = null
+            nicknameDialogOpen = true
+        },
         wallpaper = glassWallpaper,
     )
 
@@ -639,6 +840,8 @@ fun ChatPanel(
     canUploadFiles: Boolean = true,
     onUploadFile: (String, ByteArray) -> Unit = { _, _ -> },
     onDownload: ((FileAttachment) -> StateFlow<DownloadState>)? = null,
+    isWhisperActive: Boolean = false,
+    whisperTargetName: String? = null,
 ) {
     val context = LocalContext.current
     val uploadScope = rememberCoroutineScope()
@@ -847,6 +1050,34 @@ fun ChatPanel(
                         ),
                 )
 
+                // 密聊 banner: the microphone is on a target set, not the channel,
+                // so this has to be visible right above the input at all times.
+                if (isWhisperActive && whisperTargetName != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                AppIcons.Whisper,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF4CAF50),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.whisper_banner, whisperTargetName),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+
                 // Message input
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -867,12 +1098,16 @@ fun ChatPanel(
                         modifier = Modifier.weight(1f),
                         placeholder = {
                             Text(
-                                if (chatTab == 0) stringResource(R.string.message_channel_placeholder)
-                                else stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
+                                when {
+                                    isWhisperActive && whisperTargetName != null ->
+                                        stringResource(R.string.whisper_placeholder, whisperTargetName)
+                                    chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
+                                    else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
+                                }
                             )
                         },
                         singleLine = true,
-                        enabled = chatTab == 0 || pmTarget != null,
+                        enabled = chatTab == 0 || pmTarget != null || isWhisperActive,
                         colors = OutlinedTextFieldDefaults.colors(
                             // Light glass: the panel's refraction shows through, the border keeps
                             // the focus affordance, and every text colour follows the glass.
@@ -893,7 +1128,8 @@ fun ChatPanel(
                     )
                     IconButton(
                         onClick = onSend,
-                        enabled = messageText.isNotBlank() && (chatTab == 0 || pmTarget != null),
+                        enabled = messageText.isNotBlank() &&
+                            (chatTab == 0 || pmTarget != null || isWhisperActive),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
                     }
@@ -951,4 +1187,101 @@ private fun StatusBanner(
             Text(text = text, style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+/**
+ * Hold-to-whisper microphone for the bottom bar, sitting next to the main one.
+ *
+ * It is a second push-to-talk, not a mode switch: while held the microphone is
+ * open and routed to the whisper list; on release both go back. The normal
+ * microphone keeps talking to the channel, so the two never share a hidden
+ * state — the amber tint and the small whisper mark are the only difference,
+ * and either button works without preparing anything first.
+ */
+@Composable
+private fun WhisperHoldMic(
+    enabled: Boolean,
+    onHold: () -> Unit,
+    onRelease: () -> Unit,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val tint = if (enabled) WhisperAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+    // `pointerInput(Unit)` keeps the lambda it was created with, so the newest
+    // callbacks have to be read through these references on every press.
+    val latestHold by rememberUpdatedState(onHold)
+    val latestRelease by rememberUpdatedState(onRelease)
+
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .background(
+                if (pressed) WhisperAmber.copy(alpha = 0.18f) else Color.Transparent,
+                CircleShape,
+            )
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        latestHold()
+                        tryAwaitRelease()
+                        latestRelease()
+                        pressed = false
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            AppIcons.MicOn,
+            contentDescription = stringResource(R.string.whisper_hold_mic),
+            modifier = Modifier.size(24.dp),
+            tint = tint,
+        )
+        Icon(
+            AppIcons.Whisper,
+            contentDescription = null,
+            modifier = Modifier
+                .size(13.dp)
+                .align(Alignment.BottomEnd)
+                .offset(x = (-9).dp, y = (-9).dp),
+            tint = tint,
+        )
+    }
+}
+
+/** 密聊 (whisper) accent colour, shared by the member ring and the whisper mic. */
+private val WhisperAmber = Color(0xFFFFB300)
+
+/**
+ * Display names for the current密聊 target set, or null while there is none.
+ *
+ * A client target is resolved through the same key private conversations use, so
+ * it keeps its name across the target's reconnects; one that just went offline
+ * falls back to a generic label instead of disappearing, because it is still on
+ * the list and will be re-applied when it returns. Groups are named from the
+ * server's group list and fall back to their id while that list has not arrived.
+ */
+@Composable
+private fun whisperTargetLabel(
+    targets: WhisperTargets,
+    users: List<User>,
+    channels: List<Channel>,
+    groups: List<dev.tslib.ServerGroup>,
+): String? {
+    if (targets.isEmpty) return null
+    val offline = stringResource(R.string.whisper_target_offline)
+    val names = buildList {
+        targets.clients.forEach { key ->
+            val user = users.firstOrNull { PrivateConversations.keyFor(it.uid, it.id) == key }
+            add(user?.nickname ?: offline)
+        }
+        targets.channels.forEach { id ->
+            add(channels.firstOrNull { it.id == id }?.name ?: "#$id")
+        }
+        targets.groups.forEach { id ->
+            val group = groups.firstOrNull { it.id == id }
+            add(group?.name ?: stringResource(R.string.whisper_group_fallback, id))
+        }
+    }
+    return names.joinToString(", ")
 }

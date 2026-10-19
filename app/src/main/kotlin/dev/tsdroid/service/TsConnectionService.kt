@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
+import android.widget.Toast
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
@@ -117,6 +118,13 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         private const val ACTION_DISCONNECT = "com.flammedemon.ts6droid.DISCONNECT"
         private const val ACTION_TOGGLE_MUTE = "com.flammedemon.ts6droid.TOGGLE_MUTE"
         private const val SPEAKER_DELAY_MS = 500L
+
+        /** One "someone is whispering to you" toast per burst, at most this often. */
+        private const val WHISPER_NOTIFY_DEBOUNCE_MS = 15_000L
+
+        /** Don't repeat the "add whisper targets first" hint on every press. */
+        private const val WHISPER_HINT_DEBOUNCE_MS = 5_000L
+
         private const val AVATAR_REFRESH_INTERVAL_MS = 30000L // 30 seconds
         private const val MIC_WATCHDOG_INTERVAL_MS = 30000L // 30 seconds
         private const val RECONNECT_FIRST_DELAY_MS = 3000L
@@ -179,7 +187,16 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private var overlayChannelName by mutableStateOf<String?>(null)
     private var overlayActiveSpeakerId by mutableStateOf<Int?>(null)
     private var overlayActiveSpeakerAvatar by mutableStateOf<ImageBitmap?>(null)
+    /** True while the current remote burst is a whisper rather than channel talk. */
+    private var overlayActiveSpeakerIsWhisper by mutableStateOf(false)
+
+    // Debounce for "someone is whispering to you" toasts: one per burst, so a
+    // whisper conversation does not spam the screen (the ring carries the state).
+    private var lastWhisperNotifyAt = 0L
     
+    // Debounce for the "whisper list is empty" hint on the overlay button.
+    private var lastWhisperHintAt = 0L
+
     // Delay mechanism for overlay speaker state changes
     private var pendingSpeakerId: Int? = null
     private var speakerUpdateJob: kotlinx.coroutines.Job? = null
@@ -291,25 +308,21 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             Log.w(TAG, "Network callback registration failed; falling back to timeout reconnect", e)
         }
 
-        // Listen for audio events, talk status, and play per-user mixing
+        // Listen for talk status and play per-user mixing. Voice frames no longer
+        // arrive here: AudioBridge registers a native AudioSink, and the native
+        // side hands each received frame straight to it — that callback is also
+        // the only place a whisper frame is distinguishable from channel talk.
         tsClient.events.onEach { event ->
             when (event.type) {
-                "audio_received" -> {
-                    val userId = (event.data["user_id"] as? Number)?.toInt() ?: return@onEach
-                    val data = event.data["data"]
-                    if (data is ByteArray) {
-                        audioBridge.playAudio(userId, data)
-                    } else if (data is Array<*>) {
-                        val bytes = ByteArray(data.size) { (data[it] as? Number)?.toByte() ?: 0 }
-                        audioBridge.playAudio(userId, bytes)
-                    }
-                }
                 "talk_status_start" -> {
                     val speakerId = (event.data["user_id"] as? Number)?.toInt()
+                    val isWhisper = event.data["is_whisper"] as? Boolean ?: false
                     if (speakerId != null) {
                         // Cancel any pending speaker stop
                         speakerUpdateJob?.cancel()
                         pendingSpeakerId = speakerId
+                        overlayActiveSpeakerIsWhisper = isWhisper
+                        if (isWhisper) maybeNotifyWhisperTalk(speakerId)
                         
                         // Delay speaker update to avoid flickering
                         speakerUpdateJob = serviceScope.launch {
@@ -349,6 +362,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                             // Only update if still no pending speaker
                             if (pendingSpeakerId == null) {
                                 overlayActiveSpeakerId = null
+                                overlayActiveSpeakerIsWhisper = false
                                 overlayActiveSpeakerAvatar = null
                             }
                         }
@@ -545,6 +559,27 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         }
     }
 
+    /**
+     * Tell the user that someone opened a whisper at them. Debounced to one
+     * toast per burst — an ongoing whisper conversation would otherwise cover
+     * the screen; the amber ring carries the continuous state.
+     */
+    private fun maybeNotifyWhisperTalk(speakerId: Int) {
+        val now = System.currentTimeMillis()
+        if (now - lastWhisperNotifyAt < WHISPER_NOTIFY_DEBOUNCE_MS) return
+        val nickname = tsClient.users.value.find { it.id == speakerId }?.nickname ?: return
+        lastWhisperNotifyAt = now
+        try {
+            Toast.makeText(
+                applicationContext,
+                getString(R.string.whisper_talk_toast, nickname),
+                Toast.LENGTH_SHORT,
+            ).show()
+        } catch (e: Exception) {
+            Log.w(TAG, "Whisper toast failed", e)
+        }
+    }
+
     private fun currentChannelId(): Long? {
         val myId = tsClient.clientId ?: return null
         return tsClient.users.value.find { it.id == myId }?.channelId
@@ -666,6 +701,25 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         overlayTalking = false
         audioBridge.setMuted(true)
     }
+
+    /** 密聊 (hold-to-whisper) from the floating panel. */
+    private fun startOverlayWhisperTalk() {
+        if (!WhisperManager.canHold) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastWhisperHintAt > WHISPER_HINT_DEBOUNCE_MS) {
+                lastWhisperHintAt = now
+                Toast.makeText(
+                    applicationContext,
+                    getString(R.string.whisper_need_targets),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            return
+        }
+        serviceScope.launch { WhisperManager.beginHoldWithMic() }
+    }
+
+    private fun stopOverlayWhisperTalk() = WhisperManager.endHoldWithMic()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -835,6 +889,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
             // Start event loop
             tsClient.startEventLoop()
+            // 密聊 routing: the manager owns the target list and re-applies it to
+            // the native client on every connect, so an automatic reconnect does
+            // not silently drop the user's whisper list.
+            WhisperManager.attach(tsClient, audioBridge)
             null
         } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -914,6 +972,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         hideFloatingWindow()
         audioBridge.stopCapture()
         releaseWakeLock()
+        WhisperManager.detach()
     }
 
     private fun unregisterNetworkCallback() {
@@ -933,6 +992,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         hideFloatingWindow()
         audioBridge.stopCapture()
         releaseWakeLock()
+        WhisperManager.detach()
         isStopping = false
         restartRequestedWhileStopping = false
         instance = this
@@ -1071,9 +1131,16 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                             // step, and lets a window that disappears mid-hold close the microphone.
                             onTalkStart = { startOverlayTalk() },
                             onTalkStop = { stopOverlayTalk() },
+                            // Hold-to-whisper: routing first, microphone second, so
+                            // the opening frames of the sentence cannot reach the
+                            // channel (see WhisperManager.beginHoldWithMic).
+                            onWhisperTalkStart = { startOverlayWhisperTalk() },
+                            onWhisperTalkStop = { stopOverlayWhisperTalk() },
                             onOpenApp = { openAppFromOverlay() },
-                            onMoveToChannel = { channelId ->
-                                serviceScope.launch { runCatching { tsClient.moveToChannel(channelId) } }
+                            onMoveToChannel = { channelId, password ->
+                                serviceScope.launch {
+                                    runCatching { tsClient.moveToChannel(channelId, password) }
+                                }
                             },
                             onDisconnect = { disconnect() },
                         )
@@ -1128,13 +1195,16 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                         outputMuted = user.isOutputMuted,
                     )
                 },
-            channels = channels.map { FloatingOverlayChannel(it.id, it.name) },
+            channels = channels.map { FloatingOverlayChannel(it.id, it.name, it.hasPassword) },
             currentChannelId = myChannelId,
             localAvatar = myUser?.uid?.takeIf { it.isNotEmpty() }?.let { avatarCache.getAvatar(it) },
             speakingAvatar = overlayActiveSpeakerAvatar,
             speakingIsLocal = speakerId != null && speakerId == myId,
             localSpeaking = localSpeaking,
             remoteSpeaking = speakerId != null && speakerId != myId,
+            remoteSpeakingIsWhisper = overlayActiveSpeakerIsWhisper &&
+                speakerId != null && speakerId != myId,
+            localWhisperActive = WhisperManager.isRouted,
             talking = talking,
             micReady = micReady,
             micMuted = micMuted,

@@ -1,8 +1,8 @@
 package dev.tsdroid.ui.component
 
 import android.util.Log
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,11 +21,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.tsdroid.data.PrivateConversations
+import dev.tsdroid.han.R
 import dev.tslib.Channel
 import dev.tslib.ChannelTree as JChannelTree
 import dev.tslib.User
@@ -44,9 +48,16 @@ fun ChannelTree(
     onUserClick: ((User) -> Unit)? = null,
     onUserLongClick: ((User) -> Unit)? = null,
     onUserLongPress: ((User) -> Unit)? = null,
+    onChannelLongPress: ((Channel) -> Unit)? = null,
+    onWhisperClick: ((User) -> Unit)? = null,
     mutedUserIds: Set<Int> = emptySet(),
+    whisperChannelIds: Set<Long> = emptySet(),
+    whisperTargetKeys: Set<String> = emptySet(),
+    whisperTalkingUserIds: Set<Int> = emptySet(),
+    whisperModeActive: Boolean = false,
     channelIcons: Map<Long, ImageBitmap> = emptyMap(),
     userAvatars: Map<String, ImageBitmap> = emptyMap(),
+    selfId: Int? = null,
     modifier: Modifier = Modifier,
 ) {
     // Filter nulls early — JNI arrays can contain null elements
@@ -74,6 +85,8 @@ fun ChannelTree(
                     depth = item.depth,
                     userCount = userCountByChannel[item.channel.id] ?: 0,
                     onClick = { onChannelClick(item.channel.id) },
+                    onLongClick = onChannelLongPress?.let { { it(item.channel) } },
+                    isWhisperTarget = item.channel.id in whisperChannelIds,
                     icon = channelIcons[item.channel.iconId],
                 )
                 is TreeItem.UserNode -> UserItem(
@@ -83,19 +96,27 @@ fun ChannelTree(
                     onClick = onUserClick?.let { { it(item.user) } },
                     onLongClick = onUserLongPress?.let { { it(item.user) } },
                     onToggleMute = onUserLongClick?.let { { it(item.user) } },
+                    onToggleWhisper = onWhisperClick?.let { { it(item.user) } },
                     isLocallyMuted = item.user.id in mutedUserIds,
+                    isWhisperTarget = PrivateConversations.keyFor(item.user.uid, item.user.id) in whisperTargetKeys,
+                    isWhisperTalking = item.user.id in whisperTalkingUserIds,
+                    isWhisperModeActive = whisperModeActive,
+                    isSelf = item.user.id == selfId,
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelRow(
     channel: Channel,
     depth: Int,
     userCount: Int,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    isWhisperTarget: Boolean = false,
     icon: ImageBitmap? = null,
 ) {
     val spacer = remember(channel.name) { parseSpacer(channel.name) }
@@ -145,7 +166,10 @@ private fun ChannelRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                )
                 .padding(
                     start = (depth * 24).dp,
                     top = 6.dp,
@@ -174,6 +198,27 @@ private fun ChannelRow(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
+            // Whole-channel whisper target: the same green the member rows use.
+            if (isWhisperTarget) {
+                Icon(
+                    AppIcons.Whisper,
+                    contentDescription = stringResource(R.string.whisper_channel_target),
+                    modifier = Modifier.size(14.dp),
+                    tint = Color(0xFF4CAF50),
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            // A protected channel needs its password before the server accepts a
+            // move, so the row says so before the tap.
+            if (channel.hasPassword) {
+                Icon(
+                    AppIcons.Lock,
+                    contentDescription = stringResource(R.string.channel_password_required),
+                    modifier = Modifier.size(13.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             if (userCount > 0) {
                 Text(
                     text = "($userCount)",

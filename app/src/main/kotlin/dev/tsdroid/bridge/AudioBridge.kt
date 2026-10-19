@@ -224,6 +224,8 @@ class AudioBridge(
         vadThresholdDb = db
     }
 
+    // Written from the service thread, read from the native audio pump thread
+    // (incoming frames now arrive on that thread through [audioSink]).
     @Volatile
     private var mutedUserIds: Set<Int> = emptySet()
 
@@ -292,6 +294,10 @@ class AudioBridge(
             encoder = OpusCodec(audioConfig)
             initAudioTrack()
             startPlaybackLoop()
+            // Push-mode receive: frames are handed to [audioSink] the moment
+            // they arrive. This is also the only way to tell a whisper packet
+            // from a channel broadcast — the event path carries no such flag.
+            tsClient.setAudioSink(audioSink)
             // Field diagnostics: a silent session with the volume keys still
             // showing media almost always means this line says track=null or
             // callVol=0 — the init error (if any) is logged just above.
@@ -306,6 +312,18 @@ class AudioBridge(
         } catch (e: Exception) {
             Log.e(TAG, "Audio init failed — playback stays down until re-join", e)
             // We don't throw here to prevent JE_AppCustomException
+        }
+    }
+
+    /**
+     * Native-side callback. Runs on the native pump thread, so it only queues
+     * the frame and wakes the playback loop — decoding and mixing stay on the
+     * playback thread. `seq` is not used yet: frame-loss concealment would
+     * consume it, and playback already drops stale frames when it falls behind.
+     */
+    private val audioSink = object : dev.tslib.AudioSink {
+        override fun onAudioFrame(userId: Int, seq: Int, data: ByteArray, isWhisper: Boolean) {
+            playAudio(userId, data)
         }
     }
 
@@ -993,6 +1011,30 @@ class AudioBridge(
         val newState = !_isMuted.value
         _isMuted.value = newState
         tsClient.setInputMuted(newState)
+    }
+
+    // Mute state to restore when a hold-to-whisper press ends; null = no hold is
+    // live. Remembered rather than assumed muted, so a user who talks hands-free
+    // (voice activation / open mic) keeps the microphone open afterwards.
+    private var muteBeforeWhisperHold: Boolean? = null
+
+    /**
+     * Open the microphone for a hold-to-whisper press.
+     *
+     * The whisper routing is applied by [WhisperManager] before this runs, so the
+     * very first frame is already going to the target set.
+     */
+    fun beginWhisperHold() {
+        if (muteBeforeWhisperHold != null) return
+        muteBeforeWhisperHold = _isMuted.value
+        setMuted(false)
+    }
+
+    /** Close the microphone again, restoring whatever state the hold found. */
+    fun endWhisperHold() {
+        val restore = muteBeforeWhisperHold ?: return
+        muteBeforeWhisperHold = null
+        setMuted(restore)
     }
 
     fun setOutputMuted(muted: Boolean) {

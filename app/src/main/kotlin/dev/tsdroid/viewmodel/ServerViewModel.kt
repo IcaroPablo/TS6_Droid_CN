@@ -26,10 +26,13 @@ import dev.tsdroid.han.R
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.MessageStore
 import dev.tsdroid.data.SettingsStore
+import dev.tsdroid.data.NicknameRules
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.data.UserAudioStore
 import dev.tsdroid.service.ReconnectStatus
 import dev.tsdroid.service.TsConnectionService
+import dev.tsdroid.service.WhisperManager
+import dev.tsdroid.service.WhisperTargets
 import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.Event
@@ -100,8 +103,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
      * uid is still unknown, so an early message is never dropped.
      */
     private fun peerKeyForClientId(clientId: Int): String =
-        _rawUsers.value.firstOrNull { it.id == clientId }?.uid?.takeIf { it.isNotBlank() }
-            ?: "${PrivateConversations.CLID_PREFIX}$clientId"
+        PrivateConversations.keyFor(_rawUsers.value.firstOrNull { it.id == clientId }?.uid, clientId)
 
     /** The peer's *current* client id for a conversation key, or null while offline. */
     private fun clientIdForPeerKey(peerKey: String): Int? =
@@ -240,6 +242,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     // Set of currently talking user IDs (tracked via talk_status events)
     private val _talkingUserIds = MutableStateFlow<Set<Int>>(emptySet())
     val talkingUserIds: StateFlow<Set<Int>> = _talkingUserIds.asStateFlow()
+
+    // Subset of the above whose current burst arrived as a whisper packet —
+    // drives the amber ring so a whisper is never mistaken for channel talk
+    private val _whisperTalkingUserIds = MutableStateFlow<Set<Int>>(emptySet())
+    val whisperTalkingUserIds: StateFlow<Set<Int>> = _whisperTalkingUserIds.asStateFlow()
     
     // Track local mic state for local user talking highlight
     private val _isLocalTalking = MutableStateFlow(false)
@@ -253,6 +260,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _serverInfo = MutableStateFlow<ServerInfo?>(null)
     val serverInfo: StateFlow<ServerInfo?> = _serverInfo.asStateFlow()
+
+    // Server groups (id + name) for the whisper list picker; the native layer
+    // requests them from the server on every connect.
+    private val _serverGroups = MutableStateFlow<List<dev.tslib.ServerGroup>>(emptyList())
+
+    // Channel groups (id + name), requested the same way, for the member panel.
+    private val _channelGroups = MutableStateFlow<List<dev.tslib.ChannelGroup>>(emptyList())
 
     private val _channelIcons = MutableStateFlow<Map<Long, ImageBitmap>>(emptyMap())
     val channelIcons: StateFlow<Map<Long, ImageBitmap>> = _channelIcons.asStateFlow()
@@ -376,6 +390,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 val liveIds = users.map { it.id }.toSet()
                 val pruned = talking.intersect(liveIds)
                 if (pruned.size != talking.size) _talkingUserIds.value = pruned
+                val prunedWhisper = _whisperTalkingUserIds.value.intersect(liveIds)
+                if (prunedWhisper.size != _whisperTalkingUserIds.value.size) {
+                    _whisperTalkingUserIds.value = prunedWhisper
+                }
 
                 val myId = tsClient?.clientId
 
@@ -460,6 +478,14 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     loadAvatars(it)
                     syncUserAudio(it)
                 }
+            }
+            viewModelScope.launch {
+                // Server groups (id + name) for the whisper list picker
+                service.tsClient.serverGroups.collect { _serverGroups.value = it }
+            }
+            viewModelScope.launch {
+                // Channel groups (id + name) to name a member's channel group
+                service.tsClient.channelGroups.collect { _channelGroups.value = it }
             }
             viewModelScope.launch {
                 var bookmarkUpdated = false
@@ -606,10 +632,17 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 "talk_status_start" -> {
                     val userId = (event.data["user_id"] as? Number)?.toInt() ?: return
                     _talkingUserIds.value = _talkingUserIds.value + userId
+                    // The native layer flags a whisper burst on the same event;
+                    // a user who switches back to channel talk clears the mark.
+                    val isWhisper = event.data["is_whisper"] as? Boolean ?: false
+                    _whisperTalkingUserIds.value =
+                        if (isWhisper) _whisperTalkingUserIds.value + userId
+                        else _whisperTalkingUserIds.value - userId
                 }
                 "talk_status_stop" -> {
                     val userId = (event.data["user_id"] as? Number)?.toInt() ?: return
                     _talkingUserIds.value = _talkingUserIds.value - userId
+                    _whisperTalkingUserIds.value = _whisperTalkingUserIds.value - userId
                 }
                 "text_message" -> {
                     try {
@@ -849,7 +882,94 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun moveToChannel(channelId: Long) {
-        tsClient?.moveToChannel(channelId)
+        moveToChannel(channelId, null)
+    }
+
+    /**
+     * Move to a channel, passing its password when the channel is protected.
+     *
+     * The server rejects a move into a password-protected channel without one
+     * (`channel_invalid_password`), which surfaces through [TsClient.commandErrors]
+     * as a toast — the prompt itself is what this overload feeds.
+     */
+    fun moveToChannel(channelId: Long, password: String?) {
+        tsClient?.moveToChannel(channelId, password)
+    }
+
+    // ── 密聊 (whisper) ──────────────────────────────────────────
+
+    /** Live whisper target list; Compose reads it straight off the manager. */
+    val whisperTargets: WhisperTargets get() = WhisperManager.targets
+
+    /**
+     * Add or remove a member from the whisper list.
+     *
+     * @return false when the list is full
+     */
+    fun toggleWhisper(user: User): Boolean = WhisperManager.toggleClient(user)
+
+    /**
+     * Add or remove a whole channel from the whisper list.
+     *
+     * @return false when the list is full
+     */
+    fun toggleChannelWhisper(channelId: Long): Boolean = WhisperManager.toggleChannel(channelId)
+
+    /**
+     * Add or remove a server group from the whisper list. Voice routing is
+     * native — the group's membership is resolved per packet — while the text
+     * companion below reaches the members that are online now.
+     *
+     * @return false when the list is full
+     */
+    fun toggleGroupWhisper(groupId: Long): Boolean = WhisperManager.toggleGroup(groupId)
+
+    /** Server groups known to the connection, for the whisper list picker. */
+    val serverGroups: StateFlow<List<dev.tslib.ServerGroup>> = _serverGroups.asStateFlow()
+
+    /** Channel groups known to the connection, used to name a member's channel group. */
+    val channelGroups: StateFlow<List<dev.tslib.ChannelGroup>> = _channelGroups.asStateFlow()
+
+    /** Ask the native layer to re-read both group lists (a member panel opened). */
+    fun refreshGroupLists() {
+        viewModelScope.launch {
+            tsClient?.refreshServerGroups()
+            tsClient?.refreshChannelGroups()
+        }
+    }
+
+    /** How many of [groupId]'s members are online right now. */
+    fun onlineMembersOfGroup(groupId: Long): Int =
+        _rawUsers.value.count { user -> groupId in user.serverGroups }
+
+    fun stopWhisper() = WhisperManager.stop()
+
+    /**
+     * Text typed while密聊 is active goes to every online client target as an
+     * ordinary private message — same key, same conversation tab, same history
+     * as a message sent from the私信 tab. A group target reaches the members
+     * that hold it right now; channel targets receive voice only.
+     */
+    fun sendWhisperMessage(text: String) {
+        if (text.isBlank()) return
+        val targets = WhisperManager.targets
+        if (targets.isEmpty) return
+
+        val recipients = LinkedHashSet(targets.clients)
+        if (targets.groups.isNotEmpty()) {
+            _rawUsers.value.forEach { user ->
+                if (user.serverGroups.any { it in targets.groups }) {
+                    recipients += PrivateConversations.keyFor(user.uid, user.id)
+                }
+            }
+        }
+        for (key in recipients) {
+            if (clientIdForPeerKey(key) == null) {
+                Log.w(TAG, "Whisper target is offline, text not delivered: $key")
+                continue
+            }
+            sendPrivateMessage(key, text)
+        }
     }
 
     fun setAudioGain(gain: Float) {
@@ -980,6 +1100,41 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     fun setPushToTalk(pressed: Boolean) {
         // Only changes mute state, NOT isPttMode — avoids UI recomposition swap
         audioBridge?.setMuted(!pressed)
+    }
+
+    /**
+     * Open the microphone on the whisper target set — the bottom bar's
+     * hold-to-whisper button.
+     *
+     * The whole press (routing, then microphone) lives in [WhisperManager], so
+     * this button and the floating window's cannot drift apart.
+     *
+     * @return false when the whisper list is empty — the caller shows the hint
+     */
+    fun beginWhisperHold(): Boolean {
+        if (!WhisperManager.canHold) return false
+        viewModelScope.launch { WhisperManager.beginHoldWithMic() }
+        return true
+    }
+
+    /** Close the microphone first, then drop the whisper routing. */
+    fun endWhisperHold() = WhisperManager.endHoldWithMic()
+
+    /**
+     * Rename ourselves for this session only (`clientupdate client_nickname`).
+     *
+     * The identity file is deliberately left alone, so the name lasts until the
+     * connection ends and a reconnect returns to the nickname the session was
+     * opened with.
+     *
+     * @return false when the nickname is not acceptable, so the dialog can point
+     *         at the rule instead of sending an obviously bad value
+     */
+    fun changeTemporaryNickname(nickname: String): Boolean {
+        val normalized = NicknameRules.normalize(nickname)
+        if (!NicknameRules.isValid(normalized)) return false
+        tsClient?.setNickname(normalized)
+        return true
     }
 
     private fun currentChannelId(): Long {

@@ -59,7 +59,11 @@ public class OpusCodec implements AutoCloseable {
      */
     public byte[] decode(byte[] data) {
         checkNotClosed();
-        return nativeDecode(nativePtr, data);
+        // The codec pair shipped with the current libtslib_jni takes an explicit
+        // FEC switch: false decodes the packet's own audio. The native signature
+        // changed from the previous build, so passing two arguments would hand
+        // the native side a garbage flag.
+        return nativeDecode(nativePtr, data, false);
     }
 
     /**
@@ -89,6 +93,6 @@ public class OpusCodec implements AutoCloseable {
                                              int bitrate, int frameSizeMs);
     private static native void nativeDestroy(long ptr);
     private static native byte[] nativeEncode(long ptr, byte[] pcm);
-    private static native byte[] nativeDecode(long ptr, byte[] data);
+    private static native byte[] nativeDecode(long ptr, byte[] data, boolean fec);
     private static native AudioConfig nativeGetConfig(long ptr);
 }

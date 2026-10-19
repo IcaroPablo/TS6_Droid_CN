@@ -30,4 +30,14 @@ object PrivateConversations {
     /** The client id behind a legacy key, or null when the key is a uid. */
     fun clientIdOf(peerKey: String): Int? =
         if (isLegacy(peerKey)) peerKey.removePrefix(CLID_PREFIX).toIntOrNull() else null
+
+    /**
+     * Key for a peer that is on the server right now: the permanent uid when the
+     * server exposes one, otherwise the session client id under [CLID_PREFIX].
+     *
+     * Private conversations and the whisper (密聊) target list both key peers
+     * through here, so the two features name the same person identically.
+     */
+    fun keyFor(uid: String?, clientId: Int): String =
+        uid?.takeIf { it.isNotBlank() } ?: "$CLID_PREFIX$clientId"
 }

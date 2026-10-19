@@ -1,11 +1,14 @@
 package dev.tsdroid.bridge
 
 import android.util.Log
+import dev.tslib.AudioSink
 import dev.tslib.Channel
+import dev.tslib.ChannelGroup
 import dev.tslib.Client
 import dev.tslib.ConnectionState
 import dev.tslib.Event
 import dev.tslib.Identity
+import dev.tslib.ServerGroup
 import dev.tslib.ServerInfo
 import dev.tslib.User
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -39,6 +42,21 @@ data class TsFileEntry(
     val isFile: Boolean,
 )
 
+/**
+ * Native whisper routing decision: the client ids, channel ids and server group
+ * ids outgoing voice must reach. All empty means "no whisper routing" (the
+ * native set is cleared and voice returns to the current channel).
+ *
+ * Group ids are passed through rather than expanded here: the native side
+ * resolves their membership per packet, so late joiners are covered and the app
+ * never has to re-push the set.
+ */
+class WhisperVoiceTargets(
+    val clients: IntArray,
+    val channels: LongArray,
+    val groups: LongArray,
+)
+
 class TsClient {
 
     companion object {
@@ -48,6 +66,8 @@ class TsClient {
         private const val DISCONNECT_MIN_FLUSH_MS = 500L
         private const val DISCONNECT_MAX_FLUSH_MS = 2_000L
         private const val DISCONNECT_POLL_MS = 20L
+        /** Grace period for the group list answers, read once after connect. */
+        private const val GROUP_LISTS_SETTLE_MS = 1_500L
     }
 
     @Volatile
@@ -90,6 +110,15 @@ class TsClient {
     private val _serverInfo = MutableStateFlow<ServerInfo?>(null)
     val serverInfo: StateFlow<ServerInfo?> = _serverInfo.asStateFlow()
 
+    // Server groups (id + name) for the whisper list. Filled from the answer to
+    // the group list request the native layer sends on connect; empty until then.
+    private val _serverGroups = MutableStateFlow<List<ServerGroup>>(emptyList())
+    val serverGroups: StateFlow<List<ServerGroup>> = _serverGroups.asStateFlow()
+
+    // Channel groups (id + name), used to name a member's channel group.
+    private val _channelGroups = MutableStateFlow<List<ChannelGroup>>(emptyList())
+    val channelGroups: StateFlow<List<ChannelGroup>> = _channelGroups.asStateFlow()
+
     private val _commandErrors = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 16)
     val commandErrors: SharedFlow<String> = _commandErrors.asSharedFlow()
 
@@ -105,6 +134,15 @@ class TsClient {
     private var eventLoopJob: Job? = null
     private val clientCoroutineScope = CoroutineScope(nativeDispatcher + SupervisorJob())
     private val connectMutex = Mutex()
+
+    // Audio sink requested before a native client exists (or across reconnects):
+    // re-attached to every freshly created native client.
+    private var pendingAudioSink: AudioSink? = null
+
+    // Whisper (密聊) routing to push into every freshly created native client.
+    // A reconnect builds a new native client whose target set starts empty, but
+    // the UID/channel-keyed target list is still on screen, so it is re-applied.
+    private var whisperTargetsProvider: (() -> WhisperVoiceTargets)? = null
 
     val isConnected: Boolean
         get() = _state.value == ConnectionState.CONNECTED
@@ -167,8 +205,44 @@ class TsClient {
                         client = c
                         pendingClient = null
                         serverAddress = address
+                        // A brand-new native client starts with no audio sink, and
+                        // this is the only point where it is guaranteed to exist.
+                        // Without the sink the new libtslib_jni delivers no voice
+                        // at all: frames go to the registered callback instead of
+                        // audio_received events.
+                        pendingAudioSink?.let { sink ->
+                            try {
+                                c.setAudioSink(sink)
+                                Log.i(TAG, "Audio sink attached to new native client")
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Audio sink attach failed", e)
+                            }
+                        }
                         _state.value = ConnectionState.CONNECTED
+                        // A reconnected native client has an empty whisper target
+                        // set even though the密聊 targets (UID/channel keyed) are
+                        // still displayed — re-apply them before any audio flows.
+                        whisperTargetsProvider?.let { provider ->
+                            try {
+                                val targets = provider()
+                                c.setWhisperTargets(targets.clients, targets.channels, targets.groups)
+                                if (targets.clients.isNotEmpty() || targets.channels.isNotEmpty() ||
+                                    targets.groups.isNotEmpty()
+                                ) {
+                                    Log.i(TAG, "Whisper targets re-applied after connect")
+                                }
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Whisper target re-apply failed", e)
+                            }
+                        }
                         refreshState()
+                        // The server answers both group list requests asynchronously,
+                        // so give it a moment before reading the names once.
+                        clientCoroutineScope.launch {
+                            delay(GROUP_LISTS_SETTLE_MS)
+                            refreshServerGroups()
+                            refreshChannelGroups()
+                        }
                         if (client == null) {
                             throw IllegalStateException("Connection closed during initial state sync")
                         }
@@ -466,6 +540,25 @@ class TsClient {
         }
     }
 
+    /**
+     * Register the receiver for incoming voice frames. Remembered so that a
+     * reconnect (which creates a new native client) re-attaches it.
+     */
+    fun setAudioSink(sink: AudioSink?) {
+        pendingAudioSink = sink
+        launchNativeCommand("setAudioSink") {
+            this.setAudioSink(sink)
+        }
+    }
+
+    /**
+     * Install the callback that supplies the current whisper target set, so a
+     * reconnect can push it into the new native client.
+     */
+    fun setWhisperTargetsProvider(provider: (() -> WhisperVoiceTargets)?) {
+        whisperTargetsProvider = provider
+    }
+
     fun sendChannelMessage(msg: String) {
         launchNativeCommand("sendChannelMessage") {
             this.sendChannelMessage(msg)
@@ -484,9 +577,69 @@ class TsClient {
         }
     }
 
+    /**
+     * Route outgoing voice to an explicit whisper (密聊) target set. Empty
+     * arrays restore normal channel talk. Capture keeps calling [sendAudio]
+     * unchanged — the native side wraps each packet as C2SWhisper.
+     */
+    fun setWhisperTargets(clients: IntArray, channels: LongArray, groups: LongArray) {
+        launchNativeCommand("setWhisperTargets") {
+            this.setWhisperTargets(clients, channels, groups)
+        }
+    }
+
+    /**
+     * Apply a whisper target set and wait until the native client has it.
+     *
+     * Hold-to-whisper needs this ordering: routing first, microphone second.
+     * Unmuting before the native set is in place sends the first frames of the
+     * sentence to the channel, which is exactly what whispering must not do.
+     */
+    suspend fun setWhisperTargetsNow(clients: IntArray, channels: LongArray, groups: LongArray) =
+        withContext(nativeDispatcher) {
+            try {
+                client?.setWhisperTargets(clients, channels, groups)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Whisper target apply failed", e)
+            }
+        }
+
+    /**
+     * Re-read the server group list. The native layer asks the server on every
+     * connect; this is for the UI to pick up names after the answer landed
+     * (and to retry when it had not arrived yet).
+     */
+    suspend fun refreshServerGroups() = withContext(nativeDispatcher) {
+        val c = client ?: return@withContext
+        try {
+            _serverGroups.value = c.serverGroups?.filterNotNull() ?: emptyList()
+            Log.d(TAG, "Server groups: ${_serverGroups.value.size}")
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Server group refresh failed", e)
+        }
+    }
+
+    /** Re-read the channel group list (names for the member panel). */
+    suspend fun refreshChannelGroups() = withContext(nativeDispatcher) {
+        val c = client ?: return@withContext
+        try {
+            _channelGroups.value = c.channelGroups?.filterNotNull() ?: emptyList()
+            Log.d(TAG, "Channel groups: ${_channelGroups.value.size}")
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Channel group refresh failed", e)
+        }
+    }
+
     fun moveToChannel(channelId: Long) {
+        moveToChannel(channelId, null)
+    }
+
+    fun moveToChannel(channelId: Long, password: String?) {
         launchNativeCommand("moveToChannel") {
-            this.moveToChannel(channelId)
+            this.moveToChannel(channelId, password)
         }
     }
 
@@ -500,6 +653,19 @@ class TsClient {
         Log.i(TAG, "setInputMuted($muted) client=${if (client != null) "present" else "NULL"}")
         launchNativeCommand("setInputMuted") {
             this.setInputMuted(muted)
+        }
+    }
+
+    /**
+     * Change our nickname for this session (`clientupdate client_nickname`).
+     *
+     * Temporary by design: it never touches the identity file, so a reconnect
+     * comes back with the nickname the connection was opened with.
+     */
+    fun setNickname(nickname: String) {
+        Log.i(TAG, "setNickname($nickname)")
+        launchNativeCommand("setNickname") {
+            this.setNickname(nickname)
         }
     }
 

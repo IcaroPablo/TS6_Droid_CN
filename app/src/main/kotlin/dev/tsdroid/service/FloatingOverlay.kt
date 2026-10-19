@@ -11,11 +11,13 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +38,8 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -71,6 +75,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
@@ -92,6 +97,8 @@ internal data class FloatingOverlayMember(
 internal data class FloatingOverlayChannel(
     val id: Long,
     val name: String,
+    /** The server refuses a move into a protected channel without its password. */
+    val hasPassword: Boolean = false,
 )
 
 /**
@@ -112,6 +119,10 @@ internal data class FloatingOverlayState(
     val speakingIsLocal: Boolean,
     val localSpeaking: Boolean,
     val remoteSpeaking: Boolean,
+    /** The current remote burst arrived as a whisper packet, not channel talk. */
+    val remoteSpeakingIsWhisper: Boolean,
+    /** The local microphone is on a whisper target set right now. */
+    val localWhisperActive: Boolean,
     /** A push-to-talk hold on the bubble is open right now: the microphone is transmitting. */
     val talking: Boolean,
     /** The capture path is actually running, so a hold really is being sent to the channel. */
@@ -161,8 +172,10 @@ internal fun FloatingOverlay(
     onToggleOutput: () -> Unit,
     onTalkStart: () -> Unit,
     onTalkStop: () -> Unit,
+    onWhisperTalkStart: () -> Unit,
+    onWhisperTalkStop: () -> Unit,
     onOpenApp: () -> Unit,
-    onMoveToChannel: (Long) -> Unit,
+    onMoveToChannel: (Long, String?) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     // The window is WRAP_CONTENT, and the system throttles overlay window resizes hard: animating the
@@ -210,6 +223,8 @@ internal fun FloatingOverlay(
                     onDragEnd = onDragEnd,
                     onToggleMic = onToggleMic,
                     onToggleOutput = onToggleOutput,
+                    onWhisperTalkStart = onWhisperTalkStart,
+                    onWhisperTalkStop = onWhisperTalkStop,
                     onOpenApp = onOpenApp,
                     onMoveToChannel = onMoveToChannel,
                     onDisconnect = onDisconnect,
@@ -254,6 +269,11 @@ private fun CollapsedBubble(
         MaterialTheme.colorScheme.error
     }
     val speaking = state.localSpeaking || state.remoteSpeaking
+    // Whisper owns the ring colour: either the incoming burst is a whisper, or the
+    // local microphone is on a whisper target set and we are the ones transmitting.
+    // Amber matches the member-list ring, so the two views agree.
+    val whisperTint = state.remoteSpeakingIsWhisper ||
+        (state.localWhisperActive && (talking || state.localSpeaking))
     // Whoever is talking gets the bubble; the app icon sits there the rest of the time.
     val avatar = when {
         state.remoteSpeaking -> state.speakingAvatar
@@ -402,6 +422,7 @@ private fun CollapsedBubble(
                     else -> 1.dp
                 },
                 color = when {
+                    whisperTint -> WhisperAmber
                     talking -> liveColor
                     speaking -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.outlineVariant
@@ -566,8 +587,10 @@ private fun ExpandedPanel(
     onDragEnd: () -> Unit,
     onToggleMic: () -> Unit,
     onToggleOutput: () -> Unit,
+    onWhisperTalkStart: () -> Unit,
+    onWhisperTalkStop: () -> Unit,
     onOpenApp: () -> Unit,
-    onMoveToChannel: (Long) -> Unit,
+    onMoveToChannel: (Long, String?) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     Surface(
@@ -633,6 +656,8 @@ private fun ExpandedPanel(
                 state = state,
                 onToggleMic = onToggleMic,
                 onToggleOutput = onToggleOutput,
+                onWhisperTalkStart = onWhisperTalkStart,
+                onWhisperTalkStop = onWhisperTalkStop,
                 onDisconnect = onDisconnect,
             )
         }
@@ -889,12 +914,65 @@ private fun MembersList(members: List<FloatingOverlayMember>) {
 private fun ChannelsList(
     channels: List<FloatingOverlayChannel>,
     currentChannelId: Long,
-    onMoveToChannel: (Long) -> Unit,
+    onMoveToChannel: (Long, String?) -> Unit,
 ) {
     if (channels.isEmpty()) {
         EmptyHint(stringResource(R.string.floating_overlay_no_channels))
         return
     }
+    // The channel waiting for its password. An inline field instead of a dialog:
+    // this panel lives in a WRAP_CONTENT overlay window, where a full-screen
+    // dialog would be clipped to the window.
+    var passwordChannel by remember { mutableStateOf<FloatingOverlayChannel?>(null) }
+    var password by remember { mutableStateOf("") }
+
+    passwordChannel?.let { channel ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.channel_password_title, channel.name),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text(stringResource(R.string.channel_password_label)) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = {
+                    passwordChannel = null
+                    password = ""
+                }) {
+                    Text(stringResource(R.string.cancel))
+                }
+                TextButton(
+                    onClick = {
+                        onMoveToChannel(channel.id, password)
+                        passwordChannel = null
+                        password = ""
+                    },
+                    enabled = password.isNotEmpty(),
+                ) {
+                    Text(stringResource(R.string.channel_join))
+                }
+            }
+        }
+        return
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
@@ -906,7 +984,14 @@ private fun ChannelsList(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = !current) { onMoveToChannel(channel.id) }
+                    .clickable(enabled = !current) {
+                        if (channel.hasPassword) {
+                            passwordChannel = channel
+                            password = ""
+                        } else {
+                            onMoveToChannel(channel.id, null)
+                        }
+                    }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -933,6 +1018,15 @@ private fun ChannelsList(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                if (channel.hasPassword) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        imageVector = AppIcons.Lock,
+                        contentDescription = stringResource(R.string.channel_password_required),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
                 if (current) {
                     Icon(
                         imageVector = Icons.Default.Check,
@@ -969,6 +1063,8 @@ private fun ActionBar(
     state: FloatingOverlayState,
     onToggleMic: () -> Unit,
     onToggleOutput: () -> Unit,
+    onWhisperTalkStart: () -> Unit,
+    onWhisperTalkStop: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
     Row(
@@ -986,6 +1082,16 @@ private fun ActionBar(
             active = state.micMuted,
             onClick = onToggleMic,
         )
+        // Hold-to-whisper: the same gesture as the bubble's push-to-talk, but the
+        // voice only reaches the whisper list. It stays usable while the normal
+        // microphone is muted, because the hold opens the microphone itself.
+        HoldActionButton(
+            icon = AppIcons.Whisper,
+            contentDescription = stringResource(R.string.whisper_hold_mic),
+            holds = state.localWhisperActive,
+            onHold = onWhisperTalkStart,
+            onRelease = onWhisperTalkStop,
+        )
         ActionButton(
             icon = if (state.outputMuted) AppIcons.SpeakerOff else AppIcons.SpeakerOn,
             contentDescription = stringResource(
@@ -1000,6 +1106,54 @@ private fun ActionBar(
             active = true,
             onClick = onDisconnect,
         )
+    }
+}
+
+/** A 42dp button that is held rather than tapped; used for hold-to-whisper. */
+@Composable
+private fun HoldActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    holds: Boolean,
+    onHold: () -> Unit,
+    onRelease: () -> Unit,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val active = holds || pressed
+    // The gesture handler is created once; read the newest callbacks through
+    // these references so a recomposition with new lambdas still takes effect.
+    val latestHold by rememberUpdatedState(onHold)
+    val latestRelease by rememberUpdatedState(onRelease)
+    Surface(
+        modifier = Modifier
+            .size(42.dp)
+            .clip(CircleShape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        latestHold()
+                        tryAwaitRelease()
+                        latestRelease()
+                        pressed = false
+                    },
+                )
+            },
+        shape = CircleShape,
+        color = if (active) {
+            Color(0xFFFFB300).copy(alpha = if (pressed) 0.34f else 0.22f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (active) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 
@@ -1083,6 +1237,12 @@ private val AppPink = Color(0xFFFF69B4)
 
 /** Half transparent on purpose: the bubble must not hide much of what is behind it. */
 private const val AppPinkAlpha = 0.5f
+
+/**
+ * 密聊 (whisper) colour, shared with the member list's amber ring: a private voice is
+ * neither the blue of channel talk nor the app's live-microphone tint.
+ */
+private val WhisperAmber = Color(0xFFFFB300)
 
 /**
  * The overlay's surface colour: a translucent version of the app's own surface, so the window follows

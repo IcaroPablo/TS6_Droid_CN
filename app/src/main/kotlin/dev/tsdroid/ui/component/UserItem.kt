@@ -56,7 +56,15 @@ fun UserItem(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     onToggleMute: (() -> Unit)? = null,
+    onToggleWhisper: (() -> Unit)? = null,
     isLocallyMuted: Boolean = false,
+    /** This member is on the whisper (密聊) target list. */
+    isWhisperTarget: Boolean = false,
+    /** This member's current talk burst arrived as a whisper packet. */
+    isWhisperTalking: Boolean = false,
+    /** The local microphone is on a whisper target set right now. */
+    isWhisperModeActive: Boolean = false,
+    isSelf: Boolean = false,
 ) {
     Box(modifier = modifier) {
         Row(
@@ -73,6 +81,10 @@ fun UserItem(
                 avatar = avatar,
                 nickname = user.nickname,
                 isTalking = user.isTalking,
+                // Own row: the server never echoes our talk status back, so the
+                // ring runs on local VAD — mark it amber while密聊 is on, which
+                // is exactly when the microphone is going somewhere else.
+                isWhisperTalking = isWhisperTalking || (isSelf && isWhisperModeActive),
                 isRecording = user.isRecording,
                 isInputMuted = user.isInputMuted || !user.hasInputHardware,
                 isOutputMuted = user.isOutputMuted,
@@ -111,8 +123,27 @@ fun UserItem(
                 Spacer(Modifier.width(2.dp))
             }
             
+            // Inline whisper toggle. Whispering to yourself is meaningless, so
+            // the own row never shows it.
+            if (onToggleWhisper != null && !isSelf) {
+                IconButton(
+                    onClick = onToggleWhisper,
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Icon(
+                        AppIcons.Whisper,
+                        contentDescription = stringResource(
+                            if (isWhisperTarget) R.string.whisper_remove_target else R.string.whisper_add_target,
+                        ),
+                        modifier = Modifier.size(16.dp),
+                        tint = if (isWhisperTarget) Color(0xFF4CAF50)
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    )
+                }
+            }
+
             // Inline mute toggle button instead of long press menu
-            if (onToggleMute != null) {
+            if (onToggleMute != null && !isSelf) {
                 IconButton(
                     onClick = onToggleMute,
                     modifier = Modifier.size(24.dp)
@@ -156,10 +187,14 @@ private fun AvatarWithRing(
     isRecording: Boolean,
     isInputMuted: Boolean = false,
     isOutputMuted: Boolean = false,
+    isWhisperTalking: Boolean = false,
 ) {
     val ringActive = isTalking || isRecording
+    // Amber marks a whisper talker, matching the floating bubble's ring, so a
+    // private voice is never read as plain channel talk.
     val ringColor = when {
         isRecording -> Color(0xFFF44336)
+        isTalking && isWhisperTalking -> Color(0xFFFFB300)
         isTalking -> Color(0xFF2196F3)
         else -> Color.Transparent
     }

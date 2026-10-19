@@ -22,6 +22,10 @@
     <string name="password_optional">Mot de passe (optionnel)</string>
     <string name="channel_optional">Channel (optionnel)</string>
     <string name="default_channel">Channel par défaut</string>
+    <string name="channel_password_title">Mot de passe du salon : %1$s</string>
+    <string name="channel_password_label">Mot de passe</string>
+    <string name="channel_join">Rejoindre</string>
+    <string name="channel_password_required">Ce salon nécessite un mot de passe</string>
     <string name="browse_channels">Parcourir les channels</string>
     <string name="connecting">Connexion\u2026</string>
     <string name="connect">Se connecter</string>
@@ -124,6 +128,14 @@
     <string name="user_version">Version</string>
     <string name="user_country">Pays</string>
     <string name="user_talkpower">Puissance de parole</string>
+    <string name="user_server_groups">Groupes de serveur</string>
+    <string name="user_channel_group">Groupe de salon</string>
+    <string name="user_channel_group_unknown">Groupe de salon n° %1$d</string>
+    <string name="user_server_group_unknown">Groupe n° %1$d</string>
+    <string name="user_server_groups_none">Aucune information de groupe</string>
+    <string name="user_panel_self">Vous</string>
+    <string name="self_change_nickname">Changer le pseudo temporaire</string>
+    <string name="nickname_temporary_hint">Valable jusqu’à la déconnexion ; la reconnexion restaure le pseudo d’origine</string>
     <string name="user_volume">Volume :</string>
     <string name="volume_default">par défaut</string>
     <string name="volume_reset">Réinitialiser le volume</string>
@@ -258,4 +270,31 @@
     <string name="server_channels">Salons</string>
     <string name="server_uptime">Disponibilité</string>
     <string name="server_welcome">Message de bienvenue</string>
+
+    <!-- Chuchotement (voix chuchotée + message privé) -->
+    <string name="whisper_clear_list">Vider la liste</string>
+    <string name="whisper_hold_mic">Maintenir pour chuchoter</string>
+    <string name="whisper_need_targets">La liste de chuchotement est vide : ajoutez des cibles avant de maintenir pour parler</string>
+    <string name="whisper_banner">Liste de chuchotement : %1$s</string>
+    <string name="whisper_placeholder">Chuchoter à %1$s\u2026</string>
+    <string name="whisper_add_target">Ajouter à la liste de chuchotement</string>
+    <string name="whisper_switch_label">Chuchotement (voix vers ce membre uniquement)</string>
+    <string name="whisper_remove_target">Retirer de la liste de chuchotement</string>
+    <string name="whisper_channel_target">Salon cible du chuchotement</string>
+    <string name="whisper_member_added">Chuchotement vers %1$s</string>
+    <string name="whisper_member_removed">Chuchotement vers %1$s arrêté</string>
+    <string name="whisper_channel_added">Chuchotement vers le salon %1$s</string>
+    <string name="whisper_channel_removed">Chuchotement vers le salon %1$s arrêté</string>
+    <string name="whisper_list_full">La liste de chuchotement est limitée à %1$d cibles</string>
+    <string name="whisper_target_offline">(hors ligne)</string>
+    <string name="whisper_talk_toast">%1$s vous chuchote</string>
+    <string name="whisper_list_title">Liste de chuchotement</string>
+    <string name="whisper_list_hint">Tant que cette liste n’est pas vide, maintenez le bouton ambre à côté du micro pour ne parler qu’à ces cibles ; les messages écrits leur sont aussi adressés. Relâchez pour revenir au canal.</string>
+    <string name="whisper_section_groups">Groupes de serveur</string>
+    <string name="whisper_section_channels">Salons</string>
+    <string name="whisper_section_members">Membres</string>
+    <string name="whisper_group_members">%1$d en ligne</string>
+    <string name="whisper_group_fallback">Groupe n° %1$d</string>
+    <string name="whisper_groups_unavailable">Le serveur n’a pas encore envoyé sa liste de groupes</string>
+    <string name="whisper_no_members">Aucun membre ajouté individuellement - utilisez le bouton de chuchotement sur une ligne de membre</string>
 </resources>
