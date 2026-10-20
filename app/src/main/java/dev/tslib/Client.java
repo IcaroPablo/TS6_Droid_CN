@@ -320,6 +320,23 @@ public class Client implements AutoCloseable {
     }
 
     /**
+     * Set our own away state, i.e. the desktop client's "status" menu entry.
+     *
+     * <p>Sent as {@code clientupdate client_away=1} plus an optional
+     * {@code client_away_message}. Away is only a marker: voice and text keep
+     * working exactly as before, the server merely tells everybody else that we
+     * are away. Passing {@code false} clears the flag and the message.
+     *
+     * @param away    true to go away, false to come back online
+     * @param message free-form away message, may be null or blank for none
+     * @throws TsLibException on error
+     */
+    public void setAway(boolean away, String message) {
+        checkNotClosed();
+        nativeSetAway(nativePtr, away, message);
+    }
+
+    /**
      * Notify the server of our input muted state.
      *
      * @param muted true if microphone is muted
@@ -458,6 +475,7 @@ public class Client implements AutoCloseable {
     private static native void nativeSyncState(long ptr);
     private static native void nativeSetInputMuted(long ptr, boolean muted);
     private static native void nativeSetNickname(long ptr, String nickname);
+    private static native void nativeSetAway(long ptr, boolean away, String message);
     private static native void nativeSendAudio(long ptr, byte[] data, int codec);
     private static native void nativeDownloadFile(long ptr, long channelId, String path);
     private static native void nativeUploadFile(long ptr, long channelId, String path, byte[] data, boolean overwrite);

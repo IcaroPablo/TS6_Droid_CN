@@ -297,4 +297,16 @@
     <string name="whisper_group_fallback">Groupe n° %1$d</string>
     <string name="whisper_groups_unavailable">Le serveur n’a pas encore envoyé sa liste de groupes</string>
     <string name="whisper_no_members">Aucun membre ajouté individuellement - utilisez le bouton de chuchotement sur une ligne de membre</string>
+    <string name="away_status_title">Statut</string>
+    <string name="away_status_hint">Votre statut est visible des autres membres. « Ne pas déranger » coupe aussi le microphone jusqu’au retour en ligne.</string>
+    <string name="away_status_online">En ligne</string>
+    <string name="away_status_online_desc">Reçoit et parle normalement</string>
+    <string name="away_status_away">Absent</string>
+    <string name="away_status_away_desc">Marqueur d’absence ; le microphone reste disponible</string>
+    <string name="away_status_dnd">Ne pas déranger</string>
+    <string name="away_status_dnd_desc">Affiche le statut et coupe le microphone</string>
+    <string name="away_message_label">Message d’absence</string>
+    <string name="away_message_save">Enregistrer</string>
+    <string name="away_marker">Absent</string>
+    <string name="away_status_change">Changer le statut</string>
 </resources>

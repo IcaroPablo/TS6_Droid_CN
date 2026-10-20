@@ -669,6 +669,26 @@ class TsClient {
         }
     }
 
+    /**
+     * Set our own status (`clientupdate client_away`), i.e. the desktop
+     * client's status menu: online, away or do-not-disturb.
+     *
+     * Away is a marker only — voice and text keep working. The user list is
+     * refreshed right after the command because the server does not echo
+     * `clientupdate` back to the sender: without it the member list would keep
+     * showing us online until the next unrelated event.
+     */
+    suspend fun setAway(away: Boolean, message: String?) = withContext(nativeDispatcher) {
+        Log.i(TAG, "setAway(away=$away, message=$message)")
+        try {
+            client?.setAway(away, message)
+            refreshState()
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "setAway failed", e)
+        }
+    }
+
     suspend fun downloadFile(channelId: Long, path: String): ByteArray? {
         val deferred = CompletableDeferred<ByteArray>()
         val key = "$channelId:$path"

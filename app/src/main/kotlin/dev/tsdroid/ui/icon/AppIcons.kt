@@ -211,6 +211,27 @@ object AppIcons {
             ),
         )
     }
+
+    /** 离开状态（月亮） */
+    val Away: ImageVector by lazy {
+        icon(
+            name = "AppIcons.Away",
+            strokes = listOf(
+                "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
+            ),
+        )
+    }
+
+    /** 勿扰状态（禁止圈） */
+    val DoNotDisturb: ImageVector by lazy {
+        icon(
+            name = "AppIcons.DoNotDisturb",
+            strokes = listOf(
+                "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
+                "M8 12h8",
+            ),
+        )
+    }
 }
 
 /**

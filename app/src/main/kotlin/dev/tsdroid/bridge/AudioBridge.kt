@@ -255,6 +255,15 @@ class AudioBridge(
     private val _isMuted = MutableStateFlow(true) // Start muted (PTT default)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
+    /**
+     * Hard "do not disturb" gate. While set, no path reaches the encoder —
+     * push-to-talk presses, hold-to-whisper and an open microphone all call
+     * [setMuted] internally, so a flag on the mute state alone would be undone
+     * by the first press. DND has to win against those.
+     */
+    @Volatile
+    private var forcedMuted = false
+
     private val _isOutputMuted = MutableStateFlow(false)
     val isOutputMuted: StateFlow<Boolean> = _isOutputMuted.asStateFlow()
 
@@ -522,7 +531,7 @@ class AudioBridge(
                 return CaptureOutcome.RECOVER
             }
 
-            if (!_isMuted.value && micGainFactor != 0f) {
+            if (!_isMuted.value && !forcedMuted && micGainFactor != 0f) {
                 // Microphone gain is applied before the VAD gate and the encoder
                 // so "turn it up and be heard" behaves the same in every mic mode.
                 // (micGainFactor == 0 means the user pulled the slider to 0%.)
@@ -1011,6 +1020,19 @@ class AudioBridge(
         val newState = !_isMuted.value
         _isMuted.value = newState
         tsClient.setInputMuted(newState)
+    }
+
+    /**
+     * Enter or leave the do-not-disturb gate (see [forcedMuted]).
+     *
+     * Turning it on also mutes right away so the UI and the server agree.
+     * Turning it off deliberately leaves the mute state alone: the caller knows
+     * whether the resting state is "muted" (push-to-talk) or "open", and
+     * unmuting here would open the microphone behind their back.
+     */
+    fun setForcedMuted(muted: Boolean) {
+        forcedMuted = muted
+        if (muted) setMuted(true)
     }
 
     // Mute state to restore when a hold-to-whisper press ends; null = no hold is

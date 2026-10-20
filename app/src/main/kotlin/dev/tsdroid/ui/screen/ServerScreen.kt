@@ -94,6 +94,7 @@ import dev.tslib.ConnectionState
 import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AnimeWallpaperState
+import dev.tsdroid.ui.component.AwayStatusSheet
 import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChannelPasswordDialog
 import dev.tsdroid.ui.component.NicknameDialog
@@ -107,6 +108,7 @@ import dev.tsdroid.ui.component.ShareTarget
 import dev.tsdroid.ui.component.ServerInfoSheet
 import dev.tsdroid.ui.component.UserPanelSheet
 import dev.tsdroid.ui.component.WhisperListSheet
+import dev.tsdroid.ui.component.awayStatusColor
 import dev.tsdroid.ui.component.parseSpacer
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.icon.AppIcons
@@ -187,6 +189,10 @@ fun ServerScreen(
     var channelPasswordTarget by remember { mutableStateOf<dev.tslib.Channel?>(null) }
     // Temporary-nickname dialog (own row's panel → 修改临时昵称).
     var nicknameDialogOpen by remember { mutableStateOf(false) }
+    // 状态 (online / away / do-not-disturb), the desktop client's status menu.
+    val awayStatus by viewModel.awayStatus.collectAsStateWithLifecycle()
+    val awayMessage by viewModel.awayMessage.collectAsStateWithLifecycle()
+    var awaySheetOpen by remember { mutableStateOf(false) }
 
 
     // Build PM conversation list (uid → display name) from the message map + users list
@@ -357,6 +363,27 @@ fun ServerScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // 状态 entry where the desktop client keeps its status menu:
+                        // the dot is the current state, one tap opens the sheet.
+                        IconButton(onClick = { awaySheetOpen = true }) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .border(
+                                        width = 1.5.dp,
+                                        color = awayStatusColor(awayStatus).copy(alpha = 0.65f),
+                                        shape = CircleShape,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .background(awayStatusColor(awayStatus), CircleShape),
+                                )
+                            }
+                        }
+
                         // Chat FAB with badge
                         Box {
                             IconButton(onClick = {
@@ -788,8 +815,25 @@ fun ServerScreen(
             userPanelUserId = null
             nicknameDialogOpen = true
         },
+        onChangeStatus = {
+            userPanelUserId = null
+            awaySheetOpen = true
+        },
         wallpaper = glassWallpaper,
     )
+
+    // 状态 sheet (online / away / do-not-disturb), opened from the bottom bar's
+    // dot or from the own row's panel.
+    if (awaySheetOpen) {
+        AwayStatusSheet(
+            status = awayStatus,
+            message = awayMessage,
+            onSelect = { viewModel.setAwayStatus(it) },
+            onMessageChange = { viewModel.setAwayMessage(it) },
+            onDismiss = { awaySheetOpen = false },
+            wallpaper = glassWallpaper,
+        )
+    }
 
     // Image preview overlay (bitmap is pre-decoded off the main thread)
     if (previewImageBitmap != null) {

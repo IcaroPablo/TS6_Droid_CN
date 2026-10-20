@@ -69,6 +69,8 @@ fun UserPanelSheet(
     knownChannelGroups: List<ChannelGroup> = emptyList(),
     /** Self panel only: open the temporary-nickname dialog. */
     onChangeNickname: (() -> Unit)? = null,
+    /** Self panel only: open the status sheet (在线 / 离开 / 勿扰). */
+    onChangeStatus: (() -> Unit)? = null,
     /** Backdrop for the frosted panel, so the sheet matches the cards behind it. */
     wallpaper: ImageBitmap? = null,
 ) {
@@ -100,6 +102,17 @@ fun UserPanelSheet(
         UserInfoRow(stringResource(R.string.user_version), user.version ?: "")
         UserInfoRow(stringResource(R.string.user_country), user.country ?: "")
         UserInfoRow(stringResource(R.string.user_talkpower), user.talkPower.toString())
+        // 状态: the away flag is the only status the protocol carries, so the row
+        // says online or away and the message (if any) gets its own line.
+        UserInfoRow(
+            stringResource(R.string.away_status_title),
+            stringResource(
+                if (user.isAway) R.string.away_status_away else R.string.away_status_online,
+            ),
+        )
+        user.awayMessage?.takeIf { it.isNotBlank() }?.let { away ->
+            UserInfoRow(stringResource(R.string.away_message_label), away)
+        }
 
         // 服务器组: the groups this member holds. Long-pressing the own row shows
         // the same list for yourself, which is how a user checks their own rights.
@@ -186,6 +199,12 @@ fun UserPanelSheet(
                 Spacer(Modifier.height(6.dp))
                 TextButton(onClick = onChangeNickname) {
                     Text(stringResource(R.string.self_change_nickname))
+                }
+            }
+            // Same reasoning for the status: only your own client can set it.
+            if (onChangeStatus != null) {
+                TextButton(onClick = onChangeStatus) {
+                    Text(stringResource(R.string.away_status_change))
                 }
             }
             return@GlassBottomSheet

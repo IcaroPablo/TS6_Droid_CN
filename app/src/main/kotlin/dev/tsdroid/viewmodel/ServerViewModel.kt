@@ -23,6 +23,7 @@ import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.bridge.TsFileEntry
 import dev.tsdroid.bridge.VadGate
 import dev.tsdroid.han.R
+import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.MessageStore
 import dev.tsdroid.data.SettingsStore
@@ -505,7 +506,17 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             viewModelScope.launch {
-                service.tsClient.state.collect { _connectionState.value = it }
+                service.tsClient.state.collect { state ->
+                    _connectionState.value = state
+                    // Away is per connection: a session that ended comes back
+                    // online, and the DND microphone gate must not outlive it.
+                    if (state == ConnectionState.DISCONNECTED &&
+                        _awayStatus.value != AwayStatus.ONLINE
+                    ) {
+                        _awayStatus.value = AwayStatus.ONLINE
+                        audioBridge?.setForcedMuted(false)
+                    }
+                }
             }
             viewModelScope.launch {
                 service.tsClient.events.collect { handleEvent(it) }
@@ -943,6 +954,45 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         _rawUsers.value.count { user -> groupId in user.serverGroups }
 
     fun stopWhisper() = WhisperManager.stop()
+
+    // ── 状态（在线 / 离开 / 勿扰） ────────────────────────────────
+
+    private val _awayStatus = MutableStateFlow(AwayStatus.ONLINE)
+
+    /** Our own status — the desktop client's status menu. */
+    val awayStatus: StateFlow<AwayStatus> = _awayStatus.asStateFlow()
+
+    private val _awayMessage = MutableStateFlow("")
+
+    /** Free-form away message typed by the user; the status default fills in. */
+    val awayMessage: StateFlow<String> = _awayMessage.asStateFlow()
+
+    /**
+     * Switch status (`clientupdate client_away`).
+     *
+     * Away is only a marker on the server. Do-not-disturb additionally closes
+     * the microphone and keeps it closed for as long as it lasts, because the
+     * away bit alone would tell the others but not silence us.
+     */
+    fun setAwayStatus(status: AwayStatus) {
+        _awayStatus.value = status
+        audioBridge?.setForcedMuted(status == AwayStatus.DND)
+        if (status != AwayStatus.DND) {
+            // Leaving DND: back to whatever the current mic mode rests at
+            // (muted in push-to-talk, open in voice activation) — unmuting
+            // blindly here would open the microphone behind the user's back.
+            audioBridge?.setMuted(isPttMode.value)
+        }
+        viewModelScope.launch { tsClient?.setAway(status.away, status.message(_awayMessage.value)) }
+    }
+
+    /** Remember a custom away message and push it while we are actually away. */
+    fun setAwayMessage(text: String) {
+        _awayMessage.value = text
+        val status = _awayStatus.value
+        if (status == AwayStatus.ONLINE) return
+        viewModelScope.launch { tsClient?.setAway(true, status.message(text)) }
+    }
 
     /**
      * Text typed while密聊 is active goes to every online client target as an

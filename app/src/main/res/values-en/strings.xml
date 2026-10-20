@@ -297,4 +297,16 @@
     <string name="whisper_group_fallback">Group #%1$d</string>
     <string name="whisper_groups_unavailable">The server has not sent its group list yet</string>
     <string name="whisper_no_members">No individually added members yet - use the whisper button on a member row</string>
+    <string name="away_status_title">Status</string>
+    <string name="away_status_hint">Others see your status. Do not disturb also closes your microphone until you go back online.</string>
+    <string name="away_status_online">Online</string>
+    <string name="away_status_online_desc">Receives and talks as usual</string>
+    <string name="away_status_away">Away</string>
+    <string name="away_status_away_desc">Shows the away marker; the microphone keeps working</string>
+    <string name="away_status_dnd">Do not disturb</string>
+    <string name="away_status_dnd_desc">Shows the status and closes the microphone</string>
+    <string name="away_message_label">Away message</string>
+    <string name="away_message_save">Save</string>
+    <string name="away_marker">Away</string>
+    <string name="away_status_change">Change status</string>
 </resources>

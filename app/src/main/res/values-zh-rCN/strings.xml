@@ -296,4 +296,16 @@
     <string name="whisper_group_fallback">用户组 #%1$d</string>
     <string name="whisper_groups_unavailable">服务器尚未返回用户组列表</string>
     <string name="whisper_no_members">还没有单独添加的成员，可在成员行点密聊按钮添加</string>
+    <string name="away_status_title">状态</string>
+    <string name="away_status_hint">状态对其他成员可见；勿扰会同时关闭麦克风，直到切回在线。</string>
+    <string name="away_status_online">在线</string>
+    <string name="away_status_online_desc">正常接收与发言</string>
+    <string name="away_status_away">离开</string>
+    <string name="away_status_away_desc">显示离开标记，麦克风照常可用</string>
+    <string name="away_status_dnd">勿扰</string>
+    <string name="away_status_dnd_desc">显示勿扰状态并关闭麦克风</string>
+    <string name="away_message_label">离开消息</string>
+    <string name="away_message_save">保存</string>
+    <string name="away_marker">离开</string>
+    <string name="away_status_change">修改状态</string>
 </resources>
