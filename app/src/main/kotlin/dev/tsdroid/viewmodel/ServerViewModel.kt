@@ -974,28 +974,25 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
      * away bit alone would tell the others but not silence us.
      */
     fun setAwayStatus(status: AwayStatus) {
+        val previous = _awayStatus.value
+        // Re-tapping the chip that is already selected must not cost a command:
+        // the server counts them and its flood protection rejects the ones after
+        // the budget is gone (ClientIsFlooding), which is what used to make a
+        // switched status never show up on other clients.
+        if (previous == status) return
         _awayStatus.value = status
-        audioBridge?.setForcedMuted(status == AwayStatus.DND)
-        if (status != AwayStatus.DND) {
-            // Leaving DND: back to whatever the current mic mode rests at
-            // (muted in push-to-talk, open in voice activation) — unmuting
-            // blindly here would open the microphone behind the user's back.
-            audioBridge?.setMuted(isPttMode.value)
-        }
-        val message = status.message(_awayMessage.value)
-        viewModelScope.launch {
-            val client = tsClient ?: return@launch
-            if (status.away) {
-                // Clear the flag first, then set it. A server that still holds
-                // an away state from an earlier session (or one that compares
-                // against a cached value) only reports a real change on
-                // online -> away; a plain re-send of "away" can be a silent
-                // no-op there, which is exactly how a status can look switched
-                // here but never show up on other clients.
-                client.setAway(false, null)
+        // The microphone gate only changes when do-not-disturb is entered or left;
+        // ONLINE <-> AWAY must not send a mute command on top of the status one.
+        if ((previous == AwayStatus.DND) != (status == AwayStatus.DND)) {
+            audioBridge?.setForcedMuted(status == AwayStatus.DND)
+            if (status != AwayStatus.DND) {
+                // Leaving DND: back to whatever the current mic mode rests at
+                // (muted in push-to-talk, open in voice activation) — unmuting
+                // blindly here would open the microphone behind the user's back.
+                audioBridge?.setMuted(isPttMode.value)
             }
-            client.setAway(status.away, message)
         }
+        viewModelScope.launch { tsClient?.setAway(status.away, status.message(_awayMessage.value)) }
     }
 
     /** Remember a custom away message and push it while we are actually away. */

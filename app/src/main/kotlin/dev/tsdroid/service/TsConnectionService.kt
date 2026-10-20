@@ -16,6 +16,7 @@ import android.widget.Toast
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -883,9 +884,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             tsClient.connect(address, identity, nickname, password)
             acquireWakeLock()
             audioBridge.startCapture(noiseSuppressionSetting())
-            // Sync initial mute state with server
+            // Sync initial mute state with server. Forced: a fresh connection
+            // starts unmuted server-side even when our local state did not change.
             if (audioBridge.isMuted.value) {
-                tsClient.setInputMuted(true)
+                tsClient.setInputMuted(true, force = true)
             }
             // Start event loop
             tsClient.startEventLoop()
@@ -1086,6 +1088,11 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             setViewTreeLifecycleOwner(this@TsConnectionService)
             setViewTreeViewModelStoreOwner(this@TsConnectionService)
             setViewTreeSavedStateRegistryOwner(this@TsConnectionService)
+            // Needed for the inline password field: a view that cannot take
+            // focus never hands it to the text field, and without focus the IME
+            // has nothing to attach to.
+            isFocusable = true
+            isFocusableInTouchMode = true
 
             setContent {
                 val channels by tsClient.channels.collectAsStateWithLifecycle()
@@ -1142,6 +1149,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                                     runCatching { tsClient.moveToChannel(channelId, password) }
                                 }
                             },
+                            onKeyboardRequest = { visible -> setOverlayKeyboardVisible(visible) },
                             onDisconnect = { disconnect() },
                         )
                     }
@@ -1157,6 +1165,57 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             Log.w(TAG, "Failed to add the floating window", e)
             overlayView = null
             overlayLayoutParams = null
+        }
+    }
+
+    /**
+     * Let a text field inside the floating window receive the keyboard.
+     *
+     * The window runs with [WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE] so it
+     * never steals focus from the app underneath — and a non-focusable window
+     * cannot get an IME, which is why tapping the inline channel-password field
+     * produced no keyboard at all. While a field is open the flag is cleared
+     * (the window has to be focusable for `InputMethodManager` to attach), and
+     * it is put back the moment the field closes.
+     */
+    private fun setOverlayKeyboardVisible(visible: Boolean) {
+        val view = overlayView ?: return
+        val params = overlayLayoutParams ?: return
+        val notFocusable = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        val altFocusableIm = WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        val newFlags = if (visible) {
+            (params.flags and notFocusable.inv()) and altFocusableIm.inv()
+        } else {
+            params.flags or notFocusable
+        }
+
+        if (newFlags != params.flags) {
+            params.flags = newFlags
+            params.softInputMode = if (visible) {
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            } else {
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+            }
+            try {
+                windowManager.updateViewLayout(view, params)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Overlay focus change failed", e)
+            }
+        }
+
+        if (visible) {
+            view.requestFocus()
+            // The flag change has to reach the window manager before the IME can
+            // attach, so ask for the keyboard on the next few frames, not now.
+            view.postDelayed({
+                val imm = getSystemService(InputMethodManager::class.java)
+                imm?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+            }, 120)
+        } else {
+            view.clearFocus()
+            val imm = getSystemService(InputMethodManager::class.java)
+            imm?.hideSoftInputFromWindow(view.windowToken, 0)
         }
     }
 
@@ -1406,6 +1465,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         stopOverlayTalk()
         overlayView?.let { view ->
             try {
+                // A window that disappears while its password field had the
+                // focus would otherwise leave the keyboard on screen.
+                getSystemService(InputMethodManager::class.java)
+                    ?.hideSoftInputFromWindow(view.windowToken, 0)
                 // Save the current position before removing the view.
                 overlayLayoutParams?.let { params ->
                     lastSavedX = params.x

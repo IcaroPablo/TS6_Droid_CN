@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -53,6 +54,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -80,6 +83,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Which of the panel's two lists is showing. Hoisted so it survives collapsing the panel. */
@@ -176,6 +180,15 @@ internal fun FloatingOverlay(
     onWhisperTalkStop: () -> Unit,
     onOpenApp: () -> Unit,
     onMoveToChannel: (Long, String?) -> Unit,
+    /**
+     * True while a text field inside the window wants the keyboard.
+     *
+     * The window runs with `FLAG_NOT_FOCUSABLE` (it must not steal focus from
+     * the app underneath), and such a window never receives an IME — tapping the
+     * channel-password field did nothing at all. The service clears that flag
+     * while this is true and puts it back afterwards.
+     */
+    onKeyboardRequest: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     // The window is WRAP_CONTENT, and the system throttles overlay window resizes hard: animating the
@@ -227,6 +240,7 @@ internal fun FloatingOverlay(
                     onWhisperTalkStop = onWhisperTalkStop,
                     onOpenApp = onOpenApp,
                     onMoveToChannel = onMoveToChannel,
+                    onKeyboardRequest = onKeyboardRequest,
                     onDisconnect = onDisconnect,
                 )
             }
@@ -591,6 +605,7 @@ private fun ExpandedPanel(
     onWhisperTalkStop: () -> Unit,
     onOpenApp: () -> Unit,
     onMoveToChannel: (Long, String?) -> Unit,
+    onKeyboardRequest: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     Surface(
@@ -643,7 +658,12 @@ private fun ExpandedPanel(
             Box(modifier = Modifier.weight(1f, fill = false)) {
                 when (view) {
                     OverlayView.Members -> MembersList(state.members)
-                    OverlayView.Channels -> ChannelsList(state.channels, state.currentChannelId, onMoveToChannel)
+                    OverlayView.Channels -> ChannelsList(
+                        channels = state.channels,
+                        currentChannelId = state.currentChannelId,
+                        onMoveToChannel = onMoveToChannel,
+                        onKeyboardRequest = onKeyboardRequest,
+                    )
                 }
             }
 
@@ -915,6 +935,7 @@ private fun ChannelsList(
     channels: List<FloatingOverlayChannel>,
     currentChannelId: Long,
     onMoveToChannel: (Long, String?) -> Unit,
+    onKeyboardRequest: (Boolean) -> Unit,
 ) {
     if (channels.isEmpty()) {
         EmptyHint(stringResource(R.string.floating_overlay_no_channels))
@@ -925,6 +946,25 @@ private fun ChannelsList(
     // dialog would be clipped to the window.
     var passwordChannel by remember { mutableStateOf<FloatingOverlayChannel?>(null) }
     var password by remember { mutableStateOf("") }
+    val passwordFocus = remember { FocusRequester() }
+
+    // The overlay window is not focusable by default and cannot receive the IME
+    // at all. Ask the service to make it focusable while the prompt is open,
+    // then focus the field so the keyboard comes up on its own.
+    LaunchedEffect(passwordChannel != null) {
+        val open = passwordChannel != null
+        onKeyboardRequest(open)
+        if (open) {
+            // The window has to be focusable first; focusing in the same frame
+            // is too early and the IME would not attach.
+            delay(120)
+            passwordFocus.requestFocus()
+        }
+    }
+    // Leaving this list (panel collapsed, other tab) must hand the keyboard back.
+    DisposableEffect(Unit) {
+        onDispose { onKeyboardRequest(false) }
+    }
 
     passwordChannel?.let { channel ->
         Column(
@@ -946,7 +986,9 @@ private fun ChannelsList(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 textStyle = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(passwordFocus),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

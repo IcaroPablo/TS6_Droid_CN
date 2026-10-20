@@ -1,5 +1,6 @@
 package dev.tsdroid.bridge
 
+import android.os.SystemClock
 import android.util.Log
 import dev.tslib.AudioSink
 import dev.tslib.Channel
@@ -69,10 +70,14 @@ class TsClient {
         /** Grace period for the group list answers, read once after connect. */
         private const val GROUP_LISTS_SETTLE_MS = 1_500L
 
-// Slow re-send interval for an away status: long enough to be invisible, short
-// enough that a silent server-side reset is corrected while the user is still
-// looking at the screen.
-private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
+// Status commands share the server's per-client command budget with everything
+// else (mute updates, chat, file transfers). Exceed it and the server answers
+// `ClientIsFlooding` and drops commands until the penalty expires, which is how
+// a status could look switched here but never arrive. Taps are therefore
+// coalesced and spaced out.
+private const val AWAY_SEND_DEBOUNCE_MS = 600L
+private const val AWAY_SEND_MIN_INTERVAL_MS = 1_200L
+private const val FLOOD_RETRY_DELAY_MS = 10_000L
     }
 
     @Volatile
@@ -154,8 +159,14 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
     // a status the user still sees on screen.
     private var desiredAway: Pair<Boolean, String?>? = null
 
-    // Slow re-send that keeps an away status alive (see restartAwayWatchdog).
-    private var awayWatchdog: Job? = null
+    // Coalesced sender for that status (see setAway) plus the bookkeeping that
+    // keeps consecutive status commands far enough apart.
+    private var awaySendJob: Job? = null
+    private var lastAwaySentAt = 0L
+
+    // Last value actually handed to the server for `client_input_muted`, so a
+    // PTT press that does not change the state costs no command.
+    private var lastSentInputMuted: Boolean? = null
 
     val isConnected: Boolean
         get() = _state.value == ConnectionState.CONNECTED
@@ -255,6 +266,7 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
                         desiredAway?.let { (away, message) ->
                             try {
                                 c.setAway(away, message)
+                                lastAwaySentAt = SystemClock.elapsedRealtime()
                                 Log.i(TAG, "Status re-applied after connect (away=$away)")
                             } catch (e: Throwable) {
                                 Log.w(TAG, "Status re-apply failed", e)
@@ -429,6 +441,12 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
                 val message = event.data["message"] as? String ?: return
                 Log.w(TAG, "Command error: $message")
                 _commandErrors.tryEmit(message)
+                // The server's flood protection rejects commands for a while
+                // once tripped, so a status change queued just before that would
+                // otherwise be lost silently.
+                if (message.contains("flood", ignoreCase = true)) {
+                    scheduleFloodRetry()
+                }
             }
             "channel_permissions_updated" -> {
                 val channelId = (event.data["channel_id"] as? Number)?.toLong() ?: return
@@ -478,19 +496,6 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
         client = null
         resetState()
         if (c != null) {
-            // Leave the server in a clean "online" state. The away flag can
-            // outlive a session there, and a client that reconnects into an
-            // already-away slot never produces a change other clients would
-            // notice — which is exactly how a status can stop working after the
-            // first session.
-            if (desiredAway?.first == true) {
-                try {
-                    c.setAway(false, null)
-                } catch (e: Throwable) {
-                    if (e is CancellationException) throw e
-                    Log.w(TAG, "Clearing status before disconnect failed", e)
-                }
-            }
             closeClient(c, "disconnect")
             return true
         }
@@ -503,6 +508,9 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
         _users.value = emptyList()
         _serverInfo.value = null
         cachedClientId = null
+        // A new connection knows nothing about what we sent on the old one.
+        lastSentInputMuted = null
+        lastAwaySentAt = 0L
     }
 
     private fun closeClient(c: Client, reason: String) {
@@ -686,8 +694,19 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
         }
     }
 
-    fun setInputMuted(muted: Boolean) {
-        Log.i(TAG, "setInputMuted($muted) client=${if (client != null) "present" else "NULL"}")
+    /**
+     * Tell the server our microphone mute state (`clientupdate client_input_muted`).
+     *
+     * Every call is one command on the server's control connection, and the
+     * server's flood protection counts them: push-to-talk fires this on every
+     * press and release. Sending only real changes keeps a talkative session
+     * well inside the budget, which is what used to break the *status* menu
+     * (its commands were the ones rejected once the client was "flooding").
+     */
+    fun setInputMuted(muted: Boolean, force: Boolean = false) {
+        if (!force && lastSentInputMuted == muted) return
+        lastSentInputMuted = muted
+        Log.i(TAG, "setInputMuted($muted) force=$force client=${if (client != null) "present" else "NULL"}")
         launchNativeCommand("setInputMuted") {
             this.setInputMuted(muted)
         }
@@ -710,57 +729,65 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
      * Set our own status (`clientupdate client_away`), i.e. the desktop
      * client's status menu: online, away or do-not-disturb.
      *
-     * Away is a marker only — voice and text keep working. Two extra steps keep
-     * the server and this client in agreement:
+     * Away is a marker only — voice and text keep working.
      *
-     *  - the desired state is remembered here, because a reconnect builds a new
-     *    native client that starts online while the user still expects "away";
-     *  - the user list is refreshed right after the command, so the member list
-     *    shows the new status immediately instead of at the next server event.
-     *
-     * The native layer additionally re-sends the state when the server's own
-     * `notifyclientupdated` echo reports a different flag.
+     * The command is **coalesced**: the server rejects bursts with
+     * `ClientIsFlooding` ("client is flooding") and then keeps rejecting for a
+     * while, so a user tapping through the menu must produce one command for the
+     * final choice instead of one per tap. The desired state is remembered and
+     * pushed again after a reconnect.
      */
     suspend fun setAway(away: Boolean, message: String?) = withContext(nativeDispatcher) {
         Log.i(TAG, "setAway(away=$away, message=$message)")
         desiredAway = away to message
+        awaySendJob?.cancel()
+        awaySendJob = clientCoroutineScope.launch {
+            delay(AWAY_SEND_DEBOUNCE_MS)
+            sendDesiredAway("debounced")
+        }
+    }
+
+    /** One coalesced send of [desiredAway]; runs on the native thread. */
+    private fun sendDesiredAway(reason: String) {
+        val (away, message) = desiredAway ?: return
+        val c = client ?: return
+        val now = SystemClock.elapsedRealtime()
+        val sinceLast = now - lastAwaySentAt
+        if (sinceLast < AWAY_SEND_MIN_INTERVAL_MS) {
+            // Too soon after the previous command: wait out the gap instead of
+            // spending flood budget, then send whatever the user picked last.
+            awaySendJob?.cancel()
+            awaySendJob = clientCoroutineScope.launch {
+                delay(AWAY_SEND_MIN_INTERVAL_MS - sinceLast)
+                sendDesiredAway("spaced")
+            }
+            return
+        }
         try {
-            client?.setAway(away, message)
+            c.setAway(away, message)
+            lastAwaySentAt = now
+            Log.i(TAG, "Status sent ($reason, away=$away)")
             refreshState()
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             Log.w(TAG, "setAway failed", e)
         }
-        restartAwayWatchdog()
     }
 
     /**
-     * Keep an away status alive with a slow re-send (once a minute).
-     *
-     * The native layer already corrects the state as soon as the server echoes
-     * something different, which covers the normal case. This loop is the
-     * backstop for a server that changes the flag *without* telling us — the
-     * status the user picked is simply re-asserted, so it can never quietly
-     * drift back to online.
+     * The server throttled us (`ClientIsFlooding`). Everything after that is
+     * dropped until the penalty expires, so retry the wanted status once, late
+     * enough to be outside the window — and never in a tight loop, which would
+     * only extend the penalty.
      */
-    private fun restartAwayWatchdog() {
-        awayWatchdog?.cancel()
-        awayWatchdog = null
-        val wanted = desiredAway ?: return
-        if (!wanted.first) return
-        awayWatchdog = clientCoroutineScope.launch {
-            while (isActive) {
-                delay(AWAY_REASSERT_INTERVAL_MS)
-                val (away, message) = desiredAway ?: break
-                if (!away) break
-                try {
-                    client?.setAway(away, message)
-                    Log.i(TAG, "Away status re-asserted")
-                } catch (e: Throwable) {
-                    if (e is CancellationException) throw e
-                    Log.w(TAG, "Away re-assert failed", e)
-                }
-            }
+    private fun scheduleFloodRetry() {
+        if (desiredAway == null) return
+        awaySendJob?.cancel()
+        awaySendJob = clientCoroutineScope.launch {
+            Log.i(TAG, "Flood penalty: retrying status in ${FLOOD_RETRY_DELAY_MS}ms")
+            delay(FLOOD_RETRY_DELAY_MS)
+            lastAwaySentAt = 0L
+            sendDesiredAway("flood-retry")
         }
     }
 
@@ -771,8 +798,8 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
     fun forgetAway() {
         Log.i(TAG, "forgetAway()")
         desiredAway = null
-        awayWatchdog?.cancel()
-        awayWatchdog = null
+        awaySendJob?.cancel()
+        awaySendJob = null
     }
 
     suspend fun downloadFile(channelId: Long, path: String): ByteArray? {
