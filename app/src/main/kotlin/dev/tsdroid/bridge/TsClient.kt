@@ -478,6 +478,19 @@ private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
         client = null
         resetState()
         if (c != null) {
+            // Leave the server in a clean "online" state. The away flag can
+            // outlive a session there, and a client that reconnects into an
+            // already-away slot never produces a change other clients would
+            // notice — which is exactly how a status can stop working after the
+            // first session.
+            if (desiredAway?.first == true) {
+                try {
+                    c.setAway(false, null)
+                } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "Clearing status before disconnect failed", e)
+                }
+            }
             closeClient(c, "disconnect")
             return true
         }

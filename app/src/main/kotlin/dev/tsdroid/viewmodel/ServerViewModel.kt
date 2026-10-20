@@ -982,7 +982,20 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             // blindly here would open the microphone behind the user's back.
             audioBridge?.setMuted(isPttMode.value)
         }
-        viewModelScope.launch { tsClient?.setAway(status.away, status.message(_awayMessage.value)) }
+        val message = status.message(_awayMessage.value)
+        viewModelScope.launch {
+            val client = tsClient ?: return@launch
+            if (status.away) {
+                // Clear the flag first, then set it. A server that still holds
+                // an away state from an earlier session (or one that compares
+                // against a cached value) only reports a real change on
+                // online -> away; a plain re-send of "away" can be a silent
+                // no-op there, which is exactly how a status can look switched
+                // here but never show up on other clients.
+                client.setAway(false, null)
+            }
+            client.setAway(status.away, message)
+        }
     }
 
     /** Remember a custom away message and push it while we are actually away. */
