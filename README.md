@@ -65,7 +65,11 @@ TeamSpeak 协议里只有一个 `client_away` 标记加一条离开消息，没�
 - **长按自己那一行**的面板也新增「状态」一行和「修改状态」按钮，作为第二个入口
 - **成员列表**：离开的成员名字本来就会变暗并带月亮角标；长按面板现在还会显示「状态」与
   「离开消息」，一眼看出对方为什么不在
-- **断线即复位**：状态是每条连接的事，掉线重连后回到在线，勿扰的麦克风闸门也不会留到下一次连接
+- **断线重连后自动恢复**：掉线重连会建一条新连接（服务器那边回到在线），客户端记住你选的状态并在重连成功后**自动重新下发**；只有主动断开连接才复位为在线
+
+> 状态会「粘住」：客户端记住你选的那一项，**重连到新连接后自动重新下发**；服务器回显
+> `notifyclientupdated` 时若发现状态与所选不一致（被清掉、或命令没落地），会立即再发一次，
+> 另有每分钟一次的兜底重发。这样不会出现「手机上显示离开，别人看到的却是在线」。
 
 **底层**
 
@@ -74,6 +78,8 @@ TeamSpeak 协议里只有一个 `client_away` 标记加一条离开消息，没�
   （叠在 v2.1.7 那份密聊补丁之上，`patch -p1` 可干净应用）：`tslib-core` 增加
   `set_away`（`clientupdate client_away` + `client_away_message` + 本地覆盖，与昵称同一套处理——
   服务端不会把 `clientupdate` 回显给发送者），`tslib-jni` 增加 `nativeSetAway`
+  - 另加一层兜底：解析服务器回显的 `notifyclientupdated`，一旦自己那一行的 away 标记与所选不符
+    （3 秒冷却，避免回声成环）就重新下发，日志里会写 `Server sees away=..., we want away=...`
   - 补丁在仓库里是 LF 行尾；若在 Windows 上 `core.autocrlf=true` 的工作区里应用时报
     `different line endings`，先 `dos2unix` 该补丁文件（或 `patch --binary`）再应用即可
 - 原生库按上一条相同命令重新交叉编译（arm64-v8a，`--features vendored-openssl`）

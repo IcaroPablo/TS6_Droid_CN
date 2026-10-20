@@ -508,13 +508,12 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch {
                 service.tsClient.state.collect { state ->
                     _connectionState.value = state
-                    // Away is per connection: a session that ended comes back
-                    // online, and the DND microphone gate must not outlive it.
-                    if (state == ConnectionState.DISCONNECTED &&
-                        _awayStatus.value != AwayStatus.ONLINE
-                    ) {
-                        _awayStatus.value = AwayStatus.ONLINE
-                        audioBridge?.setForcedMuted(false)
+                    // The status survives a dropout on purpose: TsClient remembers
+                    // it and pushes it again on the next connection, which is what
+                    // the desktop client does too. Only an explicit disconnect
+                    // forgets it (see disconnect()).
+                    if (state == ConnectionState.DISCONNECTED) {
+                        Log.i(TAG, "Connection lost; keeping status $(_awayStatus.value) for the reconnect")
                     }
                 }
             }
@@ -1549,6 +1548,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     fun disconnect() {
         saveNow()
         queriedPermChannels.clear()
+        // Leaving on purpose means the next connection starts online; a dropout
+        // keeps the status and re-applies it (see the state collector above).
+        tsClient?.forgetAway()
+        _awayStatus.value = AwayStatus.ONLINE
+        audioBridge?.setForcedMuted(false)
         connectionService?.disconnect()
     }
 

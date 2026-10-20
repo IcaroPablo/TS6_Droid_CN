@@ -1,25 +1,83 @@
 --- a/crates/tslib-core/src/client.rs
 +++ b/crates/tslib-core/src/client.rs
-@@ -105,6 +105,10 @@
+@@ -72,6 +72,10 @@
+ /// Upper bound on stream items processed per wait_events call.
+ const MAX_STREAM_BURST: usize = 16;
+ 
++/// Minimum gap between two away-state corrections, so a server that keeps
++/// reporting a different status cannot turn the echo into a command loop.
++const AWAY_REASSERT_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3);
++
+ pub struct Client {
+     /// The tsclientlib connection
+     connection: Option<TsConnection>,
+@@ -105,6 +109,13 @@
      /// `clientupdate client_nickname` is not echoed back to the sender, so the
      /// book keeps the old name and the member list would show it.
      self_nickname: Option<String>,
-+    /// Local override for our own away state (away flag, away message). Same
-+    /// reason as `self_nickname`: the server does not echo `clientupdate` back
-+    /// to the sender, so the book would keep us "online" forever.
++    /// Local override for our own away state (away flag, away message).
++    /// The member list has to follow the user's choice even before the server
++    /// answers; the authoritative answer arrives later as `notifyclientupdated`
++    /// and is compared against this in [`Client::handle_client_updated`].
 +    self_away: Option<(bool, Option<String>)>,
++    /// Last time the away state was re-sent because the server disagreed.
++    last_away_assert: Option<Instant>,
      /// Pending file list request: accumulates entries until FileListFinished
      pending_file_list: Option<(u64, String, Vec<FileEntry>)>,
      /// Pending permoverview request: accumulates permission entries
-@@ -149,6 +153,7 @@
+@@ -149,6 +160,8 @@
              pending_uploads: HashMap::new(),
              self_input_muted: None,
              self_nickname: None,
 +            self_away: None,
++            last_away_assert: None,
              pending_file_list: None,
              pending_perm_overview: None,
              whisper_clients: Vec::new(),
-@@ -1125,6 +1130,16 @@
+@@ -984,6 +997,42 @@
+                 }
+                 None
+             }
++            InMessage::ClientUpdated(ref updated) => {
++                // The server echoes our own `clientupdate` back to us, and that
++                // echo is the only authoritative answer about how everybody else
++                // sees our away state. If it disagrees with what the user picked
++                // (a client that reconnected behind our back, a dropped command,
++                // or a server that cleared the flag), the choice is sent again:
++                // a status the user picked must not silently fall back to online.
++                if let (Some(self_id), Some((want_away, want_message))) =
++                    (self.client_id, self.self_away.clone())
++                {
++                    let mut server_away: Option<bool> = None;
++                    for part in updated.iter() {
++                        if part.client_id.0 != self_id {
++                            continue;
++                        }
++                        if let Some(is_away) = part.is_away {
++                            server_away = Some(is_away);
++                        }
++                    }
++                    if let Some(server_away) = server_away {
++                        let cooling_down = self
++                            .last_away_assert
++                            .map(|at| at.elapsed() < AWAY_REASSERT_COOLDOWN)
++                            .unwrap_or(false);
++                        if server_away != want_away && !cooling_down {
++                            self.last_away_assert = Some(Instant::now());
++                            warn!(
++                                "Server sees away={}, we want away={}; re-sending status",
++                                server_away, want_away
++                            );
++                            let _ = self.set_away(want_away, want_message.as_deref());
++                        }
++                    }
++                }
++                None
++            }
+             InMessage::CommandError(ref err) => {
+                 for part in err.iter() {
+                     log::info!("CommandError: id={:?}, msg={}", part.id, part.message);
+@@ -1125,6 +1174,16 @@
                  user.nickname = nickname.clone();
              }
          }
@@ -36,7 +94,7 @@
          users
      }
  
-@@ -1163,6 +1178,16 @@
+@@ -1163,6 +1222,16 @@
                  user.nickname = nickname.clone();
              }
          }
@@ -53,7 +111,7 @@
          users
      }
  
-@@ -1733,6 +1758,50 @@
+@@ -1733,6 +1802,50 @@
  
          Ok(())
      }
@@ -104,7 +162,7 @@
  }
  
  /// Convert tsclientlib CodecType to our AudioCodec
-@@ -1990,6 +2059,18 @@
+@@ -1990,6 +2103,18 @@
      hints
  }
  
@@ -123,7 +181,7 @@
  #[cfg(test)]
  mod whisper_routing_tests {
      use super::{
-@@ -2081,3 +2162,38 @@
+@@ -2081,3 +2206,38 @@
          assert_eq!(&content[13..], &[9, 9], "audio payload is passed through");
      }
  }

@@ -68,6 +68,11 @@ class TsClient {
         private const val DISCONNECT_POLL_MS = 20L
         /** Grace period for the group list answers, read once after connect. */
         private const val GROUP_LISTS_SETTLE_MS = 1_500L
+
+// Slow re-send interval for an away status: long enough to be invisible, short
+// enough that a silent server-side reset is corrected while the user is still
+// looking at the screen.
+private const val AWAY_REASSERT_INTERVAL_MS = 60_000L
     }
 
     @Volatile
@@ -143,6 +148,14 @@ class TsClient {
     // A reconnect builds a new native client whose target set starts empty, but
     // the UID/channel-keyed target list is still on screen, so it is re-applied.
     private var whisperTargetsProvider: (() -> WhisperVoiceTargets)? = null
+
+    // Status (在线 / 离开 / 勿扰) the user picked, re-applied to every freshly
+    // created native client: a reconnect starts online and would otherwise drop
+    // a status the user still sees on screen.
+    private var desiredAway: Pair<Boolean, String?>? = null
+
+    // Slow re-send that keeps an away status alive (see restartAwayWatchdog).
+    private var awayWatchdog: Job? = null
 
     val isConnected: Boolean
         get() = _state.value == ConnectionState.CONNECTED
@@ -236,6 +249,17 @@ class TsClient {
                             }
                         }
                         refreshState()
+                        // The status is per connection as far as the server is
+                        // concerned: a new native client logs in online, so the
+                        // status the user picked is pushed again here.
+                        desiredAway?.let { (away, message) ->
+                            try {
+                                c.setAway(away, message)
+                                Log.i(TAG, "Status re-applied after connect (away=$away)")
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Status re-apply failed", e)
+                            }
+                        }
                         // The server answers both group list requests asynchronously,
                         // so give it a moment before reading the names once.
                         clientCoroutineScope.launch {
@@ -673,13 +697,20 @@ class TsClient {
      * Set our own status (`clientupdate client_away`), i.e. the desktop
      * client's status menu: online, away or do-not-disturb.
      *
-     * Away is a marker only — voice and text keep working. The user list is
-     * refreshed right after the command because the server does not echo
-     * `clientupdate` back to the sender: without it the member list would keep
-     * showing us online until the next unrelated event.
+     * Away is a marker only — voice and text keep working. Two extra steps keep
+     * the server and this client in agreement:
+     *
+     *  - the desired state is remembered here, because a reconnect builds a new
+     *    native client that starts online while the user still expects "away";
+     *  - the user list is refreshed right after the command, so the member list
+     *    shows the new status immediately instead of at the next server event.
+     *
+     * The native layer additionally re-sends the state when the server's own
+     * `notifyclientupdated` echo reports a different flag.
      */
     suspend fun setAway(away: Boolean, message: String?) = withContext(nativeDispatcher) {
         Log.i(TAG, "setAway(away=$away, message=$message)")
+        desiredAway = away to message
         try {
             client?.setAway(away, message)
             refreshState()
@@ -687,6 +718,48 @@ class TsClient {
             if (e is CancellationException) throw e
             Log.w(TAG, "setAway failed", e)
         }
+        restartAwayWatchdog()
+    }
+
+    /**
+     * Keep an away status alive with a slow re-send (once a minute).
+     *
+     * The native layer already corrects the state as soon as the server echoes
+     * something different, which covers the normal case. This loop is the
+     * backstop for a server that changes the flag *without* telling us — the
+     * status the user picked is simply re-asserted, so it can never quietly
+     * drift back to online.
+     */
+    private fun restartAwayWatchdog() {
+        awayWatchdog?.cancel()
+        awayWatchdog = null
+        val wanted = desiredAway ?: return
+        if (!wanted.first) return
+        awayWatchdog = clientCoroutineScope.launch {
+            while (isActive) {
+                delay(AWAY_REASSERT_INTERVAL_MS)
+                val (away, message) = desiredAway ?: break
+                if (!away) break
+                try {
+                    client?.setAway(away, message)
+                    Log.i(TAG, "Away status re-asserted")
+                } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "Away re-assert failed", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Forget the status the user picked, called when the session ends: the next
+     * connection starts online, so nothing is re-applied behind their back.
+     */
+    fun forgetAway() {
+        Log.i(TAG, "forgetAway()")
+        desiredAway = null
+        awayWatchdog?.cancel()
+        awayWatchdog = null
     }
 
     suspend fun downloadFile(channelId: Long, path: String): ByteArray? {
