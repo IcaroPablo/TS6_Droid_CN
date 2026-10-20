@@ -74,6 +74,8 @@ TeamSpeak 协议里只有一个 `client_away` 标记加一条离开消息，没�
   （叠在 v2.1.7 那份密聊补丁之上，`patch -p1` 可干净应用）：`tslib-core` 增加
   `set_away`（`clientupdate client_away` + `client_away_message` + 本地覆盖，与昵称同一套处理——
   服务端不会把 `clientupdate` 回显给发送者），`tslib-jni` 增加 `nativeSetAway`
+  - 补丁在仓库里是 LF 行尾；若在 Windows 上 `core.autocrlf=true` 的工作区里应用时报
+    `different line endings`，先 `dos2unix` 该补丁文件（或 `patch --binary`）再应用即可
 - 原生库按上一条相同命令重新交叉编译（arm64-v8a，`--features vendored-openssl`）
 - 单元测试 75 → 79 项（状态与离开消息的映射规则，以及 Rust 侧「在线必清消息 / 空白等于没填」的归一化）
 
