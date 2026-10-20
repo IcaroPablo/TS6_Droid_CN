@@ -70,14 +70,15 @@ class TsClient {
         /** Grace period for the group list answers, read once after connect. */
         private const val GROUP_LISTS_SETTLE_MS = 1_500L
 
-// Status commands share the server's per-client command budget with everything
-// else (mute updates, chat, file transfers). Exceed it and the server answers
-// `ClientIsFlooding` and drops commands until the penalty expires, which is how
-// a status could look switched here but never arrive. Taps are therefore
-// coalesced and spaced out.
-private const val AWAY_SEND_DEBOUNCE_MS = 600L
-private const val AWAY_SEND_MIN_INTERVAL_MS = 1_200L
-private const val FLOOD_RETRY_DELAY_MS = 10_000L
+        // Status and microphone-mute commands share the server's per-client
+        // command budget with everything else (chat, file transfers). Measured on
+        // a live server: ~8 commands in a few seconds trip it, and after that the
+        // server rejects *every* command until the penalty expires — which is how
+        // a switched status could look fine here and never arrive. Sends are
+        // therefore coalesced and paced below that budget (about 0.7 commands/s).
+        private const val AWAY_SEND_DEBOUNCE_MS = 600L
+        private const val CLIENT_UPDATE_MIN_INTERVAL_MS = 1_500L
+        private const val FLOOD_RETRY_DELAY_MS = 10_000L
     }
 
     @Volatile
@@ -162,11 +163,18 @@ private const val FLOOD_RETRY_DELAY_MS = 10_000L
     // Coalesced sender for that status (see setAway) plus the bookkeeping that
     // keeps consecutive status commands far enough apart.
     private var awaySendJob: Job? = null
-    private var lastAwaySentAt = 0L
+
+    // Same idea for the microphone mute update (`client_input_muted`).
+    private var muteSendJob: Job? = null
+    private var pendingInputMuted: Boolean? = null
 
     // Last value actually handed to the server for `client_input_muted`, so a
     // PTT press that does not change the state costs no command.
     private var lastSentInputMuted: Boolean? = null
+
+    // Time of the last `clientupdate` we actually sent (status or mute). Both
+    // share the server's per-client command budget.
+    private var lastClientUpdateAt = 0L
 
     val isConnected: Boolean
         get() = _state.value == ConnectionState.CONNECTED
@@ -266,7 +274,7 @@ private const val FLOOD_RETRY_DELAY_MS = 10_000L
                         desiredAway?.let { (away, message) ->
                             try {
                                 c.setAway(away, message)
-                                lastAwaySentAt = SystemClock.elapsedRealtime()
+                                lastClientUpdateAt = SystemClock.elapsedRealtime()
                                 Log.i(TAG, "Status re-applied after connect (away=$away)")
                             } catch (e: Throwable) {
                                 Log.w(TAG, "Status re-apply failed", e)
@@ -510,7 +518,8 @@ private const val FLOOD_RETRY_DELAY_MS = 10_000L
         cachedClientId = null
         // A new connection knows nothing about what we sent on the old one.
         lastSentInputMuted = null
-        lastAwaySentAt = 0L
+        pendingInputMuted = null
+        lastClientUpdateAt = 0L
     }
 
     private fun closeClient(c: Client, reason: String) {
@@ -699,17 +708,43 @@ private const val FLOOD_RETRY_DELAY_MS = 10_000L
      *
      * Every call is one command on the server's control connection, and the
      * server's flood protection counts them: push-to-talk fires this on every
-     * press and release. Sending only real changes keeps a talkative session
-     * well inside the budget, which is what used to break the *status* menu
-     * (its commands were the ones rejected once the client was "flooding").
+     * press and release, and a user pressing quickly used to alternate the value
+     * faster than the server allows — after which *every* command was rejected
+     * for a while (chat messages included) with `ClientIsFlooding`.
+     *
+     * So this is coalesced and paced exactly like the status command: only real
+     * changes are sent, a burst collapses into the last value, and consecutive
+     * `clientupdate` commands keep a minimum gap.
      */
     fun setInputMuted(muted: Boolean, force: Boolean = false) {
-        if (!force && lastSentInputMuted == muted) return
-        lastSentInputMuted = muted
+        if (!force && pendingInputMuted == null && lastSentInputMuted == muted) return
         Log.i(TAG, "setInputMuted($muted) force=$force client=${if (client != null) "present" else "NULL"}")
-        launchNativeCommand("setInputMuted") {
-            this.setInputMuted(muted)
+        pendingInputMuted = muted
+        muteSendJob?.cancel()
+        muteSendJob = clientCoroutineScope.launch {
+            if (!force) awaitClientUpdateSlot()
+            val value = pendingInputMuted ?: return@launch
+            pendingInputMuted = null
+            if (value == lastSentInputMuted) return@launch
+            lastSentInputMuted = value
+            lastClientUpdateAt = SystemClock.elapsedRealtime()
+            try {
+                client?.setInputMuted(value)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "setInputMuted failed", e)
+            }
         }
+    }
+
+    /**
+     * Wait until the next `clientupdate` may be sent, so status and mute commands
+     * together stay under the server's per-client command budget.
+     */
+    private suspend fun awaitClientUpdateSlot() {
+        val waited = SystemClock.elapsedRealtime() - lastClientUpdateAt
+        val remaining = CLIENT_UPDATE_MIN_INTERVAL_MS - waited
+        if (remaining > 0) delay(remaining)
     }
 
     /**
@@ -748,24 +783,16 @@ private const val FLOOD_RETRY_DELAY_MS = 10_000L
     }
 
     /** One coalesced send of [desiredAway]; runs on the native thread. */
-    private fun sendDesiredAway(reason: String) {
-        val (away, message) = desiredAway ?: return
+    private suspend fun sendDesiredAway(reason: String) {
+        if (desiredAway == null) return
         val c = client ?: return
-        val now = SystemClock.elapsedRealtime()
-        val sinceLast = now - lastAwaySentAt
-        if (sinceLast < AWAY_SEND_MIN_INTERVAL_MS) {
-            // Too soon after the previous command: wait out the gap instead of
-            // spending flood budget, then send whatever the user picked last.
-            awaySendJob?.cancel()
-            awaySendJob = clientCoroutineScope.launch {
-                delay(AWAY_SEND_MIN_INTERVAL_MS - sinceLast)
-                sendDesiredAway("spaced")
-            }
-            return
-        }
+        // Status and mute updates share the server's command budget.
+        awaitClientUpdateSlot()
+        // The user may have picked something else while we waited.
+        val (away, message) = desiredAway ?: return
         try {
             c.setAway(away, message)
-            lastAwaySentAt = now
+            lastClientUpdateAt = SystemClock.elapsedRealtime()
             Log.i(TAG, "Status sent ($reason, away=$away)")
             refreshState()
         } catch (e: Throwable) {
@@ -786,7 +813,7 @@ private const val FLOOD_RETRY_DELAY_MS = 10_000L
         awaySendJob = clientCoroutineScope.launch {
             Log.i(TAG, "Flood penalty: retrying status in ${FLOOD_RETRY_DELAY_MS}ms")
             delay(FLOOD_RETRY_DELAY_MS)
-            lastAwaySentAt = 0L
+            lastClientUpdateAt = 0L
             sendDesiredAway("flood-retry")
         }
     }
