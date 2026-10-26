@@ -46,7 +46,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Run Unit Tests
-        run: ./gradlew --no-daemon testDebugUnitTest -x buildRustLibs
+        run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Decode signing keystore
         run: echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
@@ -54,7 +54,7 @@ jobs:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
 
       - name: Build signed release APK
-        run: ./gradlew --no-daemon assembleRelease -x buildRustLibs
+        run: ./gradlew --no-daemon assembleRelease
         env:
           SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}

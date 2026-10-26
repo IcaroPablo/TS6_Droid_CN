@@ -26,13 +26,13 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
 
-      # 💡 核心：利用 -x 参数强制跳过原作者的 Rust 编译任务
-      # Gradle 会聪明地直接把你刚刚上传的 jniLibs 里的现成 .so 库打包打包带走
+      # Gradle packages the committed jniLibs as they are; the Rust core is built
+      # with scripts/build
       - name: Run Unit Tests
-        run: ./gradlew --no-daemon testDebugUnitTest -x buildRustLibs
+        run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Build Debug APK
-        run: ./gradlew --no-daemon assembleDebug -x buildRustLibs
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4

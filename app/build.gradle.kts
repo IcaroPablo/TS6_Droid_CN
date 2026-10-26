@@ -110,25 +110,6 @@ android {
     }
 }
 
-// Task to build Rust native libraries via cargo-ndk
-tasks.register<Exec>("buildRustLibs") {
-    workingDir = file("${rootDir}/tslib_multi")
-    environment("ANDROID_NDK_HOME", System.getenv("ANDROID_NDK_HOME")
-        ?: "${System.getProperty("user.home")}/Android/Sdk/ndk/27.2.12479018")
-    environment("ANDROID_NDK", System.getenv("ANDROID_NDK_HOME")
-        ?: "${System.getProperty("user.home")}/Android/Sdk/ndk/27.2.12479018")
-    environment("CMAKE_POLICY_VERSION_MINIMUM", "3.5")
-    commandLine(
-        "cargo", "ndk",
-        "-t", "arm64-v8a",
-        "-t", "x86_64",
-        "-o", "${projectDir}/src/main/jniLibs",
-        "build", "--release", "-p", "tslib-jni",
-        "--features", "vendored-openssl",
-        "-j10"
-    )
-}
-
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

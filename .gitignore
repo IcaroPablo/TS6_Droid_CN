@@ -13,7 +13,7 @@ local.properties
 gradle.properties
 
 # Native libs (built from tslib).
-# arm64-v8a is committed on purpose: CI runs `assembleDebug -x buildRustLibs` and packages
+# arm64-v8a is committed on purpose: CI runs `assembleDebug` and packages
 # whatever is checked in, so the core library has to live in git. Every other ABI is ignored.
 app/src/main/jniLibs/*
 !app/src/main/jniLibs/arm64-v8a/

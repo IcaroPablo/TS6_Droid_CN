@@ -24,7 +24,7 @@ if [ -f "$props" ]; then
 	export SIGNING_KEYSTORE_FILE SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD
 fi
 
-./gradlew --no-daemon testDebugUnitTest assembleRelease -x buildRustLibs
+./gradlew --no-daemon testDebugUnitTest assembleRelease
 
 version=$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
 mkdir -p "$TS_OUT"
