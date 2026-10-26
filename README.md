@@ -13,7 +13,9 @@ in short:
   the server so others see it
 - Everything kept on the device is encrypted, and the app talks to no one but your server unless
   you ask it to (see below)
-- Patches to the native library in [`patches/`](patches)
+- The native library is [tslib_multi](https://github.com/IcaroPablo/tslib_multi/tree/telespeak),
+  included as a git submodule at `tslib_multi/` (branch `telespeak`: wslinnn's tslib_multi plus
+  our changes as separate commits); clone with `git clone --recursive`
 
 Install: download the APK from the [latest release](https://github.com/IcaroPablo/TS6_Droid_CN/releases/latest).
 Android 10 or newer, 64-bit ARM.

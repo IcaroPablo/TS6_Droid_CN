@@ -112,7 +112,7 @@ android {
 
 // Task to build Rust native libraries via cargo-ndk
 tasks.register<Exec>("buildRustLibs") {
-    workingDir = file("${rootDir}/../tslib_multi")
+    workingDir = file("${rootDir}/tslib_multi")
     environment("ANDROID_NDK_HOME", System.getenv("ANDROID_NDK_HOME")
         ?: "${System.getProperty("user.home")}/Android/Sdk/ndk/27.2.12479018")
     environment("ANDROID_NDK", System.getenv("ANDROID_NDK_HOME")

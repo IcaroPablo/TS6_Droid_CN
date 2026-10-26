@@ -1,0 +1,4 @@
+[submodule "tslib_multi"]
+	path = tslib_multi
+	url = https://github.com/IcaroPablo/tslib_multi.git
+	branch = telespeak
