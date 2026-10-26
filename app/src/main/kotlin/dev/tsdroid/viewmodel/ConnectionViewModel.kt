@@ -4,14 +4,14 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.tsdroid.bridge.IconCache
+import dev.tsdroid.bridge.IdentityFileStore
 import dev.tsdroid.bridge.MAX_NICKNAME_COLLISION_ATTEMPTS
 import dev.tsdroid.bridge.hasNicknameCollision
 import dev.tsdroid.bridge.nicknameWithCollisionSuffix
@@ -34,7 +34,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 class ConnectionViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
@@ -92,19 +91,12 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
      */
     private suspend fun loadBookmarkIcons(bookmarks: List<ServerBookmark>) {
         val newIcons = withContext(Dispatchers.IO) {
-            val iconsDir = File(getApplication<Application>().cacheDir, "icons")
-            if (!iconsDir.exists()) return@withContext emptyMap()
+            val icons = IconCache(getApplication<Application>().cacheDir)
             val found = mutableMapOf<Long, ImageBitmap>()
             for (b in bookmarks) {
                 if (b.iconId == 0L) continue
                 if (_bookmarkIcons.value.containsKey(b.iconId)) continue
-                val file = File(iconsDir, b.iconId.toString())
-                if (file.exists() && file.length() > 0) {
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bitmap != null) {
-                        found[b.iconId] = bitmap.asImageBitmap()
-                    }
-                }
+                icons.readCached(b.iconId)?.let { found[b.iconId] = it }
             }
             found
         }
@@ -485,15 +477,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
      * into a connection, including the automatic one a start with auto-reconnect does.
      */
     private suspend fun getOrCreateIdentity(): Identity = withContext(Dispatchers.IO) {
-        val context = getApplication<Application>()
-        val identityFile = File(context.filesDir, "identity.ini")
-        if (identityFile.exists()) {
-            Identity.load(identityFile.absolutePath)
-        } else {
-            val identity = Identity()
-            identity.save(identityFile.absolutePath)
-            identity
-        }
+        IdentityFileStore(getApplication<Application>()).loadOrCreate()
     }
 
     private fun getCloneBypassIdentity(): Identity {

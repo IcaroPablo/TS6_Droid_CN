@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- Decrypted copies of downloaded files, opened in another app (see FileCache) -->
+    <cache-path name="opened" path="opened/" />
 </paths>

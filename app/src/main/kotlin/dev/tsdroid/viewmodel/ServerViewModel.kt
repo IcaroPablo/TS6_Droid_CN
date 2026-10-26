@@ -214,7 +214,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private val userAudioStore = UserAudioStore(application)
     private val iconCache = IconCache(application.cacheDir)
     private val avatarCache = AvatarCache(application.cacheDir)
-    private val fileCache = FileCache(application)
+    private val fileCache = FileCache(application) { encryptFiles.value }
     private var serverAddress: String? = null
 
     private val _serverAddressLabel = MutableStateFlow<String?>(null)
@@ -283,6 +283,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val privateMessages: StateFlow<Map<String, List<ChatMessage>>> = _privateMessages.asStateFlow()
 
     // Separate PTT mode from actual mute state
+    private val encryptFiles: StateFlow<Boolean> = settingsStore.encryptFiles
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     val micMode: StateFlow<MicMode> = settingsStore.micMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, MicMode.PTT)
 
@@ -637,7 +640,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             if (user.isQuery) continue
             if (user.avatarId.isNullOrEmpty()) continue  // no avatar on server
             if (avatarCache.getAvatar(uid) != null) continue
-            if (avatarCache.hasNoAvatar(uid)) continue
+            if (!avatarCache.mayLoad(uid)) continue
             Log.d(TAG, "loadAvatars: launching download for ${user.nickname}")
             viewModelScope.launch {
                 avatarCache.loadAvatar(uid, client)
@@ -1319,7 +1322,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     val uri = fileCache.getUri(host, cachePath)
                     state.value = DownloadState.Done(bmp?.asImageBitmap(), uri)
                 } else {
-                    val dlUri = saveToDownloads(attachment.fileName.substringAfterLast('/'), bytes)
+                    val dlUri = openableUri(host, cachePath, attachment.fileName.substringAfterLast('/'), bytes)
                     state.value = DownloadState.Done(null, dlUri)
                 }
             } else {
@@ -1329,6 +1332,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         }
         return state
     }
+
+    /**
+     * Where another app can open a downloaded file: a short-lived decrypted copy while
+     * files are kept encrypted, otherwise a copy in the public Downloads folder.
+     */
+    private suspend fun openableUri(host: String, cachePath: String, fileName: String, data: ByteArray): android.net.Uri? =
+        if (encryptFiles.value) fileCache.getUri(host, cachePath) else saveToDownloads(fileName, data)
 
     private suspend fun saveToDownloads(fileName: String, data: ByteArray): android.net.Uri? {
         val context = getApplication<Application>()
@@ -1504,7 +1514,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 if (cached == null) {
                     fileCache.put(host, cachePath, bytes)
                 }
-                val dlUri = saveToDownloads(fileName, bytes)
+                val dlUri = openableUri(host, cachePath, fileName, bytes)
                 if (dlUri != null) {
                     withContext(Dispatchers.Main) {
                         openFileUri(dlUri, fileName)

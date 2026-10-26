@@ -232,8 +232,15 @@ fun MessageBubble(
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Spacer(Modifier.width(8.dp))
+                                // Names the sites, so the tap is an informed choice: they
+                                // are the ones that see the user's IP address.
+                                val hosts = remember(parsed.imageUrls) {
+                                    parsed.imageUrls.mapNotNull { runCatching { java.net.URI(it).host }.getOrNull() }
+                                        .distinct()
+                                        .joinToString(", ")
+                                }
                                 Text(
-                                    text = stringResource(R.string.tap_to_load_images),
+                                    text = stringResource(R.string.tap_to_load_images_from, hosts),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -264,6 +271,11 @@ private fun FileAttachmentCard(
     onDownload: ((FileAttachment) -> StateFlow<DownloadState>)? = null,
     autoLoadImages: Boolean = true,
 ) {
+    // A TS6 picture message (msg_type ts.file.myts, it has a file id) points at TeamSpeak's
+    // cloud, which TeleSpeak does not contact (see the README); the server does not have the
+    // file, so offering a download would only ever fail.
+    val inCloud = attachment.fileId.isNotEmpty()
+    val download = onDownload.takeUnless { inCloud }
     val context = LocalContext.current
     var downloadStateFlow by remember { mutableStateOf<StateFlow<DownloadState>?>(null) }
     val downloadState = downloadStateFlow?.collectAsStateWithLifecycle()?.value ?: DownloadState.Idle
@@ -273,8 +285,8 @@ private fun FileAttachmentCard(
 
     // Auto-load images (served from disk cache if available)
     LaunchedEffect(attachment, autoLoadImages) {
-        if (autoLoadImages && attachment.isImage && onDownload != null && downloadStateFlow == null) {
-            downloadStateFlow = onDownload(attachment)
+        if (autoLoadImages && attachment.isImage && download != null && downloadStateFlow == null) {
+            downloadStateFlow = download(attachment)
         }
     }
 
@@ -310,10 +322,10 @@ private fun FileAttachmentCard(
             .padding(vertical = 4.dp)
             .then(
                 when {
-                    onDownload != null && downloadState is DownloadState.Idle ->
+                    download != null && downloadState is DownloadState.Idle ->
                         Modifier.clickable {
                             initiatedHere = true
-                            downloadStateFlow = onDownload(attachment)
+                            downloadStateFlow = download(attachment)
                         }
                     downloadState is DownloadState.Done && downloadState.fileUri != null -> {
                         val uri = downloadState.fileUri
@@ -355,7 +367,13 @@ private fun FileAttachmentCard(
             )
             when (downloadState) {
                 is DownloadState.Idle -> {
-                    if (onDownload != null) {
+                    if (inCloud) {
+                        Text(
+                            text = stringResource(R.string.file_in_teamspeak_cloud),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LocalContentColor.current.copy(alpha = 0.7f),
+                        )
+                    } else if (download != null) {
                         Text(
                             text = stringResource(R.string.tap_to_view),
                             style = MaterialTheme.typography.labelSmall,
@@ -386,7 +404,7 @@ private fun FileAttachmentCard(
                 }
             }
         }
-        if (onDownload != null && downloadState is DownloadState.Idle) {
+        if (download != null && downloadState is DownloadState.Idle) {
             Icon(
                 imageVector = if (attachment.isImage) Icons.Default.Image else Icons.Default.Download,
                 contentDescription = stringResource(R.string.download),

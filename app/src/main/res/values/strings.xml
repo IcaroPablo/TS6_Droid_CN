@@ -5,6 +5,7 @@
     <string name="language_simplified_chinese">简体中文</string>
     <string name="language_english">English</string>
     <string name="language_french">Français</string>
+    <string name="language_nheengatu">Nheengatu</string>
     <string name="language_change_title">Appliquer la modification de langue ?</string>
     <string name="language_change_message">L’application doit redémarrer pour appliquer %1$s.</string>
     <string name="restart">Redémarrer</string>
@@ -52,7 +53,7 @@
     <string name="show_link_thumbnails">Miniatures des liens vidéo</string>
     <string name="auto_load_images">Charger les images automatiquement</string>
     <string name="enable_floating_window">Activer la fenêtre flottante</string>
-    <string name="anime_background">Fond animé aléatoire</string>
+    <string name="anime_background">Image d\'arrière-plan</string>
     <string name="noise_suppression">Réduction de bruit du micro</string>
     <string name="chat">Chat</string>
     <string name="push_to_talk">Appuyer pour parler</string>
@@ -98,7 +99,7 @@
     <string name="custom_bg_title">Fond d\'écran personnalisé</string>
     <string name="custom_bg_upload">Choisir dans la galerie</string>
     <string name="custom_bg_delete">Supprimer le fond personnalisé</string>
-    <string name="custom_bg_delete_confirm">Supprimer le fond personnalisé ? Le fond en ligne sera utilisé à la place.</string>
+    <string name="custom_bg_delete_confirm">Supprimer l\'arrière-plan personnalisé ?</string>
     <string name="custom_bg_active">Fond personnalisé défini</string>
     <string name="custom_bg_inactive">Aucun fond personnalisé</string>
     <string name="custom_bg_saved">Fond d\'écran enregistré</string>
@@ -121,6 +122,8 @@
     <string name="mic_mode">Mode du micro</string>
     <string name="mic_mode_vad">Activation vocale</string>
     <string name="mic_mode_open">Micro ouvert</string>
+    <string name="encrypt_files">Chiffrer les fichiers téléchargés</string>
+    <string name="encrypt_files_hint">Les images et fichiers du chat restent chiffrés dans l’application. Désactivez pour les enregistrer dans Documents/TeleSpeak, visibles par la galerie et les autres applications.</string>
     <string name="join_voice_state">En rejoignant le vocal</string>
     <string name="join_voice_deafened">Sourdine totale</string>
     <string name="join_voice_muted">Micro coupé</string>
@@ -174,9 +177,11 @@
     <string name="file_attachment_info">%1$s \u00B7 Fichier partagé</string>
     <string name="file_attachment_server">%1$s \u00B7 Fichier du serveur</string>
     <string name="download_not_supported">Téléchargement non pris en charge</string>
+    <string name="file_in_teamspeak_cloud">Stocké sur le cloud de TeamSpeak — indisponible dans TeleSpeak</string>
     <string name="tap_to_download">Appuyer pour télécharger</string>
     <string name="tap_to_view">Appuyer pour afficher</string>
-    <string name="tap_to_load_images">Appuyez pour charger les images</string>
+    <string name="tap_to_load_images_from">Appuyez pour charger les images de %1$s</string>
+    <string name="remote_images_hint">Les aperçus et images se chargent directement depuis les sites liés (YouTube, Dailymotion, hébergeurs d\'images), qui voient votre adresse IP.</string>
     <string name="retry">Réessayer</string>
     <string name="file_too_large">Fichier supérieur à la limite de 10 Mo — envoi annulé</string>
     <string name="tap_to_open">Appuyer pour ouvrir</string>
@@ -240,11 +245,10 @@
     <string name="about_repo_title">Dépôt Source Officiel &amp; Mises à jour</string>
     <string name="about_repo_desc">Le code source complet de ce projet, les itérations officielles des fonctionnalités, les optimisations de l\'expérience et les correctifs d\'urgence seront publiés en priorité et de manière indépendante sur mon dépôt GitHub officiel. N\'hésitez pas à mettre une étoile (Star), à suivre, à signaler des problèmes (Issues) ou à soumettre des PR :</string>
     <string name="about_repo_link">🔗 Cliquez pour visiter le dépôt GitHub open-source de yuaxi</string>
+    <string name="about_fork_title">TeleSpeak</string>
+    <string name="about_fork_desc">TeleSpeak est une version modifiée de TS6_Droid_CN, maintenue par IcaroPablo depuis octobre 2026 et distribuée sous la même licence GNU GPLv3. Modifications : anglais par défaut, nouveaux nom et icône, mises à jour depuis github.com/IcaroPablo/TS6_Droid_CN, un réglage du micro et des haut-parleurs en rejoignant le vocal, et le chiffrement sur l\'appareil de l\'identité, des serveurs enregistrés, de l\'historique du chat et des fichiers téléchargés. La liste complète se trouve dans l\'historique des commits du dépôt.</string>
     <string name="about_warning_title">⚠️ Avertissement de Fraude</string>
     <string name="about_warning_desc">Ce programme est un produit purement bénévole et à but non lucratif destiné à l\'échange technique open-source. Il est entièrement GRATUIT et entièrement OPEN-SOURCE ! Toute forme de vente commerciale, d\'achat groupé ou de facturation via des codes d\'activation est strictement interdite. Si vous avez obtenu ce logiciel via des canaux payants (tels que des bots de revente, des plateformes de trading, des services de téléchargement payants, etc.), vous avez été victime d\'une arnaque ! Veuillez immédiatement lancer une demande de remboursement pour infraction sur la plateforme, et rendez-vous sur le dépôt open-source officiel pour signaler les revendeurs au marché noir !</string>
-    <string name="about_contributors_title">Contributeurs</string>
-    <string name="about_contributions_count">%1$d contributions</string>
-    <string name="contributors_load_error">Échec du chargement</string>
 
     <!-- Fiabilité en arrière-plan -->
     <string name="reconnect_in_progress">Reconnexion… (tentative %1$d)</string>

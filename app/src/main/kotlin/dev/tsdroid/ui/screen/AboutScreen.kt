@@ -23,19 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import coil.compose.AsyncImage
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.theme.generateColorScheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import java.net.URL
-
-private data class GitHubContributor(
-    val login: String,
-    val avatarUrl: String,
-    val contributions: Int,
-)
 
 /**
  * About page. It is deliberately plain white paper — the wallpaper is never drawn here — so the
@@ -82,37 +71,6 @@ private fun AboutContent(onBack: () -> Unit) {
     val context = LocalContext.current
     val repoUrl = "https://github.com/YUAXI/TS6_Droid_CN"
     val scrollState = rememberScrollState()
-
-    var contributors by remember { mutableStateOf<List<GitHubContributor>>(emptyList()) }
-    var isLoadingContributors by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val url = URL("https://api.github.com/repos/YUAXI/TS6_Droid_CN/contributors")
-                val conn = url.openConnection()
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                val json = conn.getInputStream().bufferedReader().use { it.readText() }
-                val arr = JSONArray(json)
-                val list = mutableListOf<GitHubContributor>()
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    list.add(
-                        GitHubContributor(
-                            login = obj.getString("login"),
-                            avatarUrl = obj.getString("avatar_url"),
-                            contributions = obj.getInt("contributions"),
-                        )
-                    )
-                }
-                contributors = list
-            } catch (_: Exception) {
-            } finally {
-                isLoadingContributors = false
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -193,49 +151,14 @@ private fun AboutContent(onBack: () -> Unit) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
         Spacer(modifier = Modifier.height(28.dp))
 
-        Text(text = stringResource(R.string.about_contributors_title), style = MaterialTheme.typography.titleMedium)
+        // Fixed text where a contributor list used to be fetched from GitHub on every visit:
+        // the app talks to no one but the user's own server (see the README).
+        Text(text = stringResource(R.string.about_fork_title), style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(12.dp))
-
-        if (isLoadingContributors) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp)
-            )
-        } else if (contributors.isEmpty()) {
-            Text(
-                text = stringResource(R.string.contributors_load_error),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        } else {
-            contributors.forEach { contributor ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = contributor.avatarUrl,
-                        contentDescription = contributor.login,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = contributor.login,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = stringResource(R.string.about_contributions_count, contributor.contributions),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
+        Text(
+            text = stringResource(R.string.about_fork_desc),
+            style = MaterialTheme.typography.bodyMedium,
+        )
 
         Spacer(modifier = Modifier.height(28.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)

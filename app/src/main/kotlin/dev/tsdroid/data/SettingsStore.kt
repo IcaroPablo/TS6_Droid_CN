@@ -28,6 +28,7 @@ private val KEY_PTT_MODE = booleanPreferencesKey("ptt_mode")
 private val KEY_MIC_MODE = stringPreferencesKey("mic_mode")
 private val KEY_VAD_THRESHOLD_DB = floatPreferencesKey("vad_threshold_db")
 private val KEY_JOIN_VOICE_STATE = stringPreferencesKey("join_voice_state")
+private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
 
 class SettingsStore(private val context: Context) {
 
@@ -129,6 +130,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setMicMode(mode: MicMode) {
         context.settingsDataStore.edit { it[KEY_MIC_MODE] = mode.toRaw() }
+    }
+
+    /** Keep downloaded files encrypted in private storage instead of the public Documents folder. */
+    val encryptFiles: Flow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_ENCRYPT_FILES] ?: true }
+
+    suspend fun setEncryptFiles(enabled: Boolean) {
+        context.settingsDataStore.edit { it[KEY_ENCRYPT_FILES] = enabled }
     }
 
     val joinVoiceState: Flow<JoinVoiceState> = context.settingsDataStore.data

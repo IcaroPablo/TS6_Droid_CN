@@ -32,6 +32,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -62,6 +64,12 @@ class TsClient {
 
     companion object {
         private const val TAG = "TsClient"
+        // File transfers at once. The server limits transfers per client and answers
+        // FileTransferLimitReached beyond that; icons and avatars of a whole server
+        // otherwise all start together.
+        private const val MAX_CONCURRENT_DOWNLOADS = 2
+        // Errors a retry cannot fix: the file is not there, or we may not have it.
+        private val PERMANENT_DOWNLOAD_ERROR = Regex("not.?found|invalid|permission|denied", RegexOption.IGNORE_CASE)
         private const val INITIAL_CONNECT_SETTLE_MS = 300L
         private const val RECONNECT_AFTER_DISCONNECT_DELAY_MS = 1_500L
         private const val DISCONNECT_MIN_FLUSH_MS = 500L
@@ -855,7 +863,23 @@ class TsClient {
         awaySendJob = null
     }
 
-    suspend fun downloadFile(channelId: Long, path: String): ByteArray? {
+    /** Outcome of [download]: the bytes, or why there are none. */
+    sealed class Download {
+        class Ok(val data: ByteArray) : Download()
+        /** [permanent]: retrying cannot help (missing file, no permission). */
+        class Failed(val permanent: Boolean, val reason: String) : Download()
+    }
+
+    private val downloadSlots = Semaphore(MAX_CONCURRENT_DOWNLOADS)
+
+    suspend fun downloadFile(channelId: Long, path: String): ByteArray? =
+        (download(channelId, path) as? Download.Ok)?.data
+
+    suspend fun download(channelId: Long, path: String): Download = downloadSlots.withPermit {
+        downloadNow(channelId, path)
+    }
+
+    private suspend fun downloadNow(channelId: Long, path: String): Download {
         val deferred = CompletableDeferred<ByteArray>()
         val key = "$channelId:$path"
         downloadKeys[path] = channelId
@@ -874,16 +898,18 @@ class TsClient {
         if (!started) {
             downloadCallbacks.remove(key)
             downloadKeys.remove(path)
-            return null
+            return Download.Failed(permanent = false, reason = "not started")
         }
-        return withTimeoutOrNull(10_000) {
-            try {
-                deferred.await()
-            } catch (e: Exception) {
-                Log.w(TAG, "downloadFile await failed for $path", e)
-                null
-            }
-        }.also {
+        return try {
+            withTimeoutOrNull(10_000) { Download.Ok(deferred.await()) }
+                ?: Download.Failed(permanent = false, reason = "timeout")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val reason = e.message ?: e.toString()
+            Log.w(TAG, "download failed for $path: $reason")
+            Download.Failed(permanent = PERMANENT_DOWNLOAD_ERROR.containsMatchIn(reason), reason = reason)
+        } finally {
             downloadCallbacks.remove(key)
             downloadKeys.remove(path)
         }

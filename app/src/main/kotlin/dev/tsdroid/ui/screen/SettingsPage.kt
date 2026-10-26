@@ -77,6 +77,7 @@ fun SettingsPage(
     val settingsStore = remember { SettingsStore(context) }
     val showLinkThumbnails by settingsStore.showLinkThumbnails.collectAsStateWithLifecycle(initialValue = false)
     val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = false)
+    val encryptFiles by settingsStore.encryptFiles.collectAsStateWithLifecycle(initialValue = true)
     // Default matches the store default (enabled) so the switch does not
     // flash off→on on first composition.
     val enableFloatingWindow by settingsStore.enableFloatingWindow.collectAsStateWithLifecycle(initialValue = true)
@@ -93,10 +94,11 @@ fun SettingsPage(
         "zh" to stringResource(R.string.language_simplified_chinese),
         "en" to stringResource(R.string.language_english),
         "fr" to stringResource(R.string.language_french),
+        "yrl" to stringResource(R.string.language_nheengatu),
     )
     val selectedLanguageTag by settingsStore.language.collectAsStateWithLifecycle(initialValue = "en")
     val selectedLanguageLabel = languageOptions.firstOrNull { it.first == selectedLanguageTag }?.second
-        ?: stringResource(R.string.language_simplified_chinese)
+        ?: stringResource(R.string.language_english)
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var pendingLanguageTag by remember { mutableStateOf<String?>(null) }
     var showLogViewer by remember { mutableStateOf(false) }
@@ -449,6 +451,23 @@ fun SettingsPage(
                     label = stringResource(R.string.auto_load_images),
                     checked = autoLoadImages,
                     onCheckedChange = { scope.launch { settingsStore.setAutoLoadImages(it) } },
+                )
+                Text(
+                    text = stringResource(R.string.remote_images_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                )
+                SettingsSwitchRow(
+                    label = stringResource(R.string.encrypt_files),
+                    checked = encryptFiles,
+                    onCheckedChange = { scope.launch { settingsStore.setEncryptFiles(it) } },
+                )
+                Text(
+                    text = stringResource(R.string.encrypt_files_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
                 )
             }
         }

@@ -1,7 +1,10 @@
 package dev.tsdroid.data
 
 import android.content.Context
+import android.util.Log
+import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -11,20 +14,61 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "bookmarks")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "bookmarks",
+    produceMigrations = { listOf(EncryptPlaintextBookmarks) },
+)
+
+// Bookmarks hold server passwords, so the list is stored encrypted (see [DeviceCipher]):
+// base64 of the cipher output, under its own key.
+private val KEY_BOOKMARKS_ENC = stringPreferencesKey("bookmarks_enc")
+
+// The last connected address, encrypted the same way: it names the server too.
+private val KEY_LAST_ADDRESS_ENC = stringPreferencesKey("last_bookmark_address_enc")
+
+// Both values as builds before encryption stored them, in plaintext.
+private val KEY_BOOKMARKS_PLAINTEXT = stringPreferencesKey("bookmarks_json")
+private val KEY_LAST_ADDRESS_PLAINTEXT = stringPreferencesKey("last_bookmark_address")
+
+/** Encrypts plaintext values from an older build before the first read. */
+private object EncryptPlaintextBookmarks : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        currentData[KEY_BOOKMARKS_PLAINTEXT] != null || currentData[KEY_LAST_ADDRESS_PLAINTEXT] != null
+
+    override suspend fun migrate(currentData: Preferences): Preferences =
+        currentData.toMutablePreferences().apply {
+            val plain = remove(KEY_BOOKMARKS_PLAINTEXT)
+            if (plain != null && this[KEY_BOOKMARKS_ENC] == null) {
+                this[KEY_BOOKMARKS_ENC] = encryptBookmarks(plain)
+            }
+            val lastAddress = remove(KEY_LAST_ADDRESS_PLAINTEXT)
+            if (lastAddress != null && this[KEY_LAST_ADDRESS_ENC] == null) {
+                this[KEY_LAST_ADDRESS_ENC] = encryptBookmarks(lastAddress)
+            }
+        }
+
+    override suspend fun cleanUp() {}
+}
+
+private val bookmarkCipher = DeviceCipher()
+
+private fun encryptBookmarks(json: String): String =
+    Base64.getEncoder().encodeToString(bookmarkCipher.encrypt(json.encodeToByteArray()))
+
+private fun decryptBookmarks(value: String): String =
+    bookmarkCipher.decrypt(Base64.getDecoder().decode(value)).decodeToString()
 
 class BookmarkStore(private val context: Context) {
 
     companion object {
-        private val KEY_BOOKMARKS = stringPreferencesKey("bookmarks_json")
+        private const val TAG = "BookmarkStore"
         private val KEY_AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
-        private val KEY_LAST_BOOKMARK_ADDRESS = stringPreferencesKey("last_bookmark_address")
     }
 
     val bookmarks: Flow<List<ServerBookmark>> = context.dataStore.data.map { prefs ->
-        val json = prefs[KEY_BOOKMARKS] ?: "[]"
-        parseBookmarks(json)
+        readBookmarks(prefs)
     }
 
     val autoReconnect: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -39,30 +83,30 @@ class BookmarkStore(private val context: Context) {
 
     suspend fun save(bookmarks: List<ServerBookmark>) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_BOOKMARKS] = serializeBookmarks(bookmarks)
+            prefs.writeBookmarks(bookmarks)
         }
     }
 
     suspend fun add(bookmark: ServerBookmark) {
         context.dataStore.edit { prefs ->
-            val current = parseBookmarks(prefs[KEY_BOOKMARKS] ?: "[]")
-            prefs[KEY_BOOKMARKS] = serializeBookmarks(current + bookmark)
+            val current = readBookmarks(prefs)
+            prefs.writeBookmarks(current + bookmark)
         }
     }
 
     suspend fun remove(index: Int) {
         context.dataStore.edit { prefs ->
-            val current = parseBookmarks(prefs[KEY_BOOKMARKS] ?: "[]").toMutableList()
+            val current = readBookmarks(prefs).toMutableList()
             if (index in current.indices) {
                 current.removeAt(index)
-                prefs[KEY_BOOKMARKS] = serializeBookmarks(current)
+                prefs.writeBookmarks(current)
             }
         }
     }
 
     suspend fun replace(index: Int, bookmark: ServerBookmark) {
         context.dataStore.edit { prefs ->
-            val current = parseBookmarks(prefs[KEY_BOOKMARKS] ?: "[]").toMutableList()
+            val current = readBookmarks(prefs).toMutableList()
             if (index in current.indices) {
                 // Preserve serverName and iconId from the old bookmark if not set
                 val old = current[index]
@@ -70,7 +114,7 @@ class BookmarkStore(private val context: Context) {
                     serverName = bookmark.serverName ?: old.serverName,
                     iconId = if (bookmark.iconId != 0L) bookmark.iconId else old.iconId,
                 )
-                prefs[KEY_BOOKMARKS] = serializeBookmarks(current)
+                prefs.writeBookmarks(current)
             }
         }
     }
@@ -78,22 +122,43 @@ class BookmarkStore(private val context: Context) {
     /** Save the address of the last connected bookmark (for auto-reconnect). */
     suspend fun saveLastBookmarkAddress(address: String) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_LAST_BOOKMARK_ADDRESS] = address
+            prefs[KEY_LAST_ADDRESS_ENC] = encryptBookmarks(address)
         }
     }
 
     val lastBookmarkAddress: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_LAST_BOOKMARK_ADDRESS] ?: ""
+        val stored = prefs[KEY_LAST_ADDRESS_ENC] ?: return@map ""
+        try {
+            decryptBookmarks(stored)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decrypt the last address", e)
+            ""
+        }
     }
 
     suspend fun updateServerInfo(address: String, serverName: String, iconId: Long) {
         context.dataStore.edit { prefs ->
-            val current = parseBookmarks(prefs[KEY_BOOKMARKS] ?: "[]")
+            val current = readBookmarks(prefs)
             val updated = current.map { b ->
                 if (b.address == address) b.copy(serverName = serverName, iconId = iconId) else b
             }
-            prefs[KEY_BOOKMARKS] = serializeBookmarks(updated)
+            prefs.writeBookmarks(updated)
         }
+    }
+
+    private fun readBookmarks(prefs: Preferences): List<ServerBookmark> {
+        val stored = prefs[KEY_BOOKMARKS_ENC] ?: return emptyList()
+        return try {
+            parseBookmarks(decryptBookmarks(stored))
+        } catch (e: Exception) {
+            // The key is gone (app data cleared, Keystore reset) or the value is damaged.
+            Log.e(TAG, "Failed to decrypt bookmarks", e)
+            emptyList()
+        }
+    }
+
+    private fun MutablePreferences.writeBookmarks(bookmarks: List<ServerBookmark>) {
+        this[KEY_BOOKMARKS_ENC] = encryptBookmarks(serializeBookmarks(bookmarks))
     }
 
     private fun parseBookmarks(json: String): List<ServerBookmark> {

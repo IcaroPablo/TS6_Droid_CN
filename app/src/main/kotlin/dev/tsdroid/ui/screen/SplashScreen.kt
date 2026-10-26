@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.prewarmFrostedWallpaper
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.TimeSource
@@ -61,7 +60,7 @@ fun SplashScreen(animeBackground: Boolean?, onReady: () -> Unit) {
     // the wallpaper switched off there is nothing to prepare, so it does not flash at all.
     val preparing = when (animeBackground) {
         null -> true // the setting itself is still being read
-        true -> AnimeWallpaperState.paintReady.not()
+        true -> !AnimeWallpaperState.paintReady && !AnimeWallpaperState.settled.value
         false -> false
     }
 
@@ -73,9 +72,11 @@ fun SplashScreen(animeBackground: Boolean?, onReady: () -> Unit) {
             // The pipeline outlives this screen, so giving up here only ends the wait: an image that
             // arrives later still paints, with a fade instead of the cold start this waits away.
             withTimeoutOrNull(WALLPAPER_TIMEOUT_MS) {
-                val wallpaper = snapshotFlow { AnimeWallpaperState.activeBitmap }
-                    .filterNotNull()
-                    .first()
+                // Ends early when there is nothing to paint: no custom background, no cached one.
+                val wallpaper = snapshotFlow {
+                    AnimeWallpaperState.activeBitmap to AnimeWallpaperState.settled.value
+                }.first { (bitmap, settled) -> bitmap != null || settled }.first
+                    ?: return@withTimeoutOrNull
                 // The frosted material the panes build from it, baked here rather than on the app's
                 // first frames — they would otherwise open as transparent holes over the wallpaper
                 // and only grow their finish afterwards. Layout has happened by now in practice; if

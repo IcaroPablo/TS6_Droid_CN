@@ -1,3 +1,76 @@
+# TeleSpeak
+
+TeleSpeak is an Android TeamSpeak client for a small group of friends on a self-hosted server.
+
+It is a **modified version** of [YUAXI/TS6_Droid_CN](https://github.com/YUAXI/TS6_Droid_CN), itself
+based on [flamme-demon/TS6_Droid](https://github.com/flamme-demon/TS6_Droid) by Grégory D. The
+modifications are maintained by IcaroPablo since October 2026 and are released under the same
+license, the [GNU GPLv3](LICENSE). The commit history of this repository records every change;
+in short:
+
+- English by default, renamed TeleSpeak, new icon, updates from this repository's releases
+- A setting for the microphone and speakers when joining voice (deafened by default), sent to
+  the server so others see it
+- Everything kept on the device is encrypted, and the app talks to no one but your server unless
+  you ask it to (see below)
+- Patches to the native library in [`patches/`](patches)
+
+Install: download the APK from the [latest release](https://github.com/IcaroPablo/TS6_Droid_CN/releases/latest).
+Android 10 or newer, 64-bit ARM.
+
+## Network connections
+
+The app makes only these connections:
+
+| Connection | When | What the other side learns |
+|---|---|---|
+| Your TeamSpeak server (UDP, TeamSpeak 3 protocol) | while connected | see [What the server sees](#what-the-server-sees) |
+| Your TeamSpeak server, file transfer (TCP) | when avatars, icons or chat files are downloaded or uploaded | the file and who asked for it; the TeamSpeak protocol does not encrypt file transfers |
+| `api.github.com`, `github.com` | only when you tap *Check for updates*, and when you download an update | your IP address and that you use TeleSpeak (user agent `TeleSpeak`) |
+| Sites linked in chat messages (image hosts, `img.youtube.com`, `www.dailymotion.com`) | only when you tap *Tap to load images from …*, or turn on *Auto-load images* or link thumbnails (both off by default) | your IP address and which image you loaded |
+
+Links you open go to your browser and leave the app. There is no analytics, crash reporting or
+advertising, and nothing else is contacted: not even GitHub when you open *About*, and no online
+wallpapers (only images you pick yourself).
+
+Anything between you and the server also sees the connection: the tunnel or hosting provider in
+front of the server (for example playit.gg) sees your IP address, when you connect and how much
+traffic flows, and your DNS resolver sees the server's name being looked up. The name is resolved
+only through Android's own resolver (so a Private DNS setting applies); the TeamSpeak SRV and TSDNS
+lookups other clients make are skipped, so a server that depends on them needs its real address.
+A VPN hides your IP address from all of them and from the server.
+
+### What the server sees
+
+The TeamSpeak protocol encrypts the connection between the app and the server, but the server
+decrypts everything, and whoever runs it can read and log it:
+
+- **When connecting:** your identity's unique ID (permanent, it links all your sessions), your
+  nickname, your IP address, mute/deafen and away status. The app reports itself as a generic
+  TeamSpeak 3 client (version `3.?.? [Build: 5680278000]`, platform Windows) with a hardware ID
+  shared by every client built on the same library, so neither identifies your phone.
+- **Server records:** the server keeps your unique ID, nickname, last IP address, first and last
+  connection time and number of connections. Server admins (and users with the permission) can
+  also see your country, idle time and traffic totals.
+- **Chat messages:** the text, where it goes (channel, private or server) and who sent it. No
+  timestamp is sent; each receiver records its own.
+- **Voice:** who talks, when, in which channel or to whom (whispers). The audio is encrypted
+  in transit unless the channel is set to send it unencrypted.
+- **Files:** names, sizes, and the files themselves.
+
+## On the device
+
+The identity, saved servers, chat history, per-friend volume and mute settings, avatars, server
+icons and downloaded chat files are encrypted with a key kept in the Android Keystore, which only
+this app on this device can use. Downloaded files can instead be saved to the public
+`Documents/TeleSpeak` folder (Settings → Chat → *Encrypt downloaded files*). Exporting the
+identity writes it in plain text, by design, to a file you choose. Release builds keep only
+warnings and errors in the system log.
+
+---
+
+*The original README of TS6_Droid_CN follows (in Chinese).*
+
 # TS6 Droid 简中版
 
 基于原作者 [flamme-demon/TS6_Droid](https://github.com/flamme-demon/TS6_Droid) 的开源项目进行汉化与功能增强的 Android 客户端。

@@ -5,6 +5,7 @@
     <string name="language_simplified_chinese">简体中文</string>
     <string name="language_english">English</string>
     <string name="language_french">Français</string>
+    <string name="language_nheengatu">Nheengatu</string>
     <string name="language_change_title">应用语言更改</string>
     <string name="language_change_message">需要重启应用以应用 %1$s。</string>
     <string name="restart">重启</string>
@@ -51,7 +52,7 @@
     <string name="show_link_thumbnails">显示视频链接缩略图</string>
     <string name="auto_load_images">自动加载图片</string>
     <string name="enable_floating_window">启用悬浮窗</string>
-    <string name="anime_background">我是二刺螈</string>
+    <string name="anime_background">背景图片</string>
     <string name="noise_suppression">麦克风降噪</string>
     <string name="chat">聊天</string>
     <string name="push_to_talk">按住说话</string>
@@ -97,7 +98,7 @@
     <string name="custom_bg_title">自定义背景</string>
     <string name="custom_bg_upload">从相册选择</string>
     <string name="custom_bg_delete">删除自定义背景</string>
-    <string name="custom_bg_delete_confirm">确定要删除自定义背景吗？将恢复使用在线壁纸。</string>
+    <string name="custom_bg_delete_confirm">删除自定义背景？</string>
     <string name="custom_bg_active">已设置自定义背景</string>
     <string name="custom_bg_inactive">未设置自定义背景</string>
     <string name="custom_bg_saved">背景已保存</string>
@@ -120,6 +121,8 @@
     <string name="mic_mode">麦克风模式</string>
     <string name="mic_mode_vad">语音激活</string>
     <string name="mic_mode_open">开放麦克风</string>
+    <string name="encrypt_files">加密下载的文件</string>
+    <string name="encrypt_files_hint">聊天中的图片和文件以加密形式保存在应用内。关闭后会保存到 Documents/TeleSpeak，图库和其他应用都能看到。</string>
     <string name="join_voice_state">加入语音时</string>
     <string name="join_voice_deafened">关闭听筒</string>
     <string name="join_voice_muted">静音麦克风</string>
@@ -173,9 +176,11 @@
     <string name="file_attachment_info">%1$s · 已分享文件</string>
     <string name="file_attachment_server">%1$s · 服务器文件</string>
     <string name="download_not_supported">不支持下载</string>
+    <string name="file_in_teamspeak_cloud">存储在 TeamSpeak 云端，TeleSpeak 中不可用</string>
     <string name="tap_to_download">点击下载</string>
     <string name="tap_to_view">点击查看</string>
-    <string name="tap_to_load_images">点击加载图片</string>
+    <string name="tap_to_load_images_from">点按以从 %1$s 加载图片</string>
+    <string name="remote_images_hint">预览和图片直接从链接的网站（YouTube、Dailymotion、图床）加载，这些网站会看到你的 IP 地址。</string>
     <string name="retry">重试</string>
     <string name="file_too_large">文件超过 10MB 上限，已取消上传</string>
     <string name="tap_to_open">点击打开</string>
@@ -239,11 +244,10 @@
     <string name="about_repo_title">官方源码仓库与持续更新</string>
     <string name="about_repo_desc">本项目的完整源代码、后续的正式版本功能迭代、体验优化以及紧急 Bug 修复补丁，均会第一时间在我的官方 GitHub 仓库中独立发布。欢迎前往点星(Star)关注、反馈 Issues 或提交 PR：</string>
     <string name="about_repo_link">🔗 点击访问 yuaxi 的 GitHub 开源仓库地址</string>
+    <string name="about_fork_title">TeleSpeak</string>
+    <string name="about_fork_desc">TeleSpeak 是 TS6_Droid_CN 的修改版本，自 2026 年 10 月起由 IcaroPablo 维护，并以相同的 GNU GPLv3 许可证发布。修改内容：默认英文、新名称和图标、从 github.com/IcaroPablo/TS6_Droid_CN 获取更新、加入语音时麦克风和扬声器的设置，以及在设备上加密身份、已保存的服务器、聊天记录和下载的文件。完整列表见仓库的提交历史。</string>
     <string name="about_warning_title">⚠️ 谨防受骗（郑重免责声明）</string>
     <string name="about_warning_desc">本程序属于纯公益、非盈利性质的开源技术交流产物，完全免费，完全开源！严禁任何形式的商业兜售、打包买断或捆绑卡密收费行为。如果您是通过付费渠道（如二手机器人、各大交易平台、收费代下等）购买获得本软件，说明您已被骗！请立即向平台发起侵权退款维权，并前往官方开源仓库实名举报倒卖黑商！</string>
-    <string name="about_contributors_title">贡献者</string>
-    <string name="about_contributions_count">%1$d 次贡献</string>
-    <string name="contributors_load_error">加载失败</string>
 
     <!-- 后台可靠性与自愈提示 / Background reliability -->
     <string name="reconnect_in_progress">正在重连…（第 %1$d 次）</string>

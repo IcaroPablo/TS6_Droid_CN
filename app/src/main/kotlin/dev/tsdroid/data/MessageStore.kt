@@ -6,14 +6,19 @@ import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.FileAttachment
 import java.io.File
 
+/**
+ * Chat history per server, kept on the device encrypted (see [DeviceCipher]).
+ */
 class MessageStore(private val context: Context) {
 
     companion object {
         private const val TAG = "MessageStore"
         private const val MAX_MESSAGES = 500
+        private val EMPTY = Stored(emptyList(), emptyMap(), emptyMap())
     }
 
     private val messagesDir = File(context.filesDir, "messages")
+    private val cipher = DeviceCipher()
 
     /** Everything persisted for one server. */
     data class Stored(
@@ -24,32 +29,36 @@ class MessageStore(private val context: Context) {
 
     fun load(serverAddress: String): Stored {
         val file = fileFor(serverAddress)
-        if (!file.exists()) return Stored(emptyList(), emptyMap(), emptyMap())
+        if (!file.exists()) return EMPTY
         return try {
-            parseServerMessages(file.readText())
+            parseServerMessages(cipher.readFile(file).decodeToString())
         } catch (e: Exception) {
+            // A missing key (app data cleared, Keystore reset) or a damaged file:
+            // the history cannot be read by anybody, so start over.
             Log.e(TAG, "Failed to load messages for $serverAddress", e)
-            Stored(emptyList(), emptyMap(), emptyMap())
+            EMPTY
         }
     }
 
+    /** Returns whether the history reached the disk. */
     fun save(
         serverAddress: String,
         channelMessages: List<ChatMessage>,
         privateMessages: Map<String, List<ChatMessage>>,
         unreadPrivate: Map<String, Int> = emptyMap(),
-    ) {
-        try {
-            messagesDir.mkdirs()
+    ): Boolean {
+        return try {
             val json = serializeServerMessages(channelMessages, privateMessages, unreadPrivate)
-            fileFor(serverAddress).writeText(json)
+            cipher.writeFile(fileFor(serverAddress), json.encodeToByteArray())
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save messages for $serverAddress", e)
+            false
         }
     }
 
     private fun fileFor(serverAddress: String): File {
-        return File(messagesDir, sanitizeFilename(serverAddress) + ".json")
+        return File(messagesDir, sanitizeFilename(serverAddress) + ".enc")
     }
 
     private fun sanitizeFilename(address: String): String {

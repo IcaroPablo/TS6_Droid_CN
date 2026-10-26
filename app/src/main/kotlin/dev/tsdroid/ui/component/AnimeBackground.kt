@@ -3,7 +3,6 @@ package dev.tsdroid.ui.component
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,15 +31,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 
 object AnimeWallpaperState {
 
     private const val TAG = "AnimeWallpaper"
-
-    /** The anime wallpaper endpoint; it answers with a redirect to a random image. */
-    private const val WALLPAPER_ENDPOINT = "https://www.loliapi.com/acg/pe/"
 
     /** Edge of the square reduction the theme colour is measured from. */
     private const val COLOR_SAMPLE = 48
@@ -54,6 +48,9 @@ object AnimeWallpaperState {
      * liquid-glass surfaces, so they never have to decode the image a second time.
      */
     val wallpaperBitmap = mutableStateOf<ImageBitmap?>(null)
+
+    /** True once the pipeline has looked everywhere, whether or not it found an image. */
+    val settled = mutableStateOf(false)
 
     /** The image the background is actually painting right now, if any. */
     val activeBitmap: ImageBitmap?
@@ -81,12 +78,11 @@ object AnimeWallpaperState {
     private var started = false
 
     /**
-     * Starts the wallpaper pipeline — the user's own background, or a fresh image off the network
-     * with the cache as its fallback — at most once per process.
+     * Starts the wallpaper pipeline — the user's own background, or a wallpaper left in the cache
+     * by earlier builds — at most once per process.
      *
-     * [wanted] is the wallpaper setting. With it off nothing is downloaded: the app never paints a
-     * wallpaper then, so the fetch would only cost data and hold the start up for an image nobody
-     * will ever see.
+     * [wanted] is the wallpaper setting. With it off nothing is decoded: the app never paints a
+     * wallpaper then.
      */
     fun ensureFetched(context: Context, wanted: Boolean) {
         if (started || !wanted) return
@@ -97,8 +93,9 @@ object AnimeWallpaperState {
             WallpaperCacheManager.init(appContext)
             refreshCustomBackground(appContext)
             if (customBitmap.value == null) {
-                fetchOnlineWallpaper(appContext)
+                useCachedWallpaper()
             }
+            settled.value = true
         }
     }
 
@@ -127,44 +124,21 @@ object AnimeWallpaperState {
         }
     }
 
-    private suspend fun fetchOnlineWallpaper(context: Context) {
-        val startedAt = SystemClock.elapsedRealtime()
-        val bitmap = withContext(Dispatchers.IO) {
-            val finalUrl = resolveWallpaperUrl() ?: return@withContext null
-            currentUrl.value = finalUrl
-            WallpaperCacheManager.fetchAndDecode(context, finalUrl)
-        }
-
-        if (bitmap != null) {
-            publishWallpaper(bitmap)
-            Log.i(TAG, "wallpaper ready in ${SystemClock.elapsedRealtime() - startedAt} ms")
-            return
-        }
-
-        // Offline, or an image that arrived broken: whatever the cache already holds becomes the
-        // wallpaper, picked at random so consecutive starts do not all show the same picture.
+    /**
+     * One of the wallpapers earlier builds downloaded, picked at random so consecutive starts do
+     * not all show the same picture. Nothing is downloaded any more: the app talks to no server but
+     * the user's own (see the README), so without a custom background or such a leftover the
+     * background stays plain.
+     */
+    private suspend fun useCachedWallpaper() {
         withContext(Dispatchers.IO) {
             WallpaperCacheManager.getRandomCachedFile()?.let { cached ->
-                BitmapFactory.decodeFile(cached.absolutePath)?.let { fallback ->
+                BitmapFactory.decodeFile(cached.absolutePath)?.let { bitmap ->
                     currentUrl.value = "file://${cached.absolutePath}"
-                    publishWallpaper(fallback)
+                    publishWallpaper(bitmap)
                 }
             }
         }
-    }
-
-    /** The image URL the wallpaper endpoint redirects to, or null when it cannot be reached. */
-    private fun resolveWallpaperUrl(): String? = try {
-        val conn = URL(WALLPAPER_ENDPOINT).openConnection() as HttpURLConnection
-        conn.instanceFollowRedirects = false
-        conn.connectTimeout = 5000
-        conn.readTimeout = 5000
-        val redirect = conn.getHeaderField("Location")
-        val url = if (!redirect.isNullOrBlank()) redirect else conn.url.toString()
-        conn.disconnect()
-        url
-    } catch (_: Exception) {
-        null
     }
 
     /**
@@ -248,8 +222,7 @@ fun AnimeBackground(enabled: Boolean) {
         if (wallpaper != null) appeared = true
     }
 
-    // Coil is the last resort now: a URL whose image never became a bitmap, i.e. a download that
-    // failed here but may still succeed on a second try.
+    // Coil is the last resort: a cached file (always local) whose image never became a bitmap.
     var fallbackLoaded by remember { mutableStateOf(false) }
     val fallbackAlpha by animateFloatAsState(
         targetValue = if (fallbackLoaded) 1f else 0f,

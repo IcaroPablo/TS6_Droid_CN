@@ -3,7 +3,9 @@ package dev.tsdroid
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import dev.tsdroid.bridge.FileCache
 import dev.tsdroid.data.SettingsStore
+import dev.tsdroid.data.migratePlaintextData
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +66,8 @@ class TsDroidApp : Application() {
             previous?.uncaughtException(thread, throwable)
         }
         super.onCreate()
+        migratePlaintextData(this)
+        FileCache.clearOpenedCopies(this)
         preloadLanguage(this)
     }
 }
