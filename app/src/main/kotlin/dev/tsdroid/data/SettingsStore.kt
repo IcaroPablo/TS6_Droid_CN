@@ -27,6 +27,7 @@ private val KEY_PUSH_TO_TALK = booleanPreferencesKey("push_to_talk")
 private val KEY_PTT_MODE = booleanPreferencesKey("ptt_mode")
 private val KEY_MIC_MODE = stringPreferencesKey("mic_mode")
 private val KEY_VAD_THRESHOLD_DB = floatPreferencesKey("vad_threshold_db")
+private val KEY_JOIN_VOICE_STATE = stringPreferencesKey("join_voice_state")
 
 class SettingsStore(private val context: Context) {
 
@@ -128,6 +129,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setMicMode(mode: MicMode) {
         context.settingsDataStore.edit { it[KEY_MIC_MODE] = mode.toRaw() }
+    }
+
+    val joinVoiceState: Flow<JoinVoiceState> = context.settingsDataStore.data
+        .map { JoinVoiceState.from(it[KEY_JOIN_VOICE_STATE]) }
+
+    suspend fun setJoinVoiceState(state: JoinVoiceState) {
+        context.settingsDataStore.edit { it[KEY_JOIN_VOICE_STATE] = state.toRaw() }
     }
 
     /** VAD activation threshold in dBFS. */

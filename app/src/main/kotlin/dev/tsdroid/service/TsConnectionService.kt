@@ -67,8 +67,10 @@ import dev.tsdroid.han.R
 import dev.tsdroid.TsDroidApp
 import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.bridge.AvatarCache
+import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.data.BookmarkStore
+import dev.tsdroid.data.JoinVoiceState
 import dev.tsdroid.data.SettingsStore
 import dev.tslib.ConnectionState
 import dev.tslib.Identity
@@ -884,10 +886,16 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             tsClient.connect(address, identity, nickname, password)
             acquireWakeLock()
             audioBridge.startCapture(noiseSuppressionSetting())
+            // A reconnect keeps whatever the user had; only a new session starts
+            // from the "when joining voice" setting.
+            if (!isReconnect) applyJoinVoiceState()
             // Sync initial mute state with server. Forced: a fresh connection
             // starts unmuted server-side even when our local state did not change.
             if (audioBridge.isMuted.value) {
                 tsClient.setInputMuted(true, force = true)
+            }
+            if (audioBridge.isOutputMuted.value) {
+                tsClient.setOutputMuted(true)
             }
             // Start event loop
             tsClient.startEventLoop()
@@ -916,6 +924,15 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
 
     private suspend fun noiseSuppressionSetting(): Boolean =
         runCatching { SettingsStore(this).noiseSuppression.first() }.getOrDefault(true)
+
+    /** Set microphone and speakers to the user's "when joining voice" choice. */
+    private suspend fun applyJoinVoiceState() {
+        val settings = SettingsStore(this)
+        val state = runCatching { settings.joinVoiceState.first() }.getOrDefault(JoinVoiceState.DEAFENED)
+        val micMode = runCatching { settings.micMode.first() }.getOrDefault(MicMode.PTT)
+        audioBridge.setOutputMuted(state == JoinVoiceState.DEAFENED)
+        audioBridge.setMuted(state != JoinVoiceState.NORMAL || micMode == MicMode.PTT)
+    }
 
     /**
      * A live voice connection must keep the CPU awake; without it some devices

@@ -305,6 +305,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private var persistedMutedUids = emptySet<String>()
     private var userAudioAddress: String? = null
 
+    private val _isMicMuted = MutableStateFlow(true)
+    val isMicMuted: StateFlow<Boolean> = _isMicMuted.asStateFlow()
+
     private val _isOutputMuted = MutableStateFlow(false)
     val isOutputMuted: StateFlow<Boolean> = _isOutputMuted.asStateFlow()
 
@@ -458,7 +461,15 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             audioBridge?.setMicMode(micMode.value)
             audioBridge?.setVadThresholdDb(vadThresholdDb.value)
             viewModelScope.launch {
-                settingsStore.micMode.collect { audioBridge?.setMicMode(it) }
+                // The first value is the mode we connected with, whose mute state
+                // the join setting already decided; a later change (from Settings)
+                // moves the microphone to that mode's resting state.
+                var current: MicMode? = null
+                settingsStore.micMode.collect { mode ->
+                    audioBridge?.setMicMode(mode)
+                    if (current != null && current != mode) audioBridge?.setMuted(mode == MicMode.PTT)
+                    current = mode
+                }
             }
             viewModelScope.launch {
                 settingsStore.vadThresholdDb.collect { audioBridge?.setVadThresholdDb(it) }
@@ -570,6 +581,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             // Observe audio state for local talking status
             viewModelScope.launch {
                 service.audioBridge.isLocalVoiceActive.collect { _isLocalTalking.value = it }
+            }
+            viewModelScope.launch {
+                service.audioBridge.isMuted.collect { _isMicMuted.value = it }
             }
             viewModelScope.launch {
                 service.audioBridge.isOutputMuted.collect { _isOutputMuted.value = it }
@@ -1063,6 +1077,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { settingsStore.setMicMode(newMode) }
         // When switching to PTT mode, mute. When switching to an open mic, unmute.
         audioBridge?.setMuted(newMode == MicMode.PTT)
+    }
+
+    /** Mute or unmute the microphone without changing the microphone mode. */
+    fun toggleMicMute() {
+        audioBridge?.toggleMute()
     }
 
     fun toggleOutputMute() {

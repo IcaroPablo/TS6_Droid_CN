@@ -120,6 +120,11 @@
     <string name="mic_mode">麦克风模式</string>
     <string name="mic_mode_vad">语音激活</string>
     <string name="mic_mode_open">开放麦克风</string>
+    <string name="join_voice_state">加入语音时</string>
+    <string name="join_voice_deafened">关闭听筒</string>
+    <string name="join_voice_muted">静音麦克风</string>
+    <string name="join_voice_normal">直接通话</string>
+    <string name="join_voice_hint">关闭听筒会同时关闭麦克风和扬声器，其他人会在你的名字旁看到。</string>
     <string name="vad_threshold">触发阈值：%1$d dB</string>
     <string name="vad_threshold_hint">说话声高于阈值时自动发送。-45 dB 适合大多数环境。</string>
     <string name="user_uid">唯一 ID</string>

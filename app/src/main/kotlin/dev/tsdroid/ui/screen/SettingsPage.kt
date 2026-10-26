@@ -50,6 +50,7 @@ import coil.compose.AsyncImage
 import dev.tsdroid.bridge.IdentityFileStore
 import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.VadGate
+import dev.tsdroid.data.JoinVoiceState
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
@@ -86,6 +87,7 @@ fun SettingsPage(
     val micGain by settingsStore.micGain.collectAsStateWithLifecycle(initialValue = 1.0f)
     val micMode by settingsStore.micMode.collectAsStateWithLifecycle(initialValue = MicMode.PTT)
     val vadThreshold by settingsStore.vadThresholdDb.collectAsStateWithLifecycle(initialValue = VadGate.DEFAULT_THRESHOLD_DB)
+    val joinVoiceState by settingsStore.joinVoiceState.collectAsStateWithLifecycle(initialValue = JoinVoiceState.DEAFENED)
 
     val languageOptions = listOf(
         "zh" to stringResource(R.string.language_simplified_chinese),
@@ -346,6 +348,39 @@ fun SettingsPage(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+
+                // ── When joining voice: deafened / muted / ready to talk ──
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(
+                        text = stringResource(R.string.join_voice_state),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for ((state, label) in listOf(
+                            JoinVoiceState.DEAFENED to R.string.join_voice_deafened,
+                            JoinVoiceState.MUTED to R.string.join_voice_muted,
+                            JoinVoiceState.NORMAL to R.string.join_voice_normal,
+                        )) {
+                            FilterChip(
+                                selected = joinVoiceState == state,
+                                onClick = { scope.launch { settingsStore.setJoinVoiceState(state) } },
+                                label = { Text(stringResource(label)) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.join_voice_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

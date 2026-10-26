@@ -1061,6 +1061,7 @@ class AudioBridge(
 
     fun setOutputMuted(muted: Boolean) {
         _isOutputMuted.value = muted
+        tsClient.setOutputMuted(muted)
         // When output is muted, clear all queued audio so nothing plays
         if (muted) {
             for ((_, queue) in userQueues) {

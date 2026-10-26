@@ -348,6 +348,17 @@ public class Client implements AutoCloseable {
     }
 
     /**
+     * Notify the server of our output (speaker) muted state.
+     *
+     * @param muted true if speakers are muted
+     * @throws TsLibException on error
+     */
+    public void setOutputMuted(boolean muted) {
+        checkNotClosed();
+        nativeSetOutputMuted(nativePtr, muted);
+    }
+
+    /**
      * Send encoded audio data to the server.
      *
      * @param data  encoded audio data (e.g. Opus)
@@ -474,6 +485,7 @@ public class Client implements AutoCloseable {
     private static native void nativeMoveToChannel(long ptr, long channelId, String password);
     private static native void nativeSyncState(long ptr);
     private static native void nativeSetInputMuted(long ptr, boolean muted);
+    private static native void nativeSetOutputMuted(long ptr, boolean muted);
     private static native void nativeSetNickname(long ptr, String nickname);
     private static native void nativeSetAway(long ptr, boolean away, String message);
     private static native void nativeSendAudio(long ptr, byte[] data, int codec);

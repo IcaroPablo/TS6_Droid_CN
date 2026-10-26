@@ -172,6 +172,11 @@ class TsClient {
     // PTT press that does not change the state costs no command.
     private var lastSentInputMuted: Boolean? = null
 
+    // Speaker mute (`client_output_muted`), paced the same way. A new connection
+    // starts unmuted on the server, so only a change from that costs a command.
+    private var outputMuteSendJob: Job? = null
+    private var lastSentOutputMuted = false
+
     // Time of the last `clientupdate` we actually sent (status or mute). Both
     // share the server's per-client command budget.
     private var lastClientUpdateAt = 0L
@@ -519,6 +524,8 @@ class TsClient {
         // A new connection knows nothing about what we sent on the old one.
         lastSentInputMuted = null
         pendingInputMuted = null
+        outputMuteSendJob?.cancel()
+        lastSentOutputMuted = false
         lastClientUpdateAt = 0L
     }
 
@@ -733,6 +740,25 @@ class TsClient {
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 Log.w(TAG, "setInputMuted failed", e)
+            }
+        }
+    }
+
+    /** Tell the server our speaker mute state (`clientupdate client_output_muted`). */
+    fun setOutputMuted(muted: Boolean) {
+        if (lastSentOutputMuted == muted && outputMuteSendJob?.isActive != true) return
+        Log.i(TAG, "setOutputMuted($muted)")
+        outputMuteSendJob?.cancel()
+        outputMuteSendJob = clientCoroutineScope.launch {
+            awaitClientUpdateSlot()
+            if (muted == lastSentOutputMuted) return@launch
+            lastSentOutputMuted = muted
+            lastClientUpdateAt = SystemClock.elapsedRealtime()
+            try {
+                client?.setOutputMuted(muted)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "setOutputMuted failed", e)
             }
         }
     }

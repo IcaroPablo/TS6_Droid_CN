@@ -141,6 +141,7 @@ fun ServerScreen(
     val micMode by viewModel.micMode.collectAsStateWithLifecycle()
     val userVolumes by viewModel.userVolumes.collectAsStateWithLifecycle()
     val isOutputMuted by viewModel.isOutputMuted.collectAsStateWithLifecycle()
+    val isMicMuted by viewModel.isMicMuted.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val unreadChannel by viewModel.unreadChannel.collectAsStateWithLifecycle()
     val unreadPrivate by viewModel.unreadPrivate.collectAsStateWithLifecycle()
@@ -479,12 +480,14 @@ fun ServerScreen(
                                 }
                             }
                         } else {
-                            // Voice activity mode: click to mute and go back to PTT. The error
-                            // colour is carried by the icon tint and the rim.
+                            // Hands-free modes: a plain mute switch that keeps the mode, labelled with
+                            // what a tap will do. The colour is carried by the icon tint and the rim.
+                            val muteTint = if (isMicMuted) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error
                             GlassCard(
                                 modifier = Modifier
                                     .size(72.dp)
-                                    .clickable { viewModel.toggleVoiceMode() },
+                                    .clickable { viewModel.toggleMicMute() },
                                 wallpaper = glassWallpaper,
                                 shape = CircleShape,
                                 elevation = 4.dp,
@@ -494,22 +497,24 @@ fun ServerScreen(
                                         .fillMaxSize()
                                         .border(
                                             width = 1.5.dp,
-                                            color = MaterialTheme.colorScheme.error,
+                                            color = muteTint,
                                             shape = CircleShape,
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(
-                                            AppIcons.MicOff,
-                                            contentDescription = stringResource(R.string.mute_mic),
+                                            if (isMicMuted) AppIcons.MicOn else AppIcons.MicOff,
+                                            contentDescription = stringResource(
+                                                if (isMicMuted) R.string.unmute_mic else R.string.mute_mic,
+                                            ),
                                             modifier = Modifier.size(28.dp),
-                                            tint = MaterialTheme.colorScheme.error,
+                                            tint = muteTint,
                                         )
                                         Text(
-                                            stringResource(R.string.mute),
+                                            stringResource(if (isMicMuted) R.string.notif_unmute else R.string.mute),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.error,
+                                            color = muteTint,
                                         )
                                     }
                                 }
