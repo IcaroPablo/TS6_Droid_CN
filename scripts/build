@@ -1,0 +1,32 @@
+#!/bin/sh
+# Build TeleSpeak natively on Chimera Linux: the tslib JNI library, the unit
+# tests and the release APK. Result: out/telespeak-<version>.apk
+# Run scripts/setup once first; see BUILDING.md.
+set -eu
+
+ts_repo=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ts_repo"
+. scripts/env.sh
+
+git submodule update --init tslib_multi
+(cd tslib_multi && cargo build --locked --release --target aarch64-linux-android -p tslib-jni --features vendored-openssl)
+cp "$CARGO_TARGET_DIR/aarch64-linux-android/release/libtslib_jni.so" app/src/main/jniLibs/arm64-v8a/
+
+# The release keystore and its passwords stay outside the repository. Without
+# them Gradle signs with the debug key and says so.
+props=$TS_SIGNING_DIR/keystore.properties
+if [ -f "$props" ]; then
+	prop() { sed -n "s/^$1=//p" "$props"; }
+	SIGNING_KEYSTORE_FILE=$TS_SIGNING_DIR/telespeak-release.keystore
+	SIGNING_STORE_PASSWORD=$(prop storePassword)
+	SIGNING_KEY_ALIAS=$(prop keyAlias)
+	SIGNING_KEY_PASSWORD=$(prop keyPassword)
+	export SIGNING_KEYSTORE_FILE SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD
+fi
+
+./gradlew --no-daemon testDebugUnitTest assembleRelease -x buildRustLibs
+
+version=$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
+mkdir -p "$TS_OUT"
+cp app/build/outputs/apk/release/app-release.apk "$TS_OUT/telespeak-$version.apk"
+ls -l "$TS_OUT/telespeak-$version.apk"

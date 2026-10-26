@@ -19,6 +19,7 @@ in short:
 
 Install: download the APK from the [latest release](https://github.com/IcaroPablo/TS6_Droid_CN/releases/latest).
 Android 10 or newer, 64-bit ARM.
+To build it yourself, see [BUILDING.md](BUILDING.md).
 
 ## Network connections
 
