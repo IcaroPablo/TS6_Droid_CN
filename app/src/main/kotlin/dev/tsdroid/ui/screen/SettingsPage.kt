@@ -371,7 +371,7 @@ fun SettingsPage(
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(
-                            onClick = { exportIdentityLauncher.launch("ts6droid_identity.ini") },
+                            onClick = { exportIdentityLauncher.launch("telespeak_identity.ini") },
                             enabled = identityUid != null,
                         ) {
                             Text(stringResource(R.string.identity_export))
@@ -490,7 +490,7 @@ fun SettingsPage(
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
         } catch (_: Exception) { "" }
         Text(
-            text = "TS6 Droid v$versionName",
+            text = "TeleSpeak v$versionName",
             style = MaterialTheme.typography.bodySmall,
             color = LocalContentColor.current.copy(alpha = 0.72f),
             modifier = Modifier.align(Alignment.CenterHorizontally),

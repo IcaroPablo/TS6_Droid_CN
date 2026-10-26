@@ -114,7 +114,7 @@ object SettingsCacheSizeHelper {
 }
 
 /**
- * Copies cached wallpapers into the device gallery (`Pictures/TS6 Droid`).
+ * Copies cached wallpapers into the device gallery (`Pictures/TeleSpeak`).
  *
  * The cache stores whatever bytes the server sent under a fixed `.jpg` name, and the anime
  * endpoints serve PNG as often as JPEG. The real type is therefore sniffed from the file header
@@ -123,7 +123,7 @@ object SettingsCacheSizeHelper {
  */
 object WallpaperExporter {
 
-    private const val ALBUM = "TS6 Droid"
+    private const val ALBUM = "TeleSpeak"
 
     /** Writes [files] into the gallery; returns how many of them were saved. */
     suspend fun export(context: Context, files: List<File>): Int = withContext(Dispatchers.IO) {

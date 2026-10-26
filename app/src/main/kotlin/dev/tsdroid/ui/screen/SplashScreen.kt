@@ -102,7 +102,7 @@ fun SplashScreen(animeBackground: Boolean?, onReady: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Text(
-                text = "TS6 Droid",
+                text = "TeleSpeak",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,

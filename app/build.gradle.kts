@@ -11,11 +11,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.yuaxi.ts6droid.cn"
+        applicationId = "io.github.icaropablo.telespeak"
         minSdk = 29
         targetSdk = 35
-        versionCode = 13
-        versionName = "2.1.8-Han"
+        versionCode = 1
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

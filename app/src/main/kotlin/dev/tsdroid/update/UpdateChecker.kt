@@ -25,7 +25,7 @@ data class CheckResult(
 
 object UpdateChecker {
     private const val TAG = "UpdateChecker"
-    private const val REPO = "YUAXI/TS6_Droid_CN"
+    private const val REPO = "IcaroPablo/TS6_Droid_CN"
     private const val API_URL = "https://api.github.com/repos/$REPO/releases/latest"
 
     suspend fun checkForUpdate(currentVersionName: String): CheckResult = withContext(Dispatchers.IO) {
@@ -35,7 +35,7 @@ object UpdateChecker {
             conn.connectTimeout = 10000
             conn.readTimeout = 10000
             conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
-            conn.setRequestProperty("User-Agent", "TS6-Droid/2.0")
+            conn.setRequestProperty("User-Agent", "TeleSpeak")
 
             if (conn.responseCode != 200) {
                 conn.disconnect()
