@@ -20,7 +20,7 @@ produced the published builds.
 | Android SDK | platform 35, build-tools 35.0.0 | `scripts/setup`, same place |
 | Android command-line tools | 20.0 (build 14742923) | `scripts/setup`; later builds need glibc |
 | JDK | 21 | host package |
-| clang, lld | Chimera's (22) | host package |
+| clang, lld | Chimera's (22), for the host side and for linking | host package |
 | Gradle | 8.14, from the wrapper | `./gradlew`, in `~/.gradle` |
 
 The versions live in [`scripts/env.sh`](scripts/env.sh).
@@ -33,8 +33,8 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
    apk add git curl unzip perl gmake cmake clang lld llvm-binutils openjdk21 gcompat libgcc-chimera-devel
    ```
 
-   `gcompat` runs the SDK's glibc `aapt2`, and `libgcc-chimera-devel` provides the `libgcc_s` that
-   the musl Rust toolchain needs.
+   `gcompat` runs the NDK's clang and the SDK's `aapt2`, which are glibc programs, and
+   `libgcc-chimera-devel` provides the `libgcc_s` that they and the musl Rust toolchain need.
 
 2. Clone with the submodule and run the one-time setup:
 
@@ -66,22 +66,24 @@ The keystore is never in the repository.
 
 ## Why the Chimera-specific parts
 
-The NDK's compilers and the Android command-line tools after 20.0 are glibc programs. Instead, the
-scripts use Chimera's clang with the NDK's sysroot and compiler runtime:
+The NDK and the SDK tools are glibc programs. `gcompat` runs them, with three exceptions:
 
-- `scripts/chimera/aarch64-linux-android29-clang{,++}` are wrappers that point clang at the NDK
-  sysroot and compiler runtime.
-- `scripts/chimera/android-aarch64.cmake` is the CMake toolchain file for the C dependencies
-  (opus, OpenSSL).
-- `scripts/chimera/include/stdc-predef.h` is an empty header, because Chimera's clang always
-  includes one and bionic has none.
+- The NDK's `ld.lld` crashes under `gcompat`, so the NDK's clang links with Chimera's
+  (`--ld-path=/usr/bin/ld.lld`).
+- The Android command-line tools after 20.0 replaced the Java `sdkmanager` with a glibc program
+  that does not run, so `scripts/setup` pins 20.0.
+- Gradle loads its glibc native libraries on musl and crashes, so `scripts/env.sh` turns them off
+  (`-Dorg.gradle.native=false`).
+
+Chimera's `make` is BSD make, so OpenSSL and CMake are given `gmake`.
 
 ## Reproducibility
 
 Build paths are kept out of the library:
 
 - `--remap-path-prefix` for Rust and `-ffile-prefix-map` for C rewrite the paths under the
-  repository and `~/.cargo`.
+  repository and `~/.cargo`. The C prefix maps go through `CCC_OVERRIDE_OPTIONS`, because OpenSSL
+  records its compiler flags.
 - The cargo target directory is a fixed `/var/tmp/telespeak-target`, because OpenSSL records its
   install path.
 - `SOURCE_DATE_EPOCH` replaces OpenSSL's build time with the native source's commit time.

@@ -1,8 +1,0 @@
-#!/bin/sh
-# Chimera's clang targeting Android: NDK sysroot and compiler-rt, host clang headers.
-# Needs ANDROID_NDK_HOME, TS_CLANG_RES, CARGO_HOME and TS_REPO from scripts/env.sh.
-here=$(cd "$(dirname "$0")" && pwd)
-exec clang --no-default-config --target=aarch64-linux-android29 \
-	--sysroot="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot" \
-	-resource-dir="$TS_CLANG_RES" -idirafter "$here/include" -fuse-ld=lld \
-	-ffile-prefix-map="$CARGO_HOME"=/cargo -ffile-prefix-map="$TS_REPO"=/src "$@"

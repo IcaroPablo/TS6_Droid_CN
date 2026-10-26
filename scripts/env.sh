@@ -17,42 +17,41 @@ CMDLINE_TOOLS_SHA256=04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1dfb
 export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/.local/share/android-sdk}
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION
+# CMake's Android support finds the NDK through this one
+export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
 export CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
 export RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
 export RUSTUP_TOOLCHAIN=$RUST_VERSION
 TS_SIGNING_DIR=${TS_SIGNING_DIR:-$HOME/.local/share/telespeak/signing}
 TS_OUT=${TS_OUT:-$ts_repo/out}
-export PATH=$ts_repo/scripts/chimera:$CARGO_HOME/bin:$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH:$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
 
-# Cross-compile for Android with Chimera's clang instead of the NDK's glibc one
-# (by name, through PATH: OpenSSL bakes its compiler command into the library)
+# The NDK's clang runs through gcompat, but its ld.lld crashes there, so it
+# links with Chimera's. The compiler is named through PATH, not by its full
+# path, because OpenSSL bakes its compiler command into the library.
 ts_cc=aarch64-linux-android29-clang
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ts_cc
 export CC_aarch64_linux_android=$ts_cc
 export CXX_aarch64_linux_android=$ts_cc++
 export AR_aarch64_linux_android=llvm-ar
 export RANLIB_aarch64_linux_android=llvm-ranlib
-export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android=$ts_repo/scripts/chimera/android-aarch64.cmake
+# CMake reads LDFLAGS when it configures opus
+export LDFLAGS=--ld-path=/usr/bin/ld.lld
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 # Keep build paths, and with them the builder's home and user name, out of the
-# library: Rust's and the C wrappers' prefix maps rewrite the repository and
-# ~/.cargo, and the cargo target directory, which OpenSSL records as its install
-# directory, is at a fixed path outside $HOME. OpenSSL's build time is replaced
-# by the native source's commit time.
-export TS_REPO=$ts_repo
+# library: prefix maps rewrite the repository and ~/.cargo (given to clang
+# through CCC_OVERRIDE_OPTIONS, which OpenSSL does not record), and the cargo
+# target directory, which OpenSSL records as its install directory, is at a
+# fixed path outside $HOME. OpenSSL's build time is replaced by the native
+# source's commit time.
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/var/tmp/telespeak-target}
 export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$ts_repo/tslib_multi" log -1 --format=%ct 2>/dev/null || echo 0)}
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="--remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
+export CCC_OVERRIDE_OPTIONS="# +-ffile-prefix-map=$CARGO_HOME=/cargo +-ffile-prefix-map=$ts_repo=/src"
+# The NDK's clang packs relocations (RELR) only from API 30; Android reads
+# them from API 28
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=$LDFLAGS -C link-arg=-Wl,--pack-dyn-relocs=relr -C link-arg=-Wl,--use-android-relr-tags --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
 # Chimera's make is BSD make; OpenSSL's and CMake's makefiles need GNU make
 export MAKE=gmake
-
-# The wrappers combine the host clang's headers with the NDK's compiler-rt in one
-# resource directory. It is recreated on every source, so a clang upgrade on the
-# host is picked up.
-export TS_CLANG_RES=${XDG_CACHE_HOME:-$HOME/.cache}/telespeak/clang-res
-mkdir -p "$TS_CLANG_RES"
-ln -sfn "$(clang -print-resource-dir)/include" "$TS_CLANG_RES/include"
-ln -sfn "$(echo "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/*/lib)" "$TS_CLANG_RES/lib"
 
 # Gradle detects musl by looking for "-musl-" in mapped library paths; Chimera's
 # loader is /usr/lib/libc.so, so it would load glibc natives and crash. Only
