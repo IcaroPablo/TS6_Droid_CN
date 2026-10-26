@@ -453,7 +453,7 @@ private fun CollapsedBubble(
                     )
                 } else {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                        painter = painterResource(id = R.drawable.ic_bubble_headset),
                         contentDescription = stringResource(R.string.app_name),
                         modifier = Modifier.fillMaxSize(0.78f),
                         contentScale = ContentScale.Fit,
@@ -1272,8 +1272,8 @@ private const val REVEAL_FADE_IN_MS = 120
 private const val REVEAL_MIN_SCALE = 0.88f
 
 /**
- * The app icon's background colour (`ic_launcher_background`), which is what the bubble wears while
- * nobody is talking.
+ * The bubble's colour while nobody is talking (the original app icon's background; the launcher icon
+ * is now a picture).
  */
 private val AppPink = Color(0xFFFF69B4)
 
