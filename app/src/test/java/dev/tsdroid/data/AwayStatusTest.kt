@@ -26,8 +26,8 @@ class AwayStatusTest {
     fun `away and do-not-disturb are away states with their own defaults`() {
         assertTrue(AwayStatus.AWAY.away)
         assertTrue(AwayStatus.DND.away)
-        assertEquals("离开", AwayStatus.AWAY.message(""))
-        assertEquals("请勿打扰", AwayStatus.DND.message(""))
+        assertEquals("Away", AwayStatus.AWAY.message(""))
+        assertEquals("Do not disturb", AwayStatus.DND.message(""))
     }
 
     @Test
@@ -38,7 +38,7 @@ class AwayStatusTest {
 
     @Test
     fun `blank input falls back to the default message`() {
-        assertEquals("离开", AwayStatus.AWAY.message("   "))
-        assertEquals("请勿打扰", AwayStatus.DND.message(""))
+        assertEquals("Away", AwayStatus.AWAY.message("   "))
+        assertEquals("Do not disturb", AwayStatus.DND.message(""))
     }
 }

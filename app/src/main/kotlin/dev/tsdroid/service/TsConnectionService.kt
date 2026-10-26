@@ -1450,7 +1450,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private fun overlayStringsContext(): Context {
         val languageTag = runCatching {
             runBlocking { SettingsStore(this@TsConnectionService).language.first() }
-        }.getOrDefault("zh")
+        }.getOrDefault("en")
         val locale = Locale.forLanguageTag(languageTag)
         val configuration = resources.configuration
         configuration.setLocale(locale)

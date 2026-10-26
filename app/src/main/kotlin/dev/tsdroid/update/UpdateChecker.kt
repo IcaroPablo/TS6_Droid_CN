@@ -39,7 +39,7 @@ object UpdateChecker {
 
             if (conn.responseCode != 200) {
                 conn.disconnect()
-                return@withContext CheckResult(null, "服务器返回 ${conn.responseCode}")
+                return@withContext CheckResult(null, "Server returned ${conn.responseCode}")
             }
 
             val json = conn.inputStream.bufferedReader().use { it.readText() }
@@ -89,7 +89,7 @@ object UpdateChecker {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Update check failed", e)
-            CheckResult(null, e.message ?: "网络请求失败")
+            CheckResult(null, e.message ?: "Network request failed")
         }
     }
 
