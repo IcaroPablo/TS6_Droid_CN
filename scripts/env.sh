@@ -8,11 +8,16 @@ ts_repo=${ts_repo:-$PWD}
 
 # Pinned versions; scripts/setup installs exactly these
 RUST_VERSION=1.99.1
-NDK_VERSION=27.2.12479018
-SDK_PACKAGES="platforms;android-35 build-tools;35.0.0 platform-tools ndk;$NDK_VERSION"
-# 20.0, the last build whose sdkmanager is Java; later ones call a glibc binary
-CMDLINE_TOOLS_BUILD=14742923
-CMDLINE_TOOLS_SHA256=04453066b540409d975c676d781da1477479dde3761310f1a7eb92a1dfb15af7
+NDK_VERSION=29.0.14206865
+# The Android SDK packages Gradle and cargo need, straight from Google's
+# repository (no sdkmanager): directory under $ANDROID_HOME, archive, sha256.
+# Build-tools 34.0.0 is the Android Gradle plugin's default, and the plugin
+# insists on platform-tools.
+SDK_PACKAGES="\
+platforms/android-35 platform-35_r02.zip 0988cacad01b38a18a47bac14a0695f246bc76c1b06c0eeb8eb0dc825ab0c8e0
+build-tools/34.0.0 build-tools_r34-linux.zip e858c4b60069d0431051b225d384413b1643e1289b00a4825aed347f25bd510f
+platform-tools platform-tools_r37.0.1-linux.zip d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1
+ndk/$NDK_VERSION android-ndk-r29-linux.zip 4abbbcdc842f3d4879206e9695d52709603e52dd68d3c1fff04b3b5e7a308ecf"
 
 export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/.local/share/android-sdk}
@@ -24,7 +29,7 @@ export RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
 export RUSTUP_TOOLCHAIN=$RUST_VERSION
 TS_SIGNING_DIR=${TS_SIGNING_DIR:-$HOME/.local/share/telespeak/signing}
 TS_OUT=${TS_OUT:-$ts_repo/out}
-export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$PATH
 
 # The NDK's clang runs through gcompat, but its ld.lld crashes there, so it
 # links with Chimera's
@@ -41,9 +46,7 @@ export CMAKE_POLICY_VERSION_MINIMUM=3.5
 # library: prefix maps rewrite the repository and ~/.cargo
 ts_map="-ffile-prefix-map=$CARGO_HOME=/cargo -ffile-prefix-map=$ts_repo=/src"
 export CFLAGS_aarch64_linux_android="$ts_map" CXXFLAGS_aarch64_linux_android="$ts_map"
-# The NDK's clang packs relocations (RELR) only from API 30; Android reads
-# them from API 28
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=$LDFLAGS -C link-arg=-Wl,--pack-dyn-relocs=relr -C link-arg=-Wl,--use-android-relr-tags --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=$LDFLAGS --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
 
 # Gradle detects musl by looking for "-musl-" in mapped library paths; Chimera's
 # loader is /usr/lib/libc.so, so it would load glibc natives and crash. Only

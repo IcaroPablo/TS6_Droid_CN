@@ -18,9 +18,8 @@ produced the published builds.
 | Tool | Version | Installed by |
 |---|---|---|
 | Rust | 1.99.1, target `aarch64-linux-android` | `scripts/setup`, in `~/.rustup` and `~/.cargo` |
-| Android NDK | 27.2.12479018 | `scripts/setup`, in `~/.local/share/android-sdk` |
-| Android SDK | platform 35, build-tools 35.0.0 | `scripts/setup`, same place |
-| Android command-line tools | 20.0 (build 14742923) | `scripts/setup`; later builds need glibc |
+| Android NDK | r29 (29.0.14206865) | `scripts/setup`, in `~/.local/share/android-sdk` |
+| Android SDK | platform 35, build-tools 34.0.0, platform-tools 37.0.1 | `scripts/setup`, same place |
 | JDK | 21 | host package |
 | clang, lld | Chimera's (22), for the host side and for linking | host package |
 | Gradle | 8.14, from the wrapper | `./gradlew`, in `~/.gradle` |
@@ -46,7 +45,10 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
    scripts/setup
    ```
 
-   It changes no shell profile; the scripts set `PATH` themselves.
+   It changes no shell profile; the scripts set `PATH` themselves. The Android packages are
+   downloaded straight from Google's repository and checked against the SHA-256 sums in
+   `scripts/env.sh`; using them means accepting the
+   [Android SDK License](https://developer.android.com/studio/terms).
 
 3. Build:
 
@@ -68,14 +70,16 @@ The keystore is never in the repository.
 
 ## Why the Chimera-specific parts
 
-The NDK and the SDK tools are glibc programs. `gcompat` runs them, with three exceptions:
+The NDK and the SDK tools are glibc programs. `gcompat` runs them, with these exceptions:
 
 - The NDK's `ld.lld` crashes under `gcompat`, so the NDK's clang links with Chimera's
   (`--ld-path=/usr/bin/ld.lld`).
-- The Android command-line tools after 20.0 replaced the Java `sdkmanager` with a glibc program
-  that does not run, so `scripts/setup` pins 20.0.
+- The Android command-line tools' `sdkmanager` is a glibc program since 21.0 and does not run, so
+  `scripts/setup` downloads the SDK packages itself.
 - Gradle loads its glibc native libraries on musl and crashes, so `scripts/env.sh` turns them off
   (`-Dorg.gradle.native=false`).
+- NDK r30's clang crashes under `gcompat` at startup; r29 is the newest that runs. Check the
+  compiler (`clang --version`) before moving to a newer NDK.
 
 Chimera's `make` is BSD make; CMake finds `gmake` and uses it for opus.
 

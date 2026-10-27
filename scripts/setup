@@ -21,14 +21,13 @@ if ! command -v rustup >/dev/null; then
 fi
 rustup toolchain install "$RUST_VERSION" --profile minimal --target aarch64-linux-android
 
-if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-	curl --proto '=https' -fsSL -o "$tmp/cmdline-tools.zip" \
-		"https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip"
-	echo "$CMDLINE_TOOLS_SHA256  $tmp/cmdline-tools.zip" | sha256sum -c -
-	unzip -q -d "$tmp" "$tmp/cmdline-tools.zip"
-	mkdir -p "$ANDROID_HOME/cmdline-tools"
-	mv "$tmp/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-fi
-yes | sdkmanager --licenses >/dev/null
-# shellcheck disable=SC2086 # one word per package
-sdkmanager $SDK_PACKAGES
+# Each archive holds one top directory, which becomes the package's directory
+echo "$SDK_PACKAGES" | while read -r dir archive sha256; do
+	[ -d "$ANDROID_HOME/$dir" ] && continue
+	curl --proto '=https' -fsSL -o "$tmp/$archive" "https://dl.google.com/android/repository/$archive"
+	echo "$sha256  $tmp/$archive" | sha256sum -c -
+	mkdir -p "$tmp/unpack" "$(dirname "$ANDROID_HOME/$dir")"
+	unzip -q -d "$tmp/unpack" "$tmp/$archive"
+	mv "$tmp/unpack"/* "$ANDROID_HOME/$dir"
+	rm -rf "$tmp/unpack" "$tmp/$archive"
+done
