@@ -9,13 +9,14 @@ ts_repo=${ts_repo:-$PWD}
 # Pinned versions; scripts/setup installs exactly these
 RUST_VERSION=1.99.1
 NDK_VERSION=29.0.14206865
+# The Android Gradle plugin's default
+BUILD_TOOLS_VERSION=34.0.0
 # The Android SDK packages Gradle and cargo need, straight from Google's
 # repository (no sdkmanager): directory under $ANDROID_HOME, archive, sha256.
-# Build-tools 34.0.0 is the Android Gradle plugin's default, and the plugin
-# insists on platform-tools.
+# The Android Gradle plugin insists on platform-tools.
 SDK_PACKAGES="\
 platforms/android-35 platform-35_r02.zip 0988cacad01b38a18a47bac14a0695f246bc76c1b06c0eeb8eb0dc825ab0c8e0
-build-tools/34.0.0 build-tools_r34-linux.zip e858c4b60069d0431051b225d384413b1643e1289b00a4825aed347f25bd510f
+build-tools/$BUILD_TOOLS_VERSION build-tools_r34-linux.zip e858c4b60069d0431051b225d384413b1643e1289b00a4825aed347f25bd510f
 platform-tools platform-tools_r37.0.1-linux.zip d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1
 ndk/$NDK_VERSION android-ndk-r29-linux.zip 4abbbcdc842f3d4879206e9695d52709603e52dd68d3c1fff04b3b5e7a308ecf"
 
@@ -28,6 +29,8 @@ export CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
 export RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
 export RUSTUP_TOOLCHAIN=$RUST_VERSION
 TS_SIGNING_DIR=${TS_SIGNING_DIR:-$HOME/.local/share/telespeak/signing}
+# SHA-256 of the release signing certificate (public; apksigner verify --print-certs)
+TS_SIGNER_SHA256=4396de8d21ed855f387b2d1fcf87d627417c4b2224ddb16212a0e17866cace9d
 TS_OUT=${TS_OUT:-$ts_repo/out}
 export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$PATH
 

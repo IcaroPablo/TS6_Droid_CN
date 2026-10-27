@@ -68,6 +68,25 @@ To run `./gradlew` or `cargo` by hand, first source the environment from the rep
 `keyPassword`), or from `$TS_SIGNING_DIR`. Without it, Gradle signs with the debug key and warns.
 The keystore is never in the repository.
 
+## Releasing
+
+1. Bump `versionCode` (always up, or Android refuses the update) and `versionName` in
+   `app/build.gradle.kts`, commit and push to `main`.
+2. Write the release notes in a Markdown file and run:
+
+   ```
+   scripts/release notes.md
+   ```
+
+   It checks that `main` matches GitHub and the version is new, runs `scripts/build`, checks that
+   the committed library is what the build produces and that the APK is signed with the release
+   key (`TS_SIGNER_SHA256` in `scripts/env.sh`), then shows the notes and asks before tagging
+   `vX.Y.Z` and publishing the release with the APK. The notes get the library's SHA-256 appended.
+   It needs the GitHub CLI (`gh`, package `github-cli`), logged in.
+
+The in-app updater reads the latest release: its tag gives the version, and it downloads the
+`.apk` attached to it.
+
 ## Why the Chimera-specific parts
 
 The NDK and the SDK tools are glibc programs. `gcompat` runs them, with these exceptions:

@@ -1,0 +1,68 @@
+#!/bin/sh
+# Publish a TeleSpeak release on GitHub: build the signed APK from main as it is
+# on GitHub, tag it vX.Y.Z and upload it with the given release notes. The
+# version is versionName in app/build.gradle.kts; bump it (and versionCode) in
+# a commit first. Asks before tagging and publishing.
+# Usage: scripts/release <notes.md>
+set -eu
+
+[ $# -eq 1 ] && [ -f "$1" ] || { echo "usage: scripts/release <notes.md>" >&2; exit 2; }
+notes=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+
+ts_repo=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ts_repo"
+. scripts/env.sh
+
+die() { echo "release: $*" >&2; exit 1; }
+
+version=$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
+tag=v$version
+# owner/name of origin; gh would otherwise pick the upstream remote
+repo=$(git remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+
+# Release exactly what is on GitHub's main
+[ "$(git branch --show-current)" = main ] || die "not on main"
+[ -z "$(git status --porcelain)" ] || die "uncommitted changes"
+git fetch -q origin main
+[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main differs from origin/main"
+[ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || die "$tag already exists on GitHub"
+latest=$(gh release view -R "$repo" --json tagName -q .tagName 2>/dev/null || true)
+if [ -n "$latest" ]; then
+	newest=$(printf '%s\n%s\n' "${latest#v}" "$version" | sort -V | tail -n 1)
+	[ "$newest" = "$version" ] && [ "$latest" != "$tag" ] || die "$version is not newer than $latest"
+fi
+
+scripts/build
+
+# The library is reproducible, so a build that changes the committed one means
+# the commit does not hold what would be released
+[ -z "$(git status --porcelain)" ] || die "the build changed committed files; commit them first"
+
+apk=$TS_OUT/telespeak-$version.apk
+signer=$("$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner" verify --print-certs "$apk" |
+	sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+[ "$signer" = "$TS_SIGNER_SHA256" ] || die "$apk is not signed with the release key"
+lib_sha256=$(unzip -p "$apk" lib/arm64-v8a/libtslib_jni.so | sha256sum | cut -d ' ' -f 1)
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+{
+	cat "$notes"
+	printf '\n---\n\nThe native library in this APK (`lib/arm64-v8a/libtslib_jni.so`) has SHA-256\n'
+	printf '`%s`. [BUILDING.md](https://github.com/%s/blob/%s/BUILDING.md) explains how to\n' "$lib_sha256" "$repo" "$tag"
+	printf 'rebuild it from this tag and compare.\n'
+} >"$tmp"
+
+echo
+echo "Release $tag of $repo, commit $(git rev-parse --short HEAD)"
+echo "APK: $apk"
+echo "Notes:"
+sed 's/^/  /' "$tmp"
+printf 'Tag and publish it as the latest release? [y/N] '
+read -r answer
+[ "$answer" = y ] || die "not published"
+
+git tag "$tag"
+git push -q origin "$tag"
+gh release create "$tag" "$apk" -R "$repo" --verify-tag --latest \
+	--title "TeleSpeak $version" --notes-file "$tmp"
