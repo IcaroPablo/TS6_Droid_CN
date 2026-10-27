@@ -84,7 +84,8 @@ Chimera's `make` is BSD make; CMake finds `gmake` and uses it for opus.
 Build paths are kept out of the library: `--remap-path-prefix` for Rust and `-ffile-prefix-map`
 for C rewrite the paths under the repository and `~/.cargo` to `/src` and `/cargo`.
 
-Two builds in different directories differ only in the crates that depend on `ts-bookkeeping`, from
-tsclientlib. Its build script generates a `match` by iterating a `HashMap`, so the arms come out in
-a different order on every build. Fixing that upstream (a `BTreeMap`) would make the library
-byte-for-byte reproducible.
+With that, the library is byte-for-byte reproducible: the same commit built in two different
+directories gives the same `libtslib_jni.so`. To check a release, build its tag and compare
+`sha256sum app/src/main/jniLibs/arm64-v8a/libtslib_jni.so` with the library inside the published
+APK (`unzip -p telespeak-<version>.apk lib/arm64-v8a/libtslib_jni.so | sha256sum`). The APK as a
+whole differs, because it carries the release signature.
