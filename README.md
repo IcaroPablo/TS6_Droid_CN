@@ -16,6 +16,9 @@ in short:
 - The native library is [tslib_multi](https://github.com/IcaroPablo/tslib_multi/tree/telespeak),
   included as a git submodule at `tslib_multi/` (branch `telespeak`: wslinnn's tslib_multi plus
   our changes as separate commits); clone with `git clone --recursive`
+- Its TeamSpeak protocol library, [tsclientlib](https://github.com/IcaroPablo/tsclientlib/tree/telespeak),
+  comes from our fork without the server-nickname lookup, which sent a server name without a dot to
+  TeamSpeak's `named.myteamspeak.com`; the native library no longer contains an HTTPS client at all
 
 Install: download the APK from the [latest release](https://github.com/IcaroPablo/TS6_Droid_CN/releases/latest).
 Android 10 or newer, 64-bit ARM.
@@ -41,6 +44,8 @@ front of the server (for example playit.gg) sees your IP address, when you conne
 traffic flows, and your DNS resolver sees the server's name being looked up. The name is resolved
 only through Android's own resolver (so a Private DNS setting applies); the TeamSpeak SRV and TSDNS
 lookups other clients make are skipped, so a server that depends on them needs its real address.
+TeamSpeak's server-nickname service (`named.myteamspeak.com`), which other clients ask what server
+a name without a dot means, is never contacted: the lookup is removed from the native library.
 A VPN hides your IP address from all of them and from the server.
 
 ### What the server sees

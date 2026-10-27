@@ -7,7 +7,9 @@ produced the published builds.
 ## What gets built
 
 - `tslib_multi/` (git submodule): the Rust core, built as `libtslib_jni.so` for arm64-v8a. Its
-  `Cargo.lock` pins every dependency, and the build runs with `--locked`.
+  `Cargo.lock` pins every dependency, and the build runs with `--locked`. The TeamSpeak protocol
+  comes from [tsclientlib](https://github.com/IcaroPablo/tsclientlib/tree/telespeak), our fork
+  without the server-nickname lookup; the only C code left is opus, built with CMake.
 - `app/`: the Kotlin app, built by Gradle into the release APK. The library built above is
   committed at `app/src/main/jniLibs/arm64-v8a/`, so a Gradle-only build packages it as is.
 
@@ -30,7 +32,7 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
 1. Host packages:
 
    ```
-   apk add git curl unzip perl gmake cmake clang lld llvm-binutils openjdk21 gcompat libgcc-chimera-devel
+   apk add git curl unzip gmake cmake clang lld llvm-binutils openjdk21 gcompat libgcc-chimera-devel
    ```
 
    `gcompat` runs the NDK's clang and the SDK's `aapt2`, which are glibc programs, and
@@ -75,18 +77,12 @@ The NDK and the SDK tools are glibc programs. `gcompat` runs them, with three ex
 - Gradle loads its glibc native libraries on musl and crashes, so `scripts/env.sh` turns them off
   (`-Dorg.gradle.native=false`).
 
-Chimera's `make` is BSD make, so OpenSSL and CMake are given `gmake`.
+Chimera's `make` is BSD make; CMake finds `gmake` and uses it for opus.
 
 ## Reproducibility
 
-Build paths are kept out of the library:
-
-- `--remap-path-prefix` for Rust and `-ffile-prefix-map` for C rewrite the paths under the
-  repository and `~/.cargo`. The C prefix maps go through `CCC_OVERRIDE_OPTIONS`, because OpenSSL
-  records its compiler flags.
-- The cargo target directory is a fixed `/var/tmp/telespeak-target`, because OpenSSL records its
-  install path.
-- `SOURCE_DATE_EPOCH` replaces OpenSSL's build time with the native source's commit time.
+Build paths are kept out of the library: `--remap-path-prefix` for Rust and `-ffile-prefix-map`
+for C rewrite the paths under the repository and `~/.cargo` to `/src` and `/cargo`.
 
 Two builds in different directories differ only in the crates that depend on `ts-bookkeeping`, from
 tsclientlib. Its build script generates a `match` by iterating a `HashMap`, so the arms come out in

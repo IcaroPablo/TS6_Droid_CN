@@ -24,12 +24,11 @@ export RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
 export RUSTUP_TOOLCHAIN=$RUST_VERSION
 TS_SIGNING_DIR=${TS_SIGNING_DIR:-$HOME/.local/share/telespeak/signing}
 TS_OUT=${TS_OUT:-$ts_repo/out}
-export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH:$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
 
 # The NDK's clang runs through gcompat, but its ld.lld crashes there, so it
-# links with Chimera's. The compiler is named through PATH, not by its full
-# path, because OpenSSL bakes its compiler command into the library.
-ts_cc=aarch64-linux-android29-clang
+# links with Chimera's
+ts_cc=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ts_cc
 export CC_aarch64_linux_android=$ts_cc
 export CXX_aarch64_linux_android=$ts_cc++
@@ -39,19 +38,12 @@ export RANLIB_aarch64_linux_android=llvm-ranlib
 export LDFLAGS=--ld-path=/usr/bin/ld.lld
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 # Keep build paths, and with them the builder's home and user name, out of the
-# library: prefix maps rewrite the repository and ~/.cargo (given to clang
-# through CCC_OVERRIDE_OPTIONS, which OpenSSL does not record), and the cargo
-# target directory, which OpenSSL records as its install directory, is at a
-# fixed path outside $HOME. OpenSSL's build time is replaced by the native
-# source's commit time.
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/var/tmp/telespeak-target}
-export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$ts_repo/tslib_multi" log -1 --format=%ct 2>/dev/null || echo 0)}
-export CCC_OVERRIDE_OPTIONS="# +-ffile-prefix-map=$CARGO_HOME=/cargo +-ffile-prefix-map=$ts_repo=/src"
+# library: prefix maps rewrite the repository and ~/.cargo
+ts_map="-ffile-prefix-map=$CARGO_HOME=/cargo -ffile-prefix-map=$ts_repo=/src"
+export CFLAGS_aarch64_linux_android="$ts_map" CXXFLAGS_aarch64_linux_android="$ts_map"
 # The NDK's clang packs relocations (RELR) only from API 30; Android reads
 # them from API 28
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=$LDFLAGS -C link-arg=-Wl,--pack-dyn-relocs=relr -C link-arg=-Wl,--use-android-relr-tags --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
-# Chimera's make is BSD make; OpenSSL's and CMake's makefiles need GNU make
-export MAKE=gmake
 
 # Gradle detects musl by looking for "-musl-" in mapped library paths; Chimera's
 # loader is /usr/lib/libc.so, so it would load glibc natives and crash. Only
