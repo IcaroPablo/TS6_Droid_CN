@@ -8,6 +8,9 @@ ts_repo=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ts_repo"
 . scripts/env.sh
 
+# Setup added the opus models later; fetch them on the first build that needs them
+[ -f "$OPUS_MODEL_DIR/MODEL_SHA256" ] || scripts/setup
+
 # Check out the tslib_multi commit this repository records, unless tslib_multi
 # holds work of its own (other commits or uncommitted changes): that is built
 # as it is, with a note.
@@ -28,7 +31,7 @@ else
 	fi
 	git -C tslib_multi submodule update --init --recursive
 fi
-(cd tslib_multi && cargo build --locked --release --target aarch64-linux-android -p tslib-jni)
+(cd tslib_multi && cargo build --locked --release --target aarch64-linux-android -p tslib-jni --features opus-dnn)
 cp tslib_multi/target/aarch64-linux-android/release/libtslib_jni.so app/src/main/jniLibs/arm64-v8a/
 
 # The release keystore and its passwords stay outside the repository. Without

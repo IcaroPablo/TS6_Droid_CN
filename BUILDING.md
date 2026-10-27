@@ -11,7 +11,8 @@ produced the published builds.
   comes from [tsclientlib](https://github.com/IcaroPablo/tsclientlib/tree/telespeak), our fork
   without the server-nickname lookup. The only C code is opus 1.6.1, from xiph's repository as a
   submodule inside `tslib_multi/` (`crates/audiopus-sys/opus`), compiled by the Rust build without
-  CMake.
+  CMake. It includes opus's neural decoder features (deep PLC, LACE and NoLACE), whose trained
+  models are not in opus's repository: they come from opus's own model archive.
 - `app/`: the Kotlin app, built by Gradle into the release APK. The library built above is
   committed at `app/src/main/jniLibs/arm64-v8a/`, so a Gradle-only build packages it as is.
 
@@ -22,6 +23,7 @@ produced the published builds.
 | Rust | 1.99.1, target `aarch64-linux-android` | `scripts/setup`, in `~/.rustup` and `~/.cargo` |
 | Android NDK | r29 (29.0.14206865) | `scripts/setup`, in `~/.local/share/android-sdk` |
 | Android SDK | platform 35, build-tools 34.0.0, platform-tools 37.0.1 | `scripts/setup`, same place |
+| opus models | the archive opus 1.6.1 names (`a5177ec6…`) | `scripts/setup`, in `~/.local/share/telespeak/opus-models` |
 | JDK | 21 | host package |
 | clang, lld | Chimera's (22), for the host side and for linking | host package |
 | Gradle | 8.14, from the wrapper | `./gradlew`, in `~/.gradle` |
@@ -50,7 +52,9 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
    It changes no shell profile; the scripts set `PATH` themselves. The Android packages are
    downloaded straight from Google's repository and checked against the SHA-256 sums in
    `scripts/env.sh`; using them means accepting the
-   [Android SDK License](https://developer.android.com/studio/terms).
+   [Android SDK License](https://developer.android.com/studio/terms). opus's model archive
+   (135 MB) comes from media.xiph.org, the address opus's own `autogen.sh` uses, checked against
+   the SHA-256 sum opus pins; only its generated C files are kept (83 MB).
 
 3. Build:
 

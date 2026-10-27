@@ -115,9 +115,26 @@ class AudioBridge(
     // Encoder for capture (our mic)
     private var encoder: OpusCodec? = null
 
-    // Per-user decoders and raw opus queues for playback mixing
+    /**
+     * One frame of a user's queue: a received opus packet, or a lost one. A
+     * lost frame carries the packet that followed it, when there is one, so
+     * the decoder can rebuild it from that packet's FEC data.
+     */
+    private class VoiceFrame(val data: ByteArray?, val fecSource: ByteArray? = null)
+
+    // Per-user decoders and opus queues for playback mixing
     private val userDecoders = ConcurrentHashMap<Int, OpusCodec>()
-    private val userQueues = ConcurrentHashMap<Int, ArrayDeque<ByteArray>>()
+    private val userQueues = ConcurrentHashMap<Int, ArrayDeque<VoiceFrame>>()
+
+    private val frameLoss = FrameLossTracker()
+
+    /** Decoder complexity for [VoiceEnhancement]; the playback loop applies it. */
+    @Volatile
+    private var decoderComplexity = 0
+
+    fun setVoiceEnhancement(level: dev.tsdroid.data.VoiceEnhancement) {
+        decoderComplexity = level.decoderComplexity
+    }
 
     /**
      * Wake signal for the playback loop. Capacity 1: the loop only needs to know
@@ -250,6 +267,7 @@ class AudioBridge(
         }
         userQueues.keys.retainAll(activeIds)
         userGainsDb.keys.retainAll(activeIds)
+        frameLoss.retainUsers(activeIds)
     }
 
     private val _isMuted = MutableStateFlow(true) // Start muted (PTT default)
@@ -327,12 +345,11 @@ class AudioBridge(
     /**
      * Native-side callback. Runs on the native pump thread, so it only queues
      * the frame and wakes the playback loop — decoding and mixing stay on the
-     * playback thread. `seq` is not used yet: frame-loss concealment would
-     * consume it, and playback already drops stale frames when it falls behind.
+     * playback thread. `seq` reveals lost frames, which playback conceals.
      */
     private val audioSink = object : dev.tslib.AudioSink {
         override fun onAudioFrame(userId: Int, seq: Int, data: ByteArray, isWhisper: Boolean) {
-            playAudio(userId, data)
+            playAudio(userId, data, frameLoss.lostBefore(userId, seq, isWhisper) ?: return)
         }
     }
 
@@ -924,15 +941,31 @@ class AudioBridge(
             val mixBuffer = ShortArray(FRAME_SIZE_SAMPLES)
             val decodeBuffer = ShortArray(FRAME_SIZE_SAMPLES)
 
+            var appliedComplexity = 0
+
             while (isActive) {
                 var hasData = false
                 mixBuffer.fill(0)
 
+                val complexity = decoderComplexity
+                if (complexity != appliedComplexity) {
+                    for (decoder in userDecoders.values) {
+                        try { decoder.setDecoderComplexity(complexity) } catch (_: Exception) {}
+                    }
+                    appliedComplexity = complexity
+                }
+
                 for ((userId, queue) in userQueues) {
-                    val opusData = synchronized(queue) { queue.pollFirst() } ?: continue
-                    val decoder = userDecoders.getOrPut(userId) { OpusCodec(audioConfig) }
+                    val frame = synchronized(queue) { queue.pollFirst() } ?: continue
+                    val decoder = userDecoders.getOrPut(userId) {
+                        OpusCodec(audioConfig).also { it.setDecoderComplexity(appliedComplexity) }
+                    }
                     try {
-                        val pcmBytes = decoder.decode(opusData)
+                        val pcmBytes = when {
+                            frame.data != null -> decoder.decode(frame.data)
+                            frame.fecSource != null -> decoder.decodeFec(frame.fecSource)
+                            else -> decoder.decodePlc()
+                        }
                         bytesToShorts(pcmBytes, decodeBuffer)
                         hasData = true
                         // Per-user gain (dB) applied before summing
@@ -990,7 +1023,7 @@ class AudioBridge(
         mutedUserIds = userIds
     }
 
-    fun playAudio(userId: Int, opusData: ByteArray) {
+    fun playAudio(userId: Int, opusData: ByteArray, lostBefore: Int = 0) {
         if (userId in mutedUserIds) return
         if (_isOutputMuted.value) return // Global output mute — discard incoming audio
         if (gainFactor == 0f) return // Speaker slider at 0% — same as muted, skip the work
@@ -1001,10 +1034,13 @@ class AudioBridge(
             // drop the oldest frames so the listener stays near "now". The previous code
             // silently discarded the *new* frame instead, which made a backlogged user go
             // permanently silent until the queue drained.
-            while (queue.size >= MAX_QUEUE_FRAMES) {
+            for (i in 1..lostBefore) {
+                queue.addLast(VoiceFrame(null, fecSource = if (i == lostBefore) opusData else null))
+            }
+            queue.addLast(VoiceFrame(opusData))
+            while (queue.size > MAX_QUEUE_FRAMES) {
                 queue.removeFirst()
             }
-            queue.addLast(opusData)
         }
         // Wake the playback loop out of its idle wait so onset is immediate.
         // Offer (never put) so a full slot can never block the audio callback.
@@ -1094,6 +1130,7 @@ class AudioBridge(
         }
         userDecoders.clear()
         userQueues.clear()
+        frameLoss.clear()
     }
 
     private fun shortsToBytes(shorts: ShortArray): ByteArray {

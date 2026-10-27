@@ -67,6 +67,43 @@ public class OpusCodec implements AutoCloseable {
     }
 
     /**
+     * Rebuild the frame lost just before {@code data} from the redundant copy
+     * (FEC) the sender may have embedded in it; without one, this conceals the
+     * frame as {@link #decodePlc()} does.
+     *
+     * @param data the Opus packet that follows the lost one
+     * @return PCM for the lost frame
+     * @throws TsLibException on decoding error
+     */
+    public byte[] decodeFec(byte[] data) {
+        checkNotClosed();
+        return nativeDecode(nativePtr, data, true);
+    }
+
+    /**
+     * Conceal one lost frame (packet loss concealment).
+     *
+     * @return PCM for the lost frame
+     * @throws TsLibException on decoding error
+     */
+    public byte[] decodePlc() {
+        checkNotClosed();
+        return nativeDecodePlc(nativePtr);
+    }
+
+    /**
+     * Set the decoder complexity, 0 to 10 (default 0). 5 turns on deep PLC,
+     * 6 adds LACE and 7 uses NoLACE instead, when the library has opus's
+     * neural features.
+     *
+     * @throws TsLibException if the value is out of range
+     */
+    public void setDecoderComplexity(int complexity) {
+        checkNotClosed();
+        nativeSetDecoderComplexity(nativePtr, complexity);
+    }
+
+    /**
      * Get the audio configuration used by this codec.
      */
     public AudioConfig getConfig() {
@@ -94,5 +131,7 @@ public class OpusCodec implements AutoCloseable {
     private static native void nativeDestroy(long ptr);
     private static native byte[] nativeEncode(long ptr, byte[] pcm);
     private static native byte[] nativeDecode(long ptr, byte[] data, boolean fec);
+    private static native byte[] nativeDecodePlc(long ptr);
+    private static native void nativeSetDecoderComplexity(long ptr, int complexity);
     private static native AudioConfig nativeGetConfig(long ptr);
 }

@@ -52,6 +52,7 @@ import dev.tsdroid.bridge.IdentityFileStore
 import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.VadGate
 import dev.tsdroid.data.JoinVoiceState
+import dev.tsdroid.data.VoiceEnhancement
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
@@ -91,6 +92,7 @@ fun SettingsPage(
     val micMode by settingsStore.micMode.collectAsStateWithLifecycle(initialValue = MicMode.PTT)
     val vadThreshold by settingsStore.vadThresholdDb.collectAsStateWithLifecycle(initialValue = VadGate.DEFAULT_THRESHOLD_DB)
     val joinVoiceState by settingsStore.joinVoiceState.collectAsStateWithLifecycle(initialValue = JoinVoiceState.DEAFENED)
+    val voiceEnhancement by settingsStore.voiceEnhancement.collectAsStateWithLifecycle(initialValue = VoiceEnhancement.OFF)
 
     val languageOptions = listOf(
         "zh" to stringResource(R.string.language_simplified_chinese),
@@ -382,6 +384,40 @@ fun SettingsPage(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = stringResource(R.string.join_voice_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // ── Voice enhancement: opus's neural decoding of friends' voices ──
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(
+                        text = stringResource(R.string.voice_enhancement),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for ((level, label) in listOf(
+                            VoiceEnhancement.OFF to R.string.voice_enhancement_off,
+                            VoiceEnhancement.FILL_GAPS to R.string.voice_enhancement_fill_gaps,
+                            VoiceEnhancement.CLEAN_UP to R.string.voice_enhancement_clean_up,
+                            VoiceEnhancement.STRONG_CLEAN_UP to R.string.voice_enhancement_strong_clean_up,
+                        )) {
+                            FilterChip(
+                                selected = voiceEnhancement == level,
+                                onClick = { scope.launch { settingsStore.setVoiceEnhancement(level) } },
+                                label = { Text(stringResource(label)) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.voice_enhancement_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

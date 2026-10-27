@@ -1,8 +1,9 @@
 #!/bin/sh
 # One-time setup for building on Chimera Linux: the pinned Rust toolchain in
-# ~/.rustup and ~/.cargo, and the pinned Android SDK packages in
-# ~/.local/share/android-sdk. The host packages come first; see BUILDING.md.
-# Running it again only installs what is missing.
+# ~/.rustup and ~/.cargo, the pinned Android SDK packages in
+# ~/.local/share/android-sdk and opus's models in ~/.local/share/telespeak.
+# The host packages come first; see BUILDING.md. Running it again only
+# installs what is missing; scripts/build runs it when the models are missing.
 set -eu
 
 ts_repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -31,3 +32,16 @@ echo "$SDK_PACKAGES" | while read -r dir archive sha256; do
 	mv "$tmp/unpack"/* "$ANDROID_HOME/$dir"
 	rm -rf "$tmp/unpack" "$tmp/$archive"
 done
+
+# opus's models: only the C sources and headers generated from them are kept
+# (about 85 MB of the 135 MB archive)
+if [ ! -f "$OPUS_MODEL_DIR/MODEL_SHA256" ]; then
+	archive=opus_data-$OPUS_MODEL_SHA256.tar.gz
+	curl --proto '=https' -fsSL -o "$tmp/$archive" "https://media.xiph.org/opus/models/$archive"
+	echo "$OPUS_MODEL_SHA256  $tmp/$archive" | sha256sum -c -
+	rm -rf "$OPUS_MODEL_DIR"
+	mkdir -p "$OPUS_MODEL_DIR"
+	tar -xzf "$tmp/$archive" -C "$OPUS_MODEL_DIR" $(tar -tzf "$tmp/$archive" | grep '^dnn/[^/]*\.[ch]$')
+	echo "$OPUS_MODEL_SHA256" >"$OPUS_MODEL_DIR/MODEL_SHA256"
+	rm "$tmp/$archive"
+fi

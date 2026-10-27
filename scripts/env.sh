@@ -20,6 +20,10 @@ build-tools/$BUILD_TOOLS_VERSION build-tools_r34-linux.zip e858c4b60069d0431051b
 platform-tools platform-tools_r37.0.1-linux.zip d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1
 ndk/$NDK_VERSION android-ndk-r29-linux.zip 4abbbcdc842f3d4879206e9695d52709603e52dd68d3c1fff04b3b5e7a308ecf"
 
+# opus's trained models for its neural decoder features, which are not in its
+# git repository: the archive opus's autogen.sh downloads (from media.xiph.org)
+OPUS_MODEL_SHA256=a5177ec6fb7d15058e99e57029746100121f68e4890b1467d4094aa336b6013e
+
 export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/.local/share/android-sdk}
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION
@@ -30,6 +34,8 @@ TS_SIGNING_DIR=${TS_SIGNING_DIR:-$HOME/.local/share/telespeak/signing}
 # SHA-256 of the release signing certificate (public; apksigner verify --print-certs)
 TS_SIGNER_SHA256=4396de8d21ed855f387b2d1fcf87d627417c4b2224ddb16212a0e17866cace9d
 TS_OUT=${TS_OUT:-$ts_repo/out}
+# Unpacked by scripts/setup; read by tslib_multi/crates/audiopus-sys/build.rs
+export OPUS_MODEL_DIR=${OPUS_MODEL_DIR:-$HOME/.local/share/telespeak/opus-models/$OPUS_MODEL_SHA256}
 export PATH=$CARGO_HOME/bin:$JAVA_HOME/bin:$PATH
 
 # The NDK's clang runs through gcompat, but its ld.lld crashes there, so it
@@ -41,8 +47,8 @@ export CXX_aarch64_linux_android=$ts_cc++
 export AR_aarch64_linux_android=llvm-ar
 export RANLIB_aarch64_linux_android=llvm-ranlib
 # Keep build paths, and with them the builder's home and user name, out of the
-# library: prefix maps rewrite the repository and ~/.cargo
-ts_map="-ffile-prefix-map=$CARGO_HOME=/cargo -ffile-prefix-map=$ts_repo=/src"
+# library: prefix maps rewrite the repository, ~/.cargo and the opus models
+ts_map="-ffile-prefix-map=$CARGO_HOME=/cargo -ffile-prefix-map=$ts_repo=/src -ffile-prefix-map=$OPUS_MODEL_DIR=/opus-models"
 export CFLAGS_aarch64_linux_android="$ts_map" CXXFLAGS_aarch64_linux_android="$ts_map"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=--ld-path=/usr/bin/ld.lld --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
 

@@ -409,6 +409,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             overlayEnabled = enabled
             updateOverlayVisibility()
         }.launchIn(serviceScope)
+
+        SettingsStore(this).voiceEnhancement
+            .onEach { audioBridge.setVoiceEnhancement(it) }
+            .launchIn(serviceScope)
         
         // Listen to local voice activity and apply delay mechanism
         audioBridge.isLocalVoiceActive.onEach { isSpeaking ->

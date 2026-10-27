@@ -28,6 +28,7 @@ private val KEY_PTT_MODE = booleanPreferencesKey("ptt_mode")
 private val KEY_MIC_MODE = stringPreferencesKey("mic_mode")
 private val KEY_VAD_THRESHOLD_DB = floatPreferencesKey("vad_threshold_db")
 private val KEY_JOIN_VOICE_STATE = stringPreferencesKey("join_voice_state")
+private val KEY_VOICE_ENHANCEMENT = stringPreferencesKey("voice_enhancement")
 private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
 private val KEY_STREAM_TEAMSPEAK_STUN = booleanPreferencesKey("stream_teamspeak_stun")
 private val KEY_STREAM_VOLUME = floatPreferencesKey("stream_volume")
@@ -176,6 +177,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setJoinVoiceState(state: JoinVoiceState) {
         context.settingsDataStore.edit { it[KEY_JOIN_VOICE_STATE] = state.toRaw() }
+    }
+
+    val voiceEnhancement: Flow<VoiceEnhancement> = context.settingsDataStore.data
+        .map { VoiceEnhancement.from(it[KEY_VOICE_ENHANCEMENT]) }
+
+    suspend fun setVoiceEnhancement(level: VoiceEnhancement) {
+        context.settingsDataStore.edit { it[KEY_VOICE_ENHANCEMENT] = level.toRaw() }
     }
 
     /** VAD activation threshold in dBFS. */

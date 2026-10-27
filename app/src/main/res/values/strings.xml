@@ -127,6 +127,12 @@
     <string name="join_voice_muted">Muted</string>
     <string name="join_voice_normal">Ready to talk</string>
     <string name="join_voice_hint">Deafened turns off both the microphone and the speakers; the others see it next to your name.</string>
+    <string name="voice_enhancement">Voice enhancement</string>
+    <string name="voice_enhancement_off">Off</string>
+    <string name="voice_enhancement_fill_gaps">Fill gaps</string>
+    <string name="voice_enhancement_clean_up">Clean up</string>
+    <string name="voice_enhancement_strong_clean_up">Strong clean-up</string>
+    <string name="voice_enhancement_hint">Neural networks on your phone improve your friends\' voices. Fill gaps rebuilds speech lost on a bad connection and only works when that happens. Clean up also improves voices sent at low quality; the strong one does it better, for more battery. Each level includes the one before.</string>
     <string name="vad_threshold">Trigger threshold: %1$d dB</string>
     <string name="vad_threshold_hint">Audio above the threshold is transmitted. -45 dB suits most environments.</string>
     <string name="user_uid">Unique ID</string>

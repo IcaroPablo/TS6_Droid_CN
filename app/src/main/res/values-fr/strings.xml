@@ -128,6 +128,12 @@
     <string name="join_voice_muted">Micro coupé</string>
     <string name="join_voice_normal">Prêt à parler</string>
     <string name="join_voice_hint">La sourdine totale coupe le micro et les haut-parleurs ; les autres le voient à côté de votre nom.</string>
+    <string name="voice_enhancement">Amélioration de la voix</string>
+    <string name="voice_enhancement_off">Désactivée</string>
+    <string name="voice_enhancement_fill_gaps">Combler les coupures</string>
+    <string name="voice_enhancement_clean_up">Nettoyer</string>
+    <string name="voice_enhancement_strong_clean_up">Nettoyage fort</string>
+    <string name="voice_enhancement_hint">Des réseaux de neurones sur votre téléphone améliorent la voix de vos amis. Combler les coupures reconstruit la parole perdue sur une mauvaise connexion et n\'agit que dans ce cas. Nettoyer améliore aussi les voix envoyées en basse qualité ; le nettoyage fort le fait mieux, pour plus de batterie. Chaque niveau inclut le précédent.</string>
     <string name="vad_threshold">Seuil de déclenchement : %1$d dB</string>
     <string name="vad_threshold_hint">Les niveaux au-dessus du seuil déclenchent la transmission. -45 dB convient à la plupart des environnements.</string>
     <string name="user_uid">ID unique</string>

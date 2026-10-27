@@ -128,6 +128,12 @@
     <string name="join_voice_muted">静音麦克风</string>
     <string name="join_voice_normal">直接通话</string>
     <string name="join_voice_hint">关闭听筒会同时关闭麦克风和扬声器，其他人会在你的名字旁看到。</string>
+    <string name="voice_enhancement">语音增强</string>
+    <string name="voice_enhancement_off">关闭</string>
+    <string name="voice_enhancement_fill_gaps">补全断音</string>
+    <string name="voice_enhancement_clean_up">净化</string>
+    <string name="voice_enhancement_strong_clean_up">强力净化</string>
+    <string name="voice_enhancement_hint">由手机上的神经网络改善好友的语音。补全断音会重建网络不佳时丢失的语音，只在丢包时工作。净化还会改善以低音质发送的语音，强力净化效果更好但更耗电。每一级都包含前一级。</string>
     <string name="vad_threshold">触发阈值：%1$d dB</string>
     <string name="vad_threshold_hint">说话声高于阈值时自动发送。-45 dB 适合大多数环境。</string>
     <string name="user_uid">唯一 ID</string>
