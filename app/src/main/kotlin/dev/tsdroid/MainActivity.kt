@@ -21,27 +21,14 @@ import dev.tsdroid.ui.screen.AppNavigation
 import dev.tsdroid.ui.screen.SplashScreen
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.CrashReportOverlay
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import dev.tsdroid.service.TsConnectionService
 
 class MainActivity : ComponentActivity() {
 
     override fun attachBaseContext(newBase: Context) {
-        // The language has to be settled before anything is inflated, so it is the first thing the
-        // activity needs. It is normally already read by now — TsDroidApp starts that read on a
-        // background thread while the process comes up — and blocking here is only the fallback for
-        // having lost that race.
-        val languageTag = TsDroidApp.preloadedLanguage()
-            ?: runBlocking(Dispatchers.IO) { SettingsStore(newBase).language.first() }
-        val locale = java.util.Locale.forLanguageTag(languageTag)
-        java.util.Locale.setDefault(locale)
-        val config = newBase.resources.configuration
-        config.setLocale(locale)
-        config.setLocales(android.os.LocaleList(locale))
-        val updatedContext = newBase.createConfigurationContext(config)
-        super.attachBaseContext(updatedContext)
+        // The language has to be settled before anything is inflated
+        val config = AppLanguage.configuration(newBase, newBase.resources.configuration)
+        super.attachBaseContext(newBase.createConfigurationContext(config))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

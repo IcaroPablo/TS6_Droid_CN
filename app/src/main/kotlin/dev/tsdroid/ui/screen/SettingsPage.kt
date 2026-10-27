@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mikepenz.markdown.m3.Markdown
 import coil.compose.AsyncImage
+import dev.tsdroid.AppLanguage
 import dev.tsdroid.bridge.IdentityFileStore
 import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.VadGate
@@ -125,7 +126,7 @@ fun SettingsPage(
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
-                        settingsStore.setLanguage(languageTag)
+                        AppLanguage.set(context, languageTag)
                         activity?.recreate()
                     }
                     pendingLanguageTag = null

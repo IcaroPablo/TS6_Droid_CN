@@ -26,7 +26,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
-import android.os.LocaleList
+import android.content.res.Resources
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +61,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import dev.tsdroid.AppLanguage
 import dev.tsdroid.MainActivity
 import dev.tsdroid.han.R
 import dev.tsdroid.TsDroidApp
@@ -89,13 +89,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /**
  * State of the automatic reconnection loop, exposed so the UI can stay on the
@@ -280,6 +279,9 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             forceImmediateReconnect()
         }
     }
+
+    /** In the language picked in settings: notifications, toasts and the floating window. */
+    override fun getResources(): Resources = AppLanguage.resources(this, super.getResources())
 
     override fun onCreate() {
         super.onCreate()
@@ -497,6 +499,15 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         // Surface microphone trouble in the notification while the app is in the background.
         audioBridge.micStatus
             .onEach { if (tsClient.isConnected || _reconnect.value.active) updateNotification() }
+            .launchIn(serviceScope)
+
+        // A language picked while connected: rename the channel and redo the notification now.
+        SettingsStore(this).language
+            .drop(1)
+            .onEach {
+                createNotificationChannel()
+                if (tsClient.isConnected || _reconnect.value.active) updateNotification()
+            }
             .launchIn(serviceScope)
     }
 
@@ -1100,7 +1111,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
         }
 
-        val strings = overlayStringsContext()
         val composeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@TsConnectionService)
             setViewTreeViewModelStoreOwner(this@TsConnectionService)
@@ -1125,51 +1135,49 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
 
                 // The app's own theme, so the window does not look like a different product.
                 TsDroidTheme(seedColor = AnimeWallpaperState.dominantColor.value) {
-                    CompositionLocalProvider(LocalContext provides strings) {
-                        FloatingOverlay(
-                            state = overlayState(
-                                channels = channels,
-                                users = users,
-                                serverName = serverInfo?.name,
-                                micMuted = isMicMuted,
-                                outputMuted = isOutputMuted,
-                                reconnecting = reconnect.active,
-                                reconnectAttempt = reconnect.attempt,
-                                micUnavailable = micStatus == AudioBridge.MicStatus.UNAVAILABLE,
-                                talking = overlayTalking,
-                                micReady = micStatus == AudioBridge.MicStatus.RUNNING,
-                            ),
-                            inputLevel = inputLevel,
-                            expanded = isOverlayExpanded,
-                            view = overlayList,
-                            onViewChange = { overlayList = it },
-                            onToggleExpand = { toggleOverlayExpanded() },
-                            onDrag = { dx, dy -> moveOverlayBy(dx, dy) },
-                            onDragEnd = { snapOverlayToEdge() },
-                            onSizeChange = { width, height -> onOverlaySizeChanged(width, height) },
-                            onToggleMic = { audioBridge.toggleMute() },
-                            onToggleOutput = { audioBridge.toggleOutputMute() },
-                            // Holding the bubble talks: the app's own push-to-talk behaviour, which the
-                            // bubble only offers while the microphone starts out closed. Going through
-                            // the service keeps the microphone's state and the bubble's "live" ring in
-                            // step, and lets a window that disappears mid-hold close the microphone.
-                            onTalkStart = { startOverlayTalk() },
-                            onTalkStop = { stopOverlayTalk() },
-                            // Hold-to-whisper: routing first, microphone second, so
-                            // the opening frames of the sentence cannot reach the
-                            // channel (see WhisperManager.beginHoldWithMic).
-                            onWhisperTalkStart = { startOverlayWhisperTalk() },
-                            onWhisperTalkStop = { stopOverlayWhisperTalk() },
-                            onOpenApp = { openAppFromOverlay() },
-                            onMoveToChannel = { channelId, password ->
-                                serviceScope.launch {
-                                    runCatching { tsClient.moveToChannel(channelId, password) }
-                                }
-                            },
-                            onKeyboardRequest = { visible -> setOverlayKeyboardVisible(visible) },
-                            onDisconnect = { disconnect() },
-                        )
-                    }
+                    FloatingOverlay(
+                        state = overlayState(
+                            channels = channels,
+                            users = users,
+                            serverName = serverInfo?.name,
+                            micMuted = isMicMuted,
+                            outputMuted = isOutputMuted,
+                            reconnecting = reconnect.active,
+                            reconnectAttempt = reconnect.attempt,
+                            micUnavailable = micStatus == AudioBridge.MicStatus.UNAVAILABLE,
+                            talking = overlayTalking,
+                            micReady = micStatus == AudioBridge.MicStatus.RUNNING,
+                        ),
+                        inputLevel = inputLevel,
+                        expanded = isOverlayExpanded,
+                        view = overlayList,
+                        onViewChange = { overlayList = it },
+                        onToggleExpand = { toggleOverlayExpanded() },
+                        onDrag = { dx, dy -> moveOverlayBy(dx, dy) },
+                        onDragEnd = { snapOverlayToEdge() },
+                        onSizeChange = { width, height -> onOverlaySizeChanged(width, height) },
+                        onToggleMic = { audioBridge.toggleMute() },
+                        onToggleOutput = { audioBridge.toggleOutputMute() },
+                        // Holding the bubble talks: the app's own push-to-talk behaviour, which the
+                        // bubble only offers while the microphone starts out closed. Going through
+                        // the service keeps the microphone's state and the bubble's "live" ring in
+                        // step, and lets a window that disappears mid-hold close the microphone.
+                        onTalkStart = { startOverlayTalk() },
+                        onTalkStop = { stopOverlayTalk() },
+                        // Hold-to-whisper: routing first, microphone second, so
+                        // the opening frames of the sentence cannot reach the
+                        // channel (see WhisperManager.beginHoldWithMic).
+                        onWhisperTalkStart = { startOverlayWhisperTalk() },
+                        onWhisperTalkStop = { stopOverlayWhisperTalk() },
+                        onOpenApp = { openAppFromOverlay() },
+                        onMoveToChannel = { channelId, password ->
+                            serviceScope.launch {
+                                runCatching { tsClient.moveToChannel(channelId, password) }
+                            }
+                        },
+                        onKeyboardRequest = { visible -> setOverlayKeyboardVisible(visible) },
+                        onDisconnect = { disconnect() },
+                    )
                 }
             }
         }
@@ -1455,24 +1463,6 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             windowManager.updateViewLayout(view, layout)
         } catch (_: Exception) {
         }
-    }
-
-    /**
-     * A context with the app's chosen language applied.
-     *
-     * The service's own resources follow the system locale, while the rest of the app runs in the
-     * language picked in settings (the Activity applies it in `attachBaseContext`) — without this the
-     * floating window would be the one surface left in the wrong language.
-     */
-    private fun overlayStringsContext(): Context {
-        val languageTag = runCatching {
-            runBlocking { SettingsStore(this@TsConnectionService).language.first() }
-        }.getOrDefault("en")
-        val locale = Locale.forLanguageTag(languageTag)
-        val configuration = resources.configuration
-        configuration.setLocale(locale)
-        configuration.setLocales(LocaleList(locale))
-        return createConfigurationContext(configuration)
     }
 
     fun hideFloatingWindow() {
