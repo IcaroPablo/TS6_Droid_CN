@@ -317,4 +317,22 @@
     <string name="away_message_save">保存</string>
     <string name="away_marker">离开</string>
     <string name="away_status_change">修改状态</string>
+    <string name="stream_live">直播中</string>
+    <string name="stream_watch">观看直播</string>
+    <string name="stream_watch_named">观看“%1$s”</string>
+    <string name="stream_joining">正在请求观看 %1$s 的直播…</string>
+    <string name="stream_connecting">正在连接…</string>
+    <string name="stream_declined">%1$s 拒绝了请求。</string>
+    <string name="stream_failed_direct">无法直接连接到 %1$s。在设置中开启“直播使用 TeamSpeak 服务器”可能会有帮助。</string>
+    <string name="stream_failed">无法连接到直播。</string>
+    <string name="stream_ended">直播已结束。</string>
+    <string name="stream_rotate">旋转</string>
+    <string name="section_streams">直播</string>
+    <string name="stream_use_teamspeak_stun">直播使用 TeamSpeak 服务器</string>
+    <string name="stream_use_teamspeak_stun_hint">观看直播会直接连接到主播，主播能看到你的 IP 地址。开启后，TeamSpeak 的服务器（turn.teamspeak.com）也会协助建立连接，适用于更多网络，但 TeamSpeak 会得知你的地址。</string>
+    <string name="stream_volume">直播音量</string>
+    <string name="stream_mute">静音直播</string>
+    <string name="stream_unmute">取消直播静音</string>
+    <string name="stream_retry_with_teamspeak_stun">使用 TeamSpeak 服务器并重试</string>
+    <string name="stream_add">观看其他直播</string>
 </resources>

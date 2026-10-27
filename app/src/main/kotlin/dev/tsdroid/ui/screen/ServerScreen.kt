@@ -1,5 +1,9 @@
 package dev.tsdroid.ui.screen
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -105,6 +109,7 @@ import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassPanel
 import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.ShareTarget
+import dev.tsdroid.ui.component.StreamViewer
 import dev.tsdroid.ui.component.ServerInfoSheet
 import dev.tsdroid.ui.component.UserPanelSheet
 import dev.tsdroid.ui.component.WhisperListSheet
@@ -132,6 +137,13 @@ fun ServerScreen(
 ) {
     val channels by viewModel.channels.collectAsStateWithLifecycle()
     val users by viewModel.users.collectAsStateWithLifecycle()
+    val streams by viewModel.streams.collectAsStateWithLifecycle()
+    // Each member's streams; a member can share several screens or windows
+    val streamsByUser = remember(streams) {
+        streams.values.groupBy { it.clientId }.mapValues { (_, list) -> list.sortedBy { it.name } }
+    }
+    val streamSessions by viewModel.streamSessions.collectAsStateWithLifecycle()
+    val streamLandscape by viewModel.streamLandscape.collectAsStateWithLifecycle()
     val channelIcons by viewModel.channelIcons.collectAsStateWithLifecycle()
     val userAvatars by viewModel.avatars.collectAsStateWithLifecycle()
     val serverInfo by viewModel.serverInfo.collectAsStateWithLifecycle()
@@ -602,6 +614,12 @@ fun ServerScreen(
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 },
                 onWhisperClick = { user -> toggleWhisperWithFeedback(user) },
+                streamingUserIds = streamsByUser.keys,
+                // One stream opens at once; with several, the member's panel lists them
+                onWatchStream = { user ->
+                    val own = streamsByUser[user.id].orEmpty()
+                    if (own.size == 1) viewModel.watchStream(own[0].id) else userPanelUserId = user.id
+                },
                 mutedUserIds = mutedUserIds,
                 whisperChannelIds = whisperTargets.channels.toSet(),
                 whisperTargetKeys = whisperTargets.clients.toSet(),
@@ -825,7 +843,39 @@ fun ServerScreen(
             awaySheetOpen = true
         },
         wallpaper = glassWallpaper,
+        streams = panelUser?.let { streamsByUser[it.id] }.orEmpty(),
+        onWatchStream = { stream ->
+            viewModel.watchStream(stream.id)
+            userPanelUserId = null
+        },
     )
+
+    // The stream viewer, and the landscape its rotate button asks for. The
+    // choice lives in the view model: rotating recreates the activity.
+    if (streamSessions.isNotEmpty()) {
+        val watched = streamSessions.map { it.stream.id }.toSet()
+        StreamViewer(
+            sessions = streamSessions,
+            nameOf = { id -> users.find { it.id == id }?.nickname ?: "" },
+            addable = if (streamSessions.size < ServerViewModel.MAX_WATCHED_STREAMS) {
+                streams.values.filter { it.id !in watched }
+            } else {
+                emptyList()
+            },
+            onVolumeChange = viewModel::setStreamVolume,
+            onAdd = { viewModel.watchStream(it.id) },
+            onRetryWithTeamSpeakStun = viewModel::retryStreamWithTeamSpeakStun,
+            onCloseStream = { viewModel.stopWatching(it) },
+            onRotate = viewModel::toggleStreamLandscape,
+            onClose = { viewModel.stopWatching() },
+        )
+    }
+    val watching = streamSessions.isNotEmpty()
+    LaunchedEffect(watching && streamLandscape) {
+        context.findActivity()?.requestedOrientation =
+            if (watching && streamLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
 
     // 状态 sheet (online / away / do-not-disturb), opened from the bottom bar's
     // dot or from the own row's panel.
@@ -1333,4 +1383,10 @@ private fun whisperTargetLabel(
         }
     }
     return names.joinToString(", ")
+}
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

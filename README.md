@@ -19,6 +19,9 @@ in short:
 - Its TeamSpeak protocol library, [tsclientlib](https://github.com/IcaroPablo/tsclientlib/tree/telespeak),
   comes from our fork without the server-nickname lookup, which sent a server name without a dot to
   TeamSpeak's `named.myteamspeak.com`; the native library no longer contains an HTTPS client at all
+- Watching TeamSpeak 6 screen and window shares in your channel (watch only), with Google's
+  WebRTC for Android ([stream-webrtc-android](https://github.com/GetStream/stream-webrtc-android),
+  Apache 2.0)
 
 Install: download the APK from the [latest release](https://github.com/IcaroPablo/TS6_Droid_CN/releases/latest).
 Android 10 or newer, 64-bit ARM.
@@ -34,6 +37,8 @@ The app makes only these connections:
 | Your TeamSpeak server, file transfer (TCP) | when avatars, icons or chat files are downloaded or uploaded | the file and who asked for it; the TeamSpeak protocol does not encrypt file transfers |
 | `api.github.com`, `github.com` | only when you tap *Check for updates*, and when you download an update | your IP address and that you use TeleSpeak (user agent `TeleSpeak`) |
 | Sites linked in chat messages (image hosts, `img.youtube.com`, `www.dailymotion.com`) | only when you tap *Tap to load images from …*, or turn on *Auto-load images* or link thumbnails (both off by default) | your IP address and which image you loaded |
+| The streamer's device (WebRTC, directly) | while you watch someone's stream | your IP addresses (see [Streams](#streams)) and that you are watching |
+| `turn.teamspeak.com` (STUN) | only while you watch a stream with *Use TeamSpeak's server for streams* on (off by default) | your public IP address |
 
 Links you open go to your browser and leave the app. There is no analytics, crash reporting or
 advertising, and nothing else is contacted: not even GitHub when you open *About*, and no online
@@ -65,6 +70,22 @@ decrypts everything, and whoever runs it can read and log it:
 - **Voice:** who talks, when, in which channel or to whom (whispers). The audio is encrypted
   in transit unless the channel is set to send it unencrypted.
 - **Files:** names, sizes, and the files themselves.
+- **Streams:** which streams you watch, and the connection details exchanged with the streamer,
+  which include your IP addresses.
+
+### Streams
+
+On a server without a media relay, as TeamSpeak 6 servers are by default, a stream goes directly
+from the streamer's device to each viewer. To set that up, your phone sends the streamer, through
+the server, the addresses it can be reached at: its address on your local network and, when your
+network has IPv6, its public IPv6 address. The streamer, and their TeamSpeak client, therefore
+learn your IP addresses, and you learn theirs.
+
+That works when the two devices can reach each other directly: on the same network, or both with
+IPv6. Otherwise (most home and mobile networks without IPv6) the stream cannot connect, unless you
+turn on *Use TeamSpeak's server for streams* (Settings → Streams). The phone then asks TeamSpeak's
+STUN server for its public IPv4 address and port and offers those too, as the TeamSpeak 6 client
+does; TeamSpeak's server learns your IP address, and the streamer your public one.
 
 ## On the device
 

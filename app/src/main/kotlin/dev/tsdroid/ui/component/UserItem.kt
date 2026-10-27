@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,9 @@ fun UserItem(
     /** The local microphone is on a whisper target set right now. */
     isWhisperModeActive: Boolean = false,
     isSelf: Boolean = false,
+    /** This member is streaming in our channel; tapping the badge watches it. */
+    isStreaming: Boolean = false,
+    onWatchStream: (() -> Unit)? = null,
 ) {
     Box(modifier = modifier) {
         Row(
@@ -102,6 +106,21 @@ fun UserItem(
                     else -> MaterialTheme.colorScheme.onSurface
                 },
             )
+
+            if (isStreaming) {
+                Text(
+                    text = stringResource(R.string.stream_live),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFFE53935))
+                        .clickable(enabled = onWatchStream != null) { onWatchStream?.invoke() }
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+            }
 
             // Detail status icons on the right
             if (user.isRecording) {

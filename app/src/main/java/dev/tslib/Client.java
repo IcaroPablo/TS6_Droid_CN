@@ -442,6 +442,32 @@ public class Client implements AutoCloseable {
         nativeCreateDirectory(nativePtr, channelId, dirname);
     }
 
+    /**
+     * Ask to watch a TeamSpeak 6 stream. The streamer's answer arrives as a
+     * {@code stream_join_response} event, with its WebRTC offer when it accepts.
+     */
+    public void joinStream(int clientId, String streamId) {
+        checkNotClosed();
+        nativeJoinStream(nativePtr, clientId, streamId);
+    }
+
+    /**
+     * Stop watching a stream.
+     */
+    public void leaveStream(int clientId, String streamId) {
+        checkNotClosed();
+        nativeLeaveStream(nativePtr, clientId, streamId);
+    }
+
+    /**
+     * Send WebRTC signalling (an answer or an ICE candidate, as TeamSpeak's
+     * {@code {"cmd":…,"args":…}} JSON) to a streamer.
+     */
+    public void sendStreamSignaling(int clientId, String streamId, String json) {
+        checkNotClosed();
+        nativeSendStreamSignaling(nativePtr, clientId, streamId, json);
+    }
+
     @Override
     public void close() {
         if (nativePtr != 0) {
@@ -496,4 +522,7 @@ public class Client implements AutoCloseable {
     private static native void nativeDeleteFile(long ptr, long channelId, String name);
     private static native void nativeRenameFile(long ptr, long channelId, String oldName, String newName);
     private static native void nativeCreateDirectory(long ptr, long channelId, String dirname);
+    private static native void nativeJoinStream(long ptr, int clientId, String streamId);
+    private static native void nativeLeaveStream(long ptr, int clientId, String streamId);
+    private static native void nativeSendStreamSignaling(long ptr, int clientId, String streamId, String json);
 }

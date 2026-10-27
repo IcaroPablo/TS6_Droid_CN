@@ -78,6 +78,7 @@ fun SettingsPage(
     val settingsStore = remember { SettingsStore(context) }
     val showLinkThumbnails by settingsStore.showLinkThumbnails.collectAsStateWithLifecycle(initialValue = false)
     val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = false)
+    val streamUseTeamSpeakStun by settingsStore.streamUseTeamSpeakStun.collectAsStateWithLifecycle(initialValue = false)
     val encryptFiles by settingsStore.encryptFiles.collectAsStateWithLifecycle(initialValue = true)
     // Default matches the store default (enabled) so the switch does not
     // flash off→on on first composition.
@@ -466,6 +467,29 @@ fun SettingsPage(
                 )
                 Text(
                     text = stringResource(R.string.encrypt_files_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            wallpaper = rememberGlassBackdrop(animeBackground),
+        ) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                SettingsSectionTitle(stringResource(R.string.section_streams))
+
+                SettingsSwitchRow(
+                    label = stringResource(R.string.stream_use_teamspeak_stun),
+                    checked = streamUseTeamSpeakStun,
+                    onCheckedChange = { scope.launch { settingsStore.setStreamUseTeamSpeakStun(it) } },
+                )
+                Text(
+                    text = stringResource(R.string.stream_use_teamspeak_stun_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),

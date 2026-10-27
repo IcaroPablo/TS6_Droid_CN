@@ -29,6 +29,8 @@ private val KEY_MIC_MODE = stringPreferencesKey("mic_mode")
 private val KEY_VAD_THRESHOLD_DB = floatPreferencesKey("vad_threshold_db")
 private val KEY_JOIN_VOICE_STATE = stringPreferencesKey("join_voice_state")
 private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
+private val KEY_STREAM_TEAMSPEAK_STUN = booleanPreferencesKey("stream_teamspeak_stun")
+private val KEY_STREAM_VOLUME = floatPreferencesKey("stream_volume")
 
 class SettingsStore(private val context: Context) {
 
@@ -138,6 +140,26 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setEncryptFiles(enabled: Boolean) {
         context.settingsDataStore.edit { it[KEY_ENCRYPT_FILES] = enabled }
+    }
+
+    /**
+     * Off by default: watching a stream then contacts nobody but the streamer.
+     * On, TeamSpeak's STUN server helps the connection through, and learns the
+     * user's address.
+     */
+    val streamUseTeamSpeakStun: Flow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_STREAM_TEAMSPEAK_STUN] ?: false }
+
+    suspend fun setStreamUseTeamSpeakStun(enabled: Boolean) {
+        context.settingsDataStore.edit { it[KEY_STREAM_TEAMSPEAK_STUN] = enabled }
+    }
+
+    /** The volume a newly watched stream's sound starts at, 0 to 1: the last one set. */
+    val streamVolume: Flow<Float> = context.settingsDataStore.data
+        .map { it[KEY_STREAM_VOLUME] ?: 1f }
+
+    suspend fun setStreamVolume(volume: Float) {
+        context.settingsDataStore.edit { it[KEY_STREAM_VOLUME] = volume }
     }
 
     val joinVoiceState: Flow<JoinVoiceState> = context.settingsDataStore.data

@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.tsdroid.bridge.LiveStream
 import dev.tsdroid.han.R
 import dev.tsdroid.service.UserGroups
 import dev.tslib.ChannelGroup
@@ -73,6 +74,9 @@ fun UserPanelSheet(
     onChangeStatus: (() -> Unit)? = null,
     /** Backdrop for the frosted panel, so the sheet matches the cards behind it. */
     wallpaper: ImageBitmap? = null,
+    /** [user]'s streams in our channel; a member can share several screens or windows. */
+    streams: List<LiveStream> = emptyList(),
+    onWatchStream: ((LiveStream) -> Unit)? = null,
 ) {
     if (user == null) return
 
@@ -254,6 +258,17 @@ fun UserPanelSheet(
 
         TextButton(onClick = onPrivateMessage) {
             Text(stringResource(R.string.private_message))
+        }
+
+        if (onWatchStream != null) {
+            streams.forEach { stream ->
+                TextButton(onClick = { onWatchStream(stream) }) {
+                    Text(
+                        if (stream.name.isBlank()) stringResource(R.string.stream_watch)
+                        else stringResource(R.string.stream_watch_named, stream.name)
+                    )
+                }
+            }
         }
     }
 }

@@ -129,6 +129,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
     implementation(libs.mikepenz.markdown.m3)
+    implementation(libs.webrtc)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)

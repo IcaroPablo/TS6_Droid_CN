@@ -18,6 +18,7 @@ import dev.tsdroid.bridge.AvatarCache
 import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.bridge.FileCache
 import dev.tsdroid.bridge.IconCache
+import dev.tsdroid.bridge.LiveStream
 import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.bridge.TsFileEntry
@@ -34,6 +35,7 @@ import dev.tsdroid.service.ReconnectStatus
 import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.service.WhisperManager
 import dev.tsdroid.service.WhisperTargets
+import dev.tsdroid.stream.StreamSession
 import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.Event
@@ -47,6 +49,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -81,6 +84,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     companion object {
         private const val TAG = "ServerViewModel"
         private const val PENDING_ECHO_WINDOW_MS = 5000L
+        // Each watched stream is a video decoder and a connection of its own
+        const val MAX_WATCHED_STREAMS = 4
     }
 
     /**
@@ -258,6 +263,19 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     // Users with isTalking patched from talk status events
     private val _users = MutableStateFlow<List<User>>(emptyList())
     val users: StateFlow<List<User>> = _users.asStateFlow()
+
+    // TeamSpeak 6 streams in our channel, by stream id (a member can have several)
+    private val _streams = MutableStateFlow<Map<String, LiveStream>>(emptyMap())
+    val streams: StateFlow<Map<String, LiveStream>> = _streams.asStateFlow()
+
+    // The streams being watched, in the order they were opened. Kept here so
+    // they survive the activity being recreated when the phone rotates.
+    private val _streamSessions = MutableStateFlow<List<StreamSession>>(emptyList())
+    val streamSessions: StateFlow<List<StreamSession>> = _streamSessions.asStateFlow()
+
+    // The viewer's rotate button: landscape while watching
+    private val _streamLandscape = MutableStateFlow(false)
+    val streamLandscape: StateFlow<Boolean> = _streamLandscape.asStateFlow()
 
     private val _serverInfo = MutableStateFlow<ServerInfo?>(null)
     val serverInfo: StateFlow<ServerInfo?> = _serverInfo.asStateFlow()
@@ -492,6 +510,15 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     _rawUsers.value = it
                     loadAvatars(it)
                     syncUserAudio(it)
+                }
+            }
+            viewModelScope.launch {
+                service.tsClient.streams.collect { streams ->
+                    _streams.value = streams
+                    // A watched stream stopped, or its streamer left our channel
+                    _streamSessions.value.forEach { session ->
+                        if (session.stream.id !in streams) session.ended()
+                    }
                 }
             }
             viewModelScope.launch {
@@ -1595,7 +1622,74 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         connectionService?.disconnect()
     }
 
+    /** Add a stream to the viewer (up to [MAX_WATCHED_STREAMS] at once). */
+    fun watchStream(streamId: String) {
+        viewModelScope.launch { openStream(streamId) }
+    }
+
+    /**
+     * Opens a stream, in place of [replacing] when given (a retry keeps the
+     * stream's tile), otherwise as a new tile.
+     */
+    private suspend fun openStream(streamId: String, replacing: StreamSession? = null) {
+        val client = tsClient ?: return
+        val stream = _streams.value[streamId] ?: return
+        val open = _streamSessions.value
+        if (replacing == null && (open.any { it.stream.id == streamId } || open.size >= MAX_WATCHED_STREAMS)) return
+        replacing?.close()
+        val useStun = settingsStore.streamUseTeamSpeakStun.first()
+        // A retry keeps the stream's own level; a new stream starts at the last one set
+        val volume = replacing?.volume?.value ?: settingsStore.streamVolume.first()
+        val session = try {
+            StreamSession(getApplication(), client, stream, useStun, viewModelScope)
+                .also { it.setVolume(volume) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not open the stream", e)
+            return
+        }
+        _streamSessions.value = if (replacing != null) {
+            _streamSessions.value.map { if (it === replacing) session else it }
+        } else {
+            _streamSessions.value + session
+        }
+    }
+
+    /** A direct connection failed: turn on TeamSpeak's STUN server and try again. */
+    fun retryStreamWithTeamSpeakStun(session: StreamSession) {
+        viewModelScope.launch {
+            settingsStore.setStreamUseTeamSpeakStun(true)
+            openStream(session.stream.id, replacing = session)
+        }
+    }
+
+    /**
+     * Volume of one stream's sound. The level, once the slider is let go, is
+     * also where the next stream starts.
+     */
+    fun setStreamVolume(session: StreamSession, volume: Float, commit: Boolean) {
+        session.setVolume(volume)
+        if (commit) viewModelScope.launch { settingsStore.setStreamVolume(volume) }
+    }
+
+    /** Close one stream's tile; the viewer closes with the last one. */
+    fun stopWatching(session: StreamSession) {
+        session.close()
+        _streamSessions.value = _streamSessions.value - session
+        if (_streamSessions.value.isEmpty()) _streamLandscape.value = false
+    }
+
+    fun stopWatching() {
+        _streamSessions.value.forEach { it.close() }
+        _streamSessions.value = emptyList()
+        _streamLandscape.value = false
+    }
+
+    fun toggleStreamLandscape() {
+        _streamLandscape.value = !_streamLandscape.value
+    }
+
     override fun onCleared() {
+        stopWatching()
         saveNow()
         bound = false
         tsClient = null

@@ -45,6 +45,14 @@ data class TsFileEntry(
     val isFile: Boolean,
 )
 
+/** A TeamSpeak 6 stream (screen or window sharing) in our channel. */
+data class LiveStream(
+    val clientId: Int,
+    val id: String,
+    val name: String,
+    val hasAudio: Boolean,
+)
+
 /**
  * Native whisper routing decision: the client ids, channel ids and server group
  * ids outgoing voice must reach. All empty means "no whisper routing" (the
@@ -137,6 +145,15 @@ class TsClient {
     // Channel groups (id + name), used to name a member's channel group.
     private val _channelGroups = MutableStateFlow<List<ChannelGroup>>(emptyList())
     val channelGroups: StateFlow<List<ChannelGroup>> = _channelGroups.asStateFlow()
+
+    // Streams that can be watched, by stream id (one client can have several).
+    private val _streams = MutableStateFlow<Map<String, LiveStream>>(emptyMap())
+    val streams: StateFlow<Map<String, LiveStream>> = _streams.asStateFlow()
+
+    // Join answers and WebRTC signalling for the stream viewer. Kept apart from
+    // the general event flow so a burst of ICE candidates is never dropped.
+    private val _streamSignals = MutableSharedFlow<Event>(extraBufferCapacity = 256)
+    val streamSignals: SharedFlow<Event> = _streamSignals.asSharedFlow()
 
     private val _commandErrors = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 16)
     val commandErrors: SharedFlow<String> = _commandErrors.asSharedFlow()
@@ -382,8 +399,11 @@ class TsClient {
                         val c = client ?: break
                         val events = c.processEvents() ?: emptyArray()
                         for (event in events) {
-                            if (event.type == "text_message") _chatEvents.tryEmit(event)
-                            else _events.tryEmit(event)
+                            when (event.type) {
+                                "text_message" -> _chatEvents.tryEmit(event)
+                                "stream_join_response", "stream_signaling" -> _streamSignals.tryEmit(event)
+                                else -> _events.tryEmit(event)
+                            }
                             handleEvent(event)
                         }
                         refreshCounter++
@@ -469,6 +489,20 @@ class TsClient {
                     scheduleFloodRetry()
                 }
             }
+            "stream_started" -> {
+                val clientId = (event.data["client_id"] as? Number)?.toInt() ?: return
+                val id = event.data["stream_id"] as? String ?: return
+                _streams.value = _streams.value + (id to LiveStream(
+                    clientId = clientId,
+                    id = id,
+                    name = event.data["name"] as? String ?: "",
+                    hasAudio = event.data["has_audio"] as? Boolean ?: false,
+                ))
+            }
+            "stream_stopped" -> {
+                val id = event.data["stream_id"] as? String ?: return
+                _streams.value = _streams.value - id
+            }
             "channel_permissions_updated" -> {
                 val channelId = (event.data["channel_id"] as? Number)?.toLong() ?: return
                 val hints = (event.data["permission_hints"] as? Number)?.toLong() ?: return
@@ -528,6 +562,7 @@ class TsClient {
         _channels.value = emptyList()
         _users.value = emptyList()
         _serverInfo.value = null
+        _streams.value = emptyMap()
         cachedClientId = null
         // A new connection knows nothing about what we sent on the old one.
         lastSentInputMuted = null
@@ -710,6 +745,18 @@ class TsClient {
         launchNativeCommand("moveToChannel") {
             this.moveToChannel(channelId, password)
         }
+    }
+
+    fun joinStream(clientId: Int, streamId: String) {
+        launchNativeCommand("joinStream") { this.joinStream(clientId, streamId) }
+    }
+
+    fun leaveStream(clientId: Int, streamId: String) {
+        launchNativeCommand("leaveStream") { this.leaveStream(clientId, streamId) }
+    }
+
+    fun sendStreamSignaling(clientId: Int, streamId: String, json: String) {
+        launchNativeCommand("sendStreamSignaling") { this.sendStreamSignaling(clientId, streamId, json) }
     }
 
     fun sendAudio(data: ByteArray, codec: Int) {

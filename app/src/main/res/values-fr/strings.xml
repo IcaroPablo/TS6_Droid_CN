@@ -317,4 +317,22 @@
     <string name="away_message_save">Enregistrer</string>
     <string name="away_marker">Absent</string>
     <string name="away_status_change">Changer le statut</string>
+    <string name="stream_live">EN DIRECT</string>
+    <string name="stream_watch">Regarder la diffusion</string>
+    <string name="stream_watch_named">Regarder « %1$s »</string>
+    <string name="stream_joining">Demande à %1$s…</string>
+    <string name="stream_connecting">Connexion…</string>
+    <string name="stream_declined">%1$s a refusé.</string>
+    <string name="stream_failed_direct">Impossible de se connecter directement à %1$s. Activer « Utiliser le serveur de TeamSpeak pour les diffusions » dans les paramètres peut aider.</string>
+    <string name="stream_failed">Impossible de se connecter à la diffusion.</string>
+    <string name="stream_ended">La diffusion est terminée.</string>
+    <string name="stream_rotate">Pivoter</string>
+    <string name="section_streams">Diffusions</string>
+    <string name="stream_use_teamspeak_stun">Utiliser le serveur de TeamSpeak pour les diffusions</string>
+    <string name="stream_use_teamspeak_stun_hint">Regarder une diffusion vous connecte directement à la personne qui diffuse, qui voit votre adresse IP. Avec cette option, le serveur de TeamSpeak (turn.teamspeak.com) aide aussi à trouver un chemin : cela fonctionne sur plus de réseaux, mais TeamSpeak voit votre adresse.</string>
+    <string name="stream_volume">Volume de la diffusion</string>
+    <string name="stream_mute">Couper le son de la diffusion</string>
+    <string name="stream_unmute">Rétablir le son de la diffusion</string>
+    <string name="stream_retry_with_teamspeak_stun">Utiliser le serveur de TeamSpeak et réessayer</string>
+    <string name="stream_add">Regarder une autre diffusion</string>
 </resources>

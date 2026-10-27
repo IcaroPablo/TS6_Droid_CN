@@ -58,6 +58,9 @@ fun ChannelTree(
     channelIcons: Map<Long, ImageBitmap> = emptyMap(),
     userAvatars: Map<String, ImageBitmap> = emptyMap(),
     selfId: Int? = null,
+    /** Members streaming in our channel, and what tapping their badge does. */
+    streamingUserIds: Set<Int> = emptySet(),
+    onWatchStream: ((User) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // Filter nulls early — JNI arrays can contain null elements
@@ -102,6 +105,8 @@ fun ChannelTree(
                     isWhisperTalking = item.user.id in whisperTalkingUserIds,
                     isWhisperModeActive = whisperModeActive,
                     isSelf = item.user.id == selfId,
+                    isStreaming = item.user.id in streamingUserIds,
+                    onWatchStream = onWatchStream?.let { { it(item.user) } },
                 )
             }
         }

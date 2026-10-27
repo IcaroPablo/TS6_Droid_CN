@@ -317,4 +317,22 @@
     <string name="away_message_save">Save</string>
     <string name="away_marker">Away</string>
     <string name="away_status_change">Change status</string>
+    <string name="stream_live">LIVE</string>
+    <string name="stream_watch">Watch stream</string>
+    <string name="stream_watch_named">Watch “%1$s”</string>
+    <string name="stream_joining">Asking %1$s to watch…</string>
+    <string name="stream_connecting">Connecting…</string>
+    <string name="stream_declined">%1$s declined.</string>
+    <string name="stream_failed_direct">Could not connect directly to %1$s. Turning on “Use TeamSpeak’s server for streams” in Settings may help.</string>
+    <string name="stream_failed">Could not connect to the stream.</string>
+    <string name="stream_ended">The stream ended.</string>
+    <string name="stream_rotate">Rotate</string>
+    <string name="section_streams">Streams</string>
+    <string name="stream_use_teamspeak_stun">Use TeamSpeak’s server for streams</string>
+    <string name="stream_use_teamspeak_stun_hint">Watching a stream connects you directly to the streamer, who sees your IP address. With this on, TeamSpeak’s server (turn.teamspeak.com) also helps find a way through, which works on more networks but tells TeamSpeak your address.</string>
+    <string name="stream_volume">Stream volume</string>
+    <string name="stream_mute">Mute the stream</string>
+    <string name="stream_unmute">Unmute the stream</string>
+    <string name="stream_retry_with_teamspeak_stun">Use TeamSpeak’s server and try again</string>
+    <string name="stream_add">Watch another stream</string>
 </resources>
