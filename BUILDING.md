@@ -9,7 +9,9 @@ produced the published builds.
 - `tslib_multi/` (git submodule): the Rust core, built as `libtslib_jni.so` for arm64-v8a. Its
   `Cargo.lock` pins every dependency, and the build runs with `--locked`. The TeamSpeak protocol
   comes from [tsclientlib](https://github.com/IcaroPablo/tsclientlib/tree/telespeak), our fork
-  without the server-nickname lookup; the only C code left is opus, built with CMake.
+  without the server-nickname lookup. The only C code is opus 1.6.1, from xiph's repository as a
+  submodule inside `tslib_multi/` (`crates/audiopus-sys/opus`), compiled by the Rust build without
+  CMake.
 - `app/`: the Kotlin app, built by Gradle into the release APK. The library built above is
   committed at `app/src/main/jniLibs/arm64-v8a/`, so a Gradle-only build packages it as is.
 
@@ -31,13 +33,13 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
 1. Host packages:
 
    ```
-   apk add git curl unzip gmake cmake clang lld llvm-binutils openjdk21 gcompat libgcc-chimera-devel
+   apk add git curl unzip clang lld llvm-binutils openjdk21 gcompat libgcc-chimera-devel
    ```
 
    `gcompat` runs the NDK's clang and the SDK's `aapt2`, which are glibc programs, and
    `libgcc-chimera-devel` provides the `libgcc_s` that they and the musl Rust toolchain need.
 
-2. Clone with the submodule and run the one-time setup:
+2. Clone with the submodules and run the one-time setup:
 
    ```
    git clone --recursive https://github.com/IcaroPablo/TS6_Droid_CN.git
@@ -99,8 +101,6 @@ The NDK and the SDK tools are glibc programs. `gcompat` runs them, with these ex
   (`-Dorg.gradle.native=false`).
 - NDK r30's clang crashes under `gcompat` at startup; r29 is the newest that runs. Check the
   compiler (`clang --version`) before moving to a newer NDK.
-
-Chimera's `make` is BSD make; CMake finds `gmake` and uses it for opus.
 
 ## Reproducibility
 

@@ -23,8 +23,6 @@ ndk/$NDK_VERSION android-ndk-r29-linux.zip 4abbbcdc842f3d4879206e9695d52709603e5
 export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/.local/share/android-sdk}
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION
-# CMake's Android support finds the NDK through this one
-export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
 export CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
 export RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
 export RUSTUP_TOOLCHAIN=$RUST_VERSION
@@ -42,14 +40,11 @@ export CC_aarch64_linux_android=$ts_cc
 export CXX_aarch64_linux_android=$ts_cc++
 export AR_aarch64_linux_android=llvm-ar
 export RANLIB_aarch64_linux_android=llvm-ranlib
-# CMake reads LDFLAGS when it configures opus
-export LDFLAGS=--ld-path=/usr/bin/ld.lld
-export CMAKE_POLICY_VERSION_MINIMUM=3.5
 # Keep build paths, and with them the builder's home and user name, out of the
 # library: prefix maps rewrite the repository and ~/.cargo
 ts_map="-ffile-prefix-map=$CARGO_HOME=/cargo -ffile-prefix-map=$ts_repo=/src"
 export CFLAGS_aarch64_linux_android="$ts_map" CXXFLAGS_aarch64_linux_android="$ts_map"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=$LDFLAGS --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=--ld-path=/usr/bin/ld.lld --remap-path-prefix=$CARGO_HOME=/cargo --remap-path-prefix=$ts_repo=/src"
 
 # Gradle detects musl by looking for "-musl-" in mapped library paths; Chimera's
 # loader is /usr/lib/libc.so, so it would load glibc natives and crash. Only

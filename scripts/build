@@ -8,7 +8,7 @@ ts_repo=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ts_repo"
 . scripts/env.sh
 
-git submodule update --init tslib_multi
+git submodule update --init --recursive tslib_multi
 (cd tslib_multi && cargo build --locked --release --target aarch64-linux-android -p tslib-jni)
 cp tslib_multi/target/aarch64-linux-android/release/libtslib_jni.so app/src/main/jniLibs/arm64-v8a/
 
