@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -82,6 +84,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -254,6 +257,16 @@ fun ServerScreen(
             ?: context.getString(R.string.whisper_target_offline))
     }
 
+    // Back closes what is open on top of the channel tree before it leaves the
+    // server screen; the chat is drawn over the file manager, so it goes first
+    BackHandler(enabled = fileManagerOpen) { viewModel.closeFileManager() }
+    BackHandler(enabled = chatOpen) { chatOpen = false }
+    // A closed chat must not keep the keyboard up for its hidden input
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(chatOpen) {
+        if (!chatOpen) focusManager.clearFocus()
+    }
+
     // Sync chat state to ViewModel for unread tracking
     LaunchedEffect(chatOpen, chatTab, pmTargetUid) {
         viewModel.setChatState(chatOpen, chatTab, pmTargetUid)
@@ -371,10 +384,10 @@ fun ServerScreen(
                     elevation = 6.dp,
                     contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
+                    // The box around the panel already clears the navigation bar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .navigationBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
@@ -571,7 +584,11 @@ fun ServerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                // The bars already clear the status and navigation bars: the
+                // panels below must not do it a second time, and the keyboard
+                // only has to push them up by what it covers beyond the bottom bar
+                .consumeWindowInsets(padding),
         ) {
             // Channel tree —full screen
             ChannelTree(
@@ -646,6 +663,7 @@ fun ServerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .imePadding()
                         .graphicsLayer { translationY = size.height * fileManagerProgress },
                 ) {
                     FileManagerDialog(
@@ -689,6 +707,9 @@ fun ServerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Shrinks above the keyboard, so the input stays in view
+                        // without the window sliding the top bar off the screen
+                        .imePadding()
                         .clipToBounds()
                         .graphicsLayer { translationY = size.height * chatProgress },
                 ) {
@@ -1019,7 +1040,6 @@ fun ChatPanel(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .navigationBarsPadding()
                     .padding(8.dp),
             ) {
                 // Header: tabs + close

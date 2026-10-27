@@ -101,6 +101,7 @@ import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.GlassDialog
 import dev.tsdroid.ui.component.GlassMenuItem
 import dev.tsdroid.ui.component.LiquidGlassNavBar
+import dev.tsdroid.ui.component.LiquidGlassNavBarClearance
 import dev.tsdroid.ui.component.LiquidGlassNavItem
 import dev.tsdroid.ui.component.LiquidGlassPanel
 import dev.tsdroid.ui.component.rememberGlassBackdrop
@@ -397,7 +398,7 @@ fun ConnectionScreen(
                                     }
                                 }
                             }
-                            Spacer(Modifier.height(16.dp))
+                            Spacer(Modifier.height(LiquidGlassNavBarClearance))
                         }
                     }
 

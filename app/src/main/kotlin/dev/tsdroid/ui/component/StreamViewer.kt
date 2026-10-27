@@ -3,6 +3,9 @@ package dev.tsdroid.ui.component
 import android.content.res.Configuration
 import android.os.Build
 import android.view.WindowManager
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -44,18 +47,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
@@ -63,11 +71,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.tsdroid.bridge.LiveStream
 import dev.tsdroid.han.R
@@ -78,14 +90,17 @@ import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
 /**
  * Full-screen viewer for TeamSpeak 6 streams: one stream fills the screen,
  * two split it, three or four share a grid. In each, pinch to zoom, drag to
- * move, double-tap to fit again.
+ * move, double-tap to fit again. In landscape the system bars are hidden and
+ * the controls float over the video, shown by a tap.
  */
 @Composable
 fun StreamViewer(
@@ -135,125 +150,237 @@ fun StreamViewer(
         // Chat fits below one or two streams; three or four need the whole screen
         val chatFits = portrait && sessions.size <= 2
         var addOpen by remember { mutableStateOf(false) }
+        // Streams whose volume slider is open
+        var volumeOpenIds by remember { mutableStateOf(emptySet<String>()) }
 
-        Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            // Clear of the status bar (and the sides); the bottom is the tiles'
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // With one stream the bar names it; with several, each tile does
-                    Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                        sessions.singleOrNull()?.let { session ->
-                            StreamTitle(nameOf(session.stream.clientId), session.stream.name)
+        // In landscape the controls float over the video and step aside for it:
+        // a tap brings them back, and they leave again after a few seconds
+        // without a touch, unless a menu or a volume slider is open in them
+        val overlayControls = !portrait
+        var controlsVisible by remember { mutableStateOf(true) }
+        var touches by remember { mutableIntStateOf(0) }
+        val holdControls by rememberUpdatedState(addOpen || sessions.any { it.stream.id in volumeOpenIds })
+        LaunchedEffect(overlayControls) {
+            if (!overlayControls) {
+                controlsVisible = true
+                return@LaunchedEffect
+            }
+            snapshotFlow { Triple(controlsVisible, touches, holdControls) }.collectLatest { (visible, _, hold) ->
+                if (visible && !hold) {
+                    delay(CONTROLS_HIDE_DELAY_MS)
+                    controlsVisible = false
+                }
+            }
+        }
+        val showControls = controlsVisible || !overlayControls
+
+        // Landscape is for watching: the status and navigation bars leave too,
+        // and a swipe from the edge brings them back for a moment
+        DisposableEffect(dialogWindow, overlayControls) {
+            val controller = dialogWindow?.let { WindowCompat.getInsetsController(it, it.decorView) }
+            controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (overlayControls) {
+                controller?.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller?.show(WindowInsetsCompat.Type.systemBars())
+            }
+            onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+        }
+
+        val topBar = @Composable {
+            ViewerTopBar(
+                sessions = sessions,
+                nameOf = nameOf,
+                addable = addable,
+                addOpen = addOpen,
+                onAddOpenChange = { addOpen = it },
+                onAdd = onAdd,
+                chat = chat.takeIf { chatFits },
+                voice = voice,
+                onRotate = onRotate,
+                onClose = onClose,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                // Any touch, wherever it lands, keeps the controls up for a
+                // while longer; only watched here, never consumed
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            touches++
                         }
                     }
-                    if (addable.isNotEmpty()) {
-                        Box {
-                            IconButton(onClick = { addOpen = true }) {
-                                Icon(Icons.Default.Add, stringResource(R.string.stream_add), tint = Color.White)
+                },
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (!overlayControls) topBar()
+
+                // Clear of the navigation bar (and of a display cutout at the side in
+                // landscape), like the top bar is of the status bar: the tiles' own
+                // controls sit along their edges
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+                        ),
+                ) {
+                    val landscape = maxWidth > maxHeight
+                    // `atTop`: the tile touches the top edge, where the floating
+                    // top bar would cover its header
+                    val tile = @Composable { session: StreamSession, modifier: Modifier, atTop: Boolean ->
+                        key(session) {
+                            val id = session.stream.id
+                            StreamTile(
+                                session = session,
+                                streamerName = nameOf(session.stream.clientId),
+                                showHeader = sessions.size > 1,
+                                controlsVisible = showControls,
+                                headerTopPadding = if (overlayControls && atTop) TOP_BAR_HEIGHT else 0.dp,
+                                volumeOpen = id in volumeOpenIds,
+                                onVolumeOpenChange = { open ->
+                                    volumeOpenIds = if (open) volumeOpenIds + id else volumeOpenIds - id
+                                },
+                                onTap = { if (overlayControls) controlsVisible = !controlsVisible },
+                                onRetryWithTeamSpeakStun = { onRetryWithTeamSpeakStun(session) },
+                                onVolumeChange = { volume, commit -> onVolumeChange(session, volume, commit) },
+                                onClose = { onCloseStream(session) },
+                                modifier = modifier,
+                            )
+                        }
+                    }
+                    if (chatFits && chat.visible) {
+                        // Streams at the top, at most at full width (16:9) and at
+                        // most half the space, so the chat always keeps the rest:
+                        // with the keyboard open the streams shrink, not the chat
+                        val streamsHeight = minOf(maxWidth * 9f / 16f * sessions.size, maxHeight / 2)
+                        Column(Modifier.fillMaxSize()) {
+                            Column(Modifier.fillMaxWidth().height(streamsHeight)) {
+                                sessions.forEach { tile(it, Modifier.weight(1f).fillMaxWidth(), false) }
                             }
-                            DropdownMenu(expanded = addOpen, onDismissRequest = { addOpen = false }) {
-                                addable.forEach { stream ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            val name = nameOf(stream.clientId)
-                                            Text(if (stream.name.isBlank()) name else "$name · ${stream.name}")
-                                        },
-                                        onClick = {
-                                            addOpen = false
-                                            onAdd(stream)
-                                        },
-                                    )
+                            StreamChatPanel(chat, Modifier.weight(1f).fillMaxWidth())
+                        }
+                    } else when (sessions.size) {
+                        0 -> {}
+                        1 -> tile(sessions[0], Modifier.fillMaxSize(), true)
+                        2 -> if (landscape) {
+                            Row(Modifier.fillMaxSize()) {
+                                sessions.forEach { tile(it, Modifier.weight(1f).fillMaxSize(), true) }
+                            }
+                        } else {
+                            Column(Modifier.fillMaxSize()) {
+                                sessions.forEachIndexed { index, session ->
+                                    tile(session, Modifier.weight(1f).fillMaxWidth(), index == 0)
+                                }
+                            }
+                        }
+                        else -> Column(Modifier.fillMaxSize()) {
+                            sessions.chunked(2).forEachIndexed { row, pair ->
+                                Row(Modifier.weight(1f).fillMaxWidth()) {
+                                    pair.forEach { tile(it, Modifier.weight(1f).fillMaxSize(), row == 0) }
+                                    if (pair.size == 1) Box(Modifier.weight(1f))
                                 }
                             }
                         }
                     }
-                    if (chatFits) {
-                        IconButton(onClick = chat.onToggle) {
-                            Icon(
-                                if (chat.visible) Icons.AutoMirrored.Filled.Chat else Icons.AutoMirrored.Outlined.Chat,
-                                stringResource(if (chat.visible) R.string.stream_chat_hide else R.string.stream_chat_show),
-                                tint = Color.White,
-                            )
-                        }
-                    }
-                    VoiceButtons(voice)
-                    IconButton(onClick = onRotate) {
-                        Icon(Icons.Default.ScreenRotation, stringResource(R.string.stream_rotate), tint = Color.White)
-                    }
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White)
-                    }
                 }
             }
 
-            // Clear of the navigation bar (and of a display cutout at the side in
-            // landscape), like the top bar is of the status bar: the tiles' own
-            // controls sit along their edges
-            BoxWithConstraints(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
-                    ),
-            ) {
-                val landscape = maxWidth > maxHeight
-                val tile = @Composable { session: StreamSession, modifier: Modifier ->
-                    key(session) {
-                        StreamTile(
-                            session = session,
-                            streamerName = nameOf(session.stream.clientId),
-                            showHeader = sessions.size > 1,
-                            onRetryWithTeamSpeakStun = { onRetryWithTeamSpeakStun(session) },
-                            onVolumeChange = { volume, commit -> onVolumeChange(session, volume, commit) },
-                            onClose = { onCloseStream(session) },
-                            modifier = modifier,
+            if (overlayControls) {
+                AnimatedVisibility(
+                    visible = controlsVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.align(Alignment.TopCenter),
+                ) {
+                    topBar()
+                }
+            }
+        }
+    }
+}
+
+/** How long the controls stay over a stream in landscape after the last touch. */
+private const val CONTROLS_HIDE_DELAY_MS = 3_000L
+
+/** The height of the viewer's top bar, a row of icon buttons. */
+private val TOP_BAR_HEIGHT = 48.dp
+
+/**
+ * The viewer's bar: the stream's name (with one), adding a stream, the chat
+ * (when [chat] is given), the voice controls, rotating and closing.
+ */
+@Composable
+private fun ViewerTopBar(
+    sessions: List<StreamSession>,
+    nameOf: (Int) -> String,
+    addable: List<LiveStream>,
+    addOpen: Boolean,
+    onAddOpenChange: (Boolean) -> Unit,
+    onAdd: (LiveStream) -> Unit,
+    chat: StreamChat?,
+    voice: StreamVoiceControls,
+    onRotate: () -> Unit,
+    onClose: () -> Unit,
+) {
+    // Clear of the status bar (and the sides); the bottom is the tiles'
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .height(TOP_BAR_HEIGHT)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // With one stream the bar names it; with several, each tile does
+        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+            sessions.singleOrNull()?.let { session ->
+                StreamTitle(nameOf(session.stream.clientId), session.stream.name)
+            }
+        }
+        if (addable.isNotEmpty()) {
+            Box {
+                IconButton(onClick = { onAddOpenChange(true) }) {
+                    Icon(Icons.Default.Add, stringResource(R.string.stream_add), tint = Color.White)
+                }
+                DropdownMenu(expanded = addOpen, onDismissRequest = { onAddOpenChange(false) }) {
+                    addable.forEach { stream ->
+                        DropdownMenuItem(
+                            text = {
+                                val name = nameOf(stream.clientId)
+                                Text(if (stream.name.isBlank()) name else "$name · ${stream.name}")
+                            },
+                            onClick = {
+                                onAddOpenChange(false)
+                                onAdd(stream)
+                            },
                         )
                     }
                 }
-                if (chatFits && chat.visible) {
-                    // Streams at the top, at most at full width (16:9) and at
-                    // most half the space, so the chat always keeps the rest:
-                    // with the keyboard open the streams shrink, not the chat
-                    val streamsHeight = minOf(maxWidth * 9f / 16f * sessions.size, maxHeight / 2)
-                    Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxWidth().height(streamsHeight)) {
-                            sessions.forEach { tile(it, Modifier.weight(1f).fillMaxWidth()) }
-                        }
-                        StreamChatPanel(chat, Modifier.weight(1f).fillMaxWidth())
-                    }
-                } else when (sessions.size) {
-                    0 -> {}
-                    1 -> tile(sessions[0], Modifier.fillMaxSize())
-                    2 -> if (landscape) {
-                        Row(Modifier.fillMaxSize()) {
-                            sessions.forEach { tile(it, Modifier.weight(1f).fillMaxSize()) }
-                        }
-                    } else {
-                        Column(Modifier.fillMaxSize()) {
-                            sessions.forEach { tile(it, Modifier.weight(1f).fillMaxWidth()) }
-                        }
-                    }
-                    else -> Column(Modifier.fillMaxSize()) {
-                        sessions.chunked(2).forEach { pair ->
-                            Row(Modifier.weight(1f).fillMaxWidth()) {
-                                pair.forEach { tile(it, Modifier.weight(1f).fillMaxSize()) }
-                                if (pair.size == 1) Box(Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
             }
+        }
+        if (chat != null) {
+            IconButton(onClick = chat.onToggle) {
+                Icon(
+                    if (chat.visible) Icons.AutoMirrored.Filled.Chat else Icons.AutoMirrored.Outlined.Chat,
+                    stringResource(if (chat.visible) R.string.stream_chat_hide else R.string.stream_chat_show),
+                    tint = Color.White,
+                )
+            }
+        }
+        VoiceButtons(voice)
+        IconButton(onClick = onRotate) {
+            Icon(Icons.Default.ScreenRotation, stringResource(R.string.stream_rotate), tint = Color.White)
+        }
+        IconButton(onClick = onClose) {
+            Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White)
         }
     }
 }
@@ -389,6 +516,14 @@ private fun StreamTile(
     session: StreamSession,
     streamerName: String,
     showHeader: Boolean,
+    /** Whether the volume button and the header are shown */
+    controlsVisible: Boolean,
+    /** Room above the header, for a bar floating over the tile */
+    headerTopPadding: Dp,
+    volumeOpen: Boolean,
+    onVolumeOpenChange: (Boolean) -> Unit,
+    /** A single tap on the video */
+    onTap: () -> Unit,
     onRetryWithTeamSpeakStun: () -> Unit,
     onVolumeChange: (volume: Float, commit: Boolean) -> Unit,
     onClose: () -> Unit,
@@ -396,7 +531,6 @@ private fun StreamTile(
 ) {
     val state by session.state.collectAsStateWithLifecycle()
     val volume by session.volume.collectAsStateWithLifecycle()
-    var volumeOpen by remember { mutableStateOf(false) }
     // The level to go back to when unmuting
     var unmutedVolume by remember { mutableFloatStateOf(if (volume > 0f) volume else 1f) }
     // The slider's latest value: a tap reports it and finishes in the same frame,
@@ -405,6 +539,8 @@ private fun StreamTile(
     var renderer by remember { mutableStateOf<SurfaceViewRenderer?>(null) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    // The gesture handler below is created once
+    val currentOnTap by rememberUpdatedState(onTap)
 
     DisposableEffect(session, renderer) {
         val sink = renderer
@@ -445,10 +581,13 @@ private fun StreamTile(
                     }
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = {
-                        scale = 1f
-                        offset = Offset.Zero
-                    })
+                    detectTapGestures(
+                        onTap = { currentOnTap() },
+                        onDoubleTap = {
+                            scale = 1f
+                            offset = Offset.Zero
+                        },
+                    )
                 },
         )
 
@@ -488,71 +627,85 @@ private fun StreamTile(
         // the tile's bottom. Every stream has one; TeamSpeak announces an audio
         // channel even for streams without sound, so there is nothing to tell
         // them apart by.
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .then(if (volumeOpen) Modifier.fillMaxWidth() else Modifier)
-                .background(Color.Black.copy(alpha = 0.4f))
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomEnd),
         ) {
-            if (volumeOpen) {
-                IconButton(onClick = {
-                    if (volume > 0f) {
-                        unmutedVolume = volume
-                        onVolumeChange(0f, true)
-                    } else {
-                        onVolumeChange(unmutedVolume, true)
+            Row(
+                modifier = Modifier
+                    .then(if (volumeOpen) Modifier.fillMaxWidth() else Modifier)
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (volumeOpen) {
+                    IconButton(onClick = {
+                        if (volume > 0f) {
+                            unmutedVolume = volume
+                            onVolumeChange(0f, true)
+                        } else {
+                            onVolumeChange(unmutedVolume, true)
+                        }
+                    }) {
+                        Icon(
+                            if (volume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            stringResource(if (volume == 0f) R.string.stream_unmute else R.string.stream_mute),
+                            tint = Color.White,
+                        )
                     }
-                }) {
+                    Slider(
+                        value = volume,
+                        onValueChange = {
+                            sliderValue = it
+                            if (it > 0f) unmutedVolume = it
+                            onVolumeChange(it, false)
+                        },
+                        onValueChangeFinished = { onVolumeChange(sliderValue, true) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "${(volume * 100).roundToInt()} %",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
+                IconButton(onClick = { onVolumeOpenChange(!volumeOpen) }) {
                     Icon(
-                        if (volume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                        stringResource(if (volume == 0f) R.string.stream_unmute else R.string.stream_mute),
+                        if (volumeOpen) Icons.Default.Close
+                        else if (volume == 0f) Icons.AutoMirrored.Filled.VolumeOff
+                        else Icons.AutoMirrored.Filled.VolumeUp,
+                        stringResource(R.string.stream_volume),
                         tint = Color.White,
                     )
                 }
-                Slider(
-                    value = volume,
-                    onValueChange = {
-                        sliderValue = it
-                        if (it > 0f) unmutedVolume = it
-                        onVolumeChange(it, false)
-                    },
-                    onValueChangeFinished = { onVolumeChange(sliderValue, true) },
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "${(volume * 100).roundToInt()} %",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-            }
-            IconButton(onClick = { volumeOpen = !volumeOpen }) {
-                Icon(
-                    if (volumeOpen) Icons.Default.Close
-                    else if (volume == 0f) Icons.AutoMirrored.Filled.VolumeOff
-                    else Icons.AutoMirrored.Filled.VolumeUp,
-                    stringResource(R.string.stream_volume),
-                    tint = Color.White,
-                )
             }
         }
 
         if (showHeader) {
-            Row(
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .padding(start = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(top = headerTopPadding),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    StreamTitle(streamerName, session.stream.name)
-                }
-                IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .padding(start = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        StreamTitle(streamerName, session.stream.name)
+                    }
+                    IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White)
+                    }
                 }
             }
         }

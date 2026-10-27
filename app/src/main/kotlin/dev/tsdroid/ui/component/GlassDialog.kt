@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -179,28 +180,30 @@ private fun GlassDialogPanel(
                     onClick = onDismissRequest,
                 ),
         )
-        LiquidGlassPanel(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 24.dp)
-                .widthIn(max = 420.dp),
-            wallpaper = wallpaper,
-            shape = shape,
-            elevation = 10.dp,
-            contentPadding = PaddingValues(0.dp),
-        ) { contentColor ->
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Text(text = title, style = MaterialTheme.typography.headlineSmall)
-                    body?.invoke(this)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        dismissButton?.invoke()
-                        confirmButton()
+        // Centred in what the keyboard leaves free, so a text field in the body stays in view
+        Box(modifier = Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.Center) {
+            LiquidGlassPanel(
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .widthIn(max = 420.dp),
+                wallpaper = wallpaper,
+                shape = shape,
+                elevation = 10.dp,
+                contentPadding = PaddingValues(0.dp),
+            ) { contentColor ->
+                CompositionLocalProvider(LocalContentColor provides contentColor) {
+                    Column(modifier = Modifier.padding(24.dp)) {
+                        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+                        body?.invoke(this)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 16.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            dismissButton?.invoke()
+                            confirmButton()
+                        }
                     }
                 }
             }
@@ -300,7 +303,9 @@ private fun GlassBottomSheetPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         // The glass itself reaches the bottom edge; only its content has to
-                        // clear the gesture bar, otherwise the panel would float above it.
+                        // clear the keyboard or the gesture bar, otherwise the panel would
+                        // float above them.
+                        .imePadding()
                         .navigationBarsPadding()
                         .padding(horizontal = 24.dp)
                         .padding(top = 10.dp)

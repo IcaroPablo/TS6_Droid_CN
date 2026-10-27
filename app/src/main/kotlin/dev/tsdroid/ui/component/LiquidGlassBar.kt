@@ -147,6 +147,12 @@ fun GlassCard(
 }
 
 /**
+ * Height [LiquidGlassNavBar] covers above the navigation bar with its default sizes: what content
+ * scrolling underneath it has to leave free at its end, or its last rows stay hidden behind the bar.
+ */
+val LiquidGlassNavBarClearance: Dp = 64.dp + 8.dp + 12.dp
+
+/**
  * iOS 26 style floating navigation bar: a capsule surface with a selection pill that glides
  * between items on a spring.
  */

@@ -58,6 +58,7 @@ import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.GlassDialog
+import dev.tsdroid.ui.component.LiquidGlassNavBarClearance
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
 import dev.tsdroid.ui.component.WallpaperExporter
@@ -610,6 +611,7 @@ fun SettingsPage(
             color = LocalContentColor.current.copy(alpha = 0.72f),
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
+        Spacer(Modifier.height(LiquidGlassNavBarClearance))
     }
 }
 

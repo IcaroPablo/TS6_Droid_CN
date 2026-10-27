@@ -32,7 +32,10 @@
         <activity
             android:name="dev.tsdroid.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.TSDroid">
+            android:theme="@style/Theme.TSDroid"
+            android:windowSoftInputMode="adjustResize">
+            <!-- adjustResize: the keyboard arrives as an inset the screens make
+                 room for, instead of the window sliding up and hiding its top -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
