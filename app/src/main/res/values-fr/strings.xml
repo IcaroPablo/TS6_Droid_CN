@@ -9,10 +9,10 @@
     <string name="language_change_title">Appliquer la modification de langue ?</string>
     <string name="language_change_message">L’application doit redémarrer pour appliquer %1$s.</string>
     <string name="restart">Redémarrer</string>
-    <string name="mute_user">Mute user</string>
-    <string name="unmute_user">Unmute user</string>
-    <string name="user_muted">Muted</string>
-    <string name="channel_connection">Connection</string>
+    <string name="mute_user">Couper le son de l’utilisateur</string>
+    <string name="unmute_user">Rétablir le son de l’utilisateur</string>
+    <string name="user_muted">En sourdine</string>
+    <string name="channel_connection">Connexion</string>
     <string name="channel_connection_desc">Notification de connexion au serveur</string>
 
     <!-- ConnectionScreen -->
@@ -58,7 +58,7 @@
     <string name="push_to_talk">Appuyer pour parler</string>
     <string name="ptt">PTT</string>
     <string name="mute_mic">Couper le micro</string>
-    <string name="mute">Mute</string>
+    <string name="mute">Couper</string>
     <string name="unmute_mic">Activer le micro</string>
     <string name="tab_channel">Channel</string>
     <string name="tab_private">MP</string>
@@ -162,7 +162,7 @@
     <string name="message_channel_placeholder">Message channel\u2026</string>
     <string name="message_private_placeholder">Message à %1$s\u2026</string>
     <string name="send">Envoyer</string>
-    <string name="user_fallback">User #%1$d</string>
+    <string name="user_fallback">Utilisateur n° %1$d</string>
 
     <!-- UserItem -->
     <string name="status_recording">Enregistrement</string>
@@ -212,7 +212,7 @@
 
     <!-- Notification -->
     <string name="notif_unmute">Réactiver</string>
-    <string name="notif_mute">Mute</string>
+    <string name="notif_mute">Couper</string>
 
     <!-- ViewModel -->
     <string name="unknown_sender">Inconnu</string>
