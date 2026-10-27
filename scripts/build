@@ -8,7 +8,26 @@ ts_repo=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ts_repo"
 . scripts/env.sh
 
-git submodule update --init --recursive tslib_multi
+# Check out the tslib_multi commit this repository records, unless tslib_multi
+# holds work of its own (other commits or uncommitted changes): that is built
+# as it is, with a note.
+recorded=$(git rev-parse :tslib_multi)
+if [ ! -e tslib_multi/.git ]; then
+	git submodule update --init --recursive tslib_multi
+else
+	current=$(git -C tslib_multi rev-parse HEAD)
+	if [ "$current" != "$recorded" ]; then
+		git -C tslib_multi cat-file -e "$recorded^{commit}" 2>/dev/null || git -C tslib_multi fetch -q origin
+		if [ -z "$(git -C tslib_multi status --porcelain --untracked-files=no --ignore-submodules)" ] &&
+			git -C tslib_multi merge-base --is-ancestor "$current" "$recorded"; then
+			git submodule update --recursive tslib_multi
+		else
+			echo "build: tslib_multi has work of its own (at $(git -C tslib_multi rev-parse --short HEAD)," \
+				"recorded $(git -C tslib_multi rev-parse --short "$recorded")); building it as it is" >&2
+		fi
+	fi
+	git -C tslib_multi submodule update --init --recursive
+fi
 (cd tslib_multi && cargo build --locked --release --target aarch64-linux-android -p tslib-jni)
 cp tslib_multi/target/aarch64-linux-android/release/libtslib_jni.so app/src/main/jniLibs/arm64-v8a/
 

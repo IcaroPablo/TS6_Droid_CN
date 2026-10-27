@@ -58,7 +58,10 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
    scripts/build
    ```
 
-   This builds the library, runs the unit tests and writes `out/telespeak-<version>.apk`.
+   This builds the library, runs the unit tests and writes `out/telespeak-<version>.apk`. It
+   checks out the `tslib_multi` commit this repository records, also after a `git pull`; if
+   `tslib_multi` has commits or uncommitted changes of its own, it builds them as they are and
+   says so.
 
 To run `./gradlew` or `cargo` by hand, first source the environment from the repository root:
 `. scripts/env.sh`.
