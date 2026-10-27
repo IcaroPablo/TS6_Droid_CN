@@ -109,7 +109,9 @@ import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.LiquidGlassPanel
 import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.ShareTarget
+import dev.tsdroid.ui.component.StreamChat
 import dev.tsdroid.ui.component.StreamViewer
+import dev.tsdroid.ui.component.StreamVoiceControls
 import dev.tsdroid.ui.component.ServerInfoSheet
 import dev.tsdroid.ui.component.UserPanelSheet
 import dev.tsdroid.ui.component.WhisperListSheet
@@ -144,6 +146,7 @@ fun ServerScreen(
     }
     val streamSessions by viewModel.streamSessions.collectAsStateWithLifecycle()
     val streamLandscape by viewModel.streamLandscape.collectAsStateWithLifecycle()
+    val streamChatVisible by viewModel.streamChatVisible.collectAsStateWithLifecycle()
     val channelIcons by viewModel.channelIcons.collectAsStateWithLifecycle()
     val userAvatars by viewModel.avatars.collectAsStateWithLifecycle()
     val serverInfo by viewModel.serverInfo.collectAsStateWithLifecycle()
@@ -866,6 +869,23 @@ fun ServerScreen(
             onAdd = { viewModel.watchStream(it.id) },
             onRetryWithTeamSpeakStun = viewModel::retryStreamWithTeamSpeakStun,
             onCloseStream = { viewModel.stopWatching(it) },
+            chat = StreamChat(
+                messages = channelMessages,
+                showLinkThumbnails = showLinkThumbnails,
+                autoLoadImages = autoLoadImages,
+                onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
+                visible = streamChatVisible,
+                onToggle = viewModel::toggleStreamChat,
+                onSend = viewModel::sendChannelMessage,
+            ),
+            voice = StreamVoiceControls(
+                isMicMuted = isMicMuted,
+                isOutputMuted = isOutputMuted,
+                isPushToTalk = isPttMode,
+                onToggleMic = viewModel::toggleMicMute,
+                onPushToTalk = viewModel::setPushToTalk,
+                onToggleOutput = viewModel::toggleOutputMute,
+            ),
             onRotate = viewModel::toggleStreamLandscape,
             onClose = { viewModel.stopWatching() },
         )

@@ -335,4 +335,8 @@
     <string name="stream_unmute">Unmute the stream</string>
     <string name="stream_retry_with_teamspeak_stun">Use TeamSpeak’s server and try again</string>
     <string name="stream_add">Watch another stream</string>
+    <string name="voice_deafen">Deafen</string>
+    <string name="voice_undeafen">Undeafen</string>
+    <string name="stream_chat_show">Show the channel chat</string>
+    <string name="stream_chat_hide">Hide the channel chat</string>
 </resources>

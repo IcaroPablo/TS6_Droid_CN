@@ -366,6 +366,14 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val autoLoadImages: StateFlow<Boolean> = settingsStore.autoLoadImages
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val streamChatVisible: StateFlow<Boolean> = settingsStore.streamChat
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    fun toggleStreamChat() {
+        val visible = !streamChatVisible.value
+        viewModelScope.launch { settingsStore.setStreamChat(visible) }
+    }
+
     val enableFloatingWindow: StateFlow<Boolean> = settingsStore.enableFloatingWindow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 

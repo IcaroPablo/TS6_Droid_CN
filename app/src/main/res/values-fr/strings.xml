@@ -335,4 +335,8 @@
     <string name="stream_unmute">Rétablir le son de la diffusion</string>
     <string name="stream_retry_with_teamspeak_stun">Utiliser le serveur de TeamSpeak et réessayer</string>
     <string name="stream_add">Regarder une autre diffusion</string>
+    <string name="voice_deafen">Couper le son</string>
+    <string name="voice_undeafen">Rétablir le son</string>
+    <string name="stream_chat_show">Afficher le chat du salon</string>
+    <string name="stream_chat_hide">Masquer le chat du salon</string>
 </resources>

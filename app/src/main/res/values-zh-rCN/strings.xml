@@ -335,4 +335,8 @@
     <string name="stream_unmute">取消直播静音</string>
     <string name="stream_retry_with_teamspeak_stun">使用 TeamSpeak 服务器并重试</string>
     <string name="stream_add">观看其他直播</string>
+    <string name="voice_deafen">关闭声音</string>
+    <string name="voice_undeafen">打开声音</string>
+    <string name="stream_chat_show">显示频道聊天</string>
+    <string name="stream_chat_hide">隐藏频道聊天</string>
 </resources>

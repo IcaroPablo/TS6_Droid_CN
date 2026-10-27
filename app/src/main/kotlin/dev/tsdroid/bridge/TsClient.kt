@@ -50,7 +50,6 @@ data class LiveStream(
     val clientId: Int,
     val id: String,
     val name: String,
-    val hasAudio: Boolean,
 )
 
 /**
@@ -496,7 +495,6 @@ class TsClient {
                     clientId = clientId,
                     id = id,
                     name = event.data["name"] as? String ?: "",
-                    hasAudio = event.data["has_audio"] as? Boolean ?: false,
                 ))
             }
             "stream_stopped" -> {
