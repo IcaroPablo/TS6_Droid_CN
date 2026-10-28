@@ -1,8 +1,5 @@
 package dev.tsdroid.ui.component
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -51,16 +48,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -77,9 +74,6 @@ import dev.tslib.User
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed class ShareTarget {
     data object Channel : ShareTarget()
@@ -95,6 +89,8 @@ fun FileManagerDialog(
     files: List<TsFileEntry>,
     isLoading: Boolean,
     users: List<User>,
+    /** Left out of the people a file can be sent to */
+    selfId: Int?,
     permissionHints: Long = 0L,
     onNavigateToFolder: (String) -> Unit,
     onNavigateUp: () -> Unit,
@@ -130,48 +126,9 @@ fun FileManagerDialog(
     var menuAnchorBottom by remember { mutableFloatStateOf(0f) }
     var panelOrigin by remember { mutableStateOf(Offset.Zero) }
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
+    var menuHeight by remember { mutableIntStateOf(0) }
 
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            var fileName: String? = null
-            var data: ByteArray? = null
-            var tooLarge = false
-            // Reading (up to 10 MB) must not happen on the main thread
-            withContext(Dispatchers.IO) {
-                try {
-                    val cursor = context.contentResolver.query(uri, null, null, null, null)
-                    val nameIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME) ?: -1
-                    val sizeIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.SIZE) ?: -1
-                    cursor?.moveToFirst()
-                    fileName = if (nameIndex >= 0) cursor?.getString(nameIndex) ?: "file" else "file"
-                    val fileSize = if (sizeIndex >= 0) cursor?.getLong(sizeIndex) ?: -1L else -1L
-                    cursor?.close()
-                    if (fileSize > 10_485_760) {
-                        tooLarge = true
-                        return@withContext
-                    }
-                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
-                        ?: return@withContext
-                    if (bytes.size > 10_485_760) {
-                        tooLarge = true
-                    } else {
-                        data = bytes
-                    }
-                } catch (_: Exception) {
-                }
-            }
-            when {
-                data != null && fileName != null -> onUploadFile(fileName!!, data!!)
-                tooLarge -> Toast.makeText(context, R.string.file_too_large, Toast.LENGTH_SHORT).show()
-                // else: unreadable content — previously silent, kept silent
-            }
-        }
-    }
+    val pickUpload = rememberUploadPicker(onUploadFile)
 
     // Sort: folders first, then files, alphabetically
     val sortedFiles = remember(files) {
@@ -210,7 +167,7 @@ fun FileManagerDialog(
                             IconButton(onClick = onNavigateUp) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.back),
                                 )
                             }
                         }
@@ -225,7 +182,7 @@ fun FileManagerDialog(
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                         }
                         if (canUpload) {
-                            IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
+                            IconButton(onClick = pickUpload) {
                                 Icon(Icons.Default.Upload, contentDescription = stringResource(R.string.upload))
                             }
                         }
@@ -263,6 +220,8 @@ fun FileManagerDialog(
                                     FileEntryRow(
                                         entry = entry,
                                         canDownload = canDownload,
+                                        // Download and share are for files; folders only have the rest
+                                        hasMenu = (entry.isFile && canDownload) || canRename || canDelete,
                                         onFolderClick = { onNavigateToFolder(entry.name) },
                                         onDownload = { onDownload(entry.name) },
                                         onPreviewImage = { onPreviewImage(entry.name) },
@@ -300,10 +259,14 @@ fun FileManagerDialog(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .width(176.dp)
+                    .onSizeChanged { menuHeight = it.height }
                     .offset {
                         IntOffset(
                             x = (menuAnchorRight - panelOrigin.x - panelSize.width).toInt(),
-                            y = (menuAnchorBottom - panelOrigin.y).toInt(),
+                            // Below its row, unless that would hang off the bottom of the panel
+                            y = minOf(menuAnchorBottom - panelOrigin.y, (panelSize.height - menuHeight).toFloat())
+                                .coerceAtLeast(0f)
+                                .toInt(),
                         )
                     },
                 wallpaper = wallpaper,
@@ -317,7 +280,7 @@ fun FileManagerDialog(
                             menuEntry = null
                             onDownload(entry.name)
                         }
-                        GlassMenuItem(Icons.Default.Share, stringResource(R.string.share_in_channel)) {
+                        GlassMenuItem(Icons.Default.Share, stringResource(R.string.share)) {
                             menuEntry = null
                             shareTarget = entry.name to entry.size
                         }
@@ -407,7 +370,7 @@ fun FileManagerDialog(
     shareTarget?.let { (fileName, fileSize) ->
         ShareTargetDialog(
             fileName = fileName,
-            users = users,
+            users = users.filter { it.id != selfId },
             wallpaper = wallpaper,
             onSelect = { target ->
                 onShareFile(target, fileName, fileSize)
@@ -492,6 +455,8 @@ private fun ShareTargetDialog(
 private fun FileEntryRow(
     entry: TsFileEntry,
     canDownload: Boolean = true,
+    /** Whether the row has any action for its ⋯ menu */
+    hasMenu: Boolean,
     onFolderClick: () -> Unit,
     onDownload: () -> Unit,
     onPreviewImage: () -> Unit,
@@ -555,6 +520,7 @@ private fun FileEntryRow(
         // Menu button — the menu itself is drawn at the root of this panel, further down: a
         // DropdownMenu is a window of its own (nothing behind it to frost) and would be clipped by
         // the list it belongs to.
+        if (!hasMenu) return@Row
         var anchorRight by remember { mutableFloatStateOf(0f) }
         var anchorBottom by remember { mutableFloatStateOf(0f) }
         IconButton(
@@ -567,7 +533,7 @@ private fun FileEntryRow(
         ) {
             Icon(
                 Icons.Default.MoreVert,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.more_options),
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -624,19 +590,6 @@ private fun InputDialog(
 private fun isImageFile(name: String): Boolean {
     val ext = name.substringAfterLast('.', "").lowercase()
     return ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
-}
-
-/**
- * File sizes go through string resources so the units follow the UI language
- * (the hardcoded "Ko"/"Mo"/"Go" were French-only).
- */
-private fun formatFileSize(context: android.content.Context, bytes: Long): String {
-    return when {
-        bytes < 1024 -> context.getString(R.string.file_size_bytes, bytes)
-        bytes < 1024 * 1024 -> context.getString(R.string.file_size_kb, bytes / 1024.0)
-        bytes < 1024 * 1024 * 1024 -> context.getString(R.string.file_size_mb, bytes / (1024.0 * 1024.0))
-        else -> context.getString(R.string.file_size_gb, bytes / (1024.0 * 1024.0 * 1024.0))
-    }
 }
 
 /** Locale-default short date + time instead of a hardcoded French day/month order. */

@@ -22,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.service.WhisperTargets
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tslib.Channel
 import dev.tslib.ServerGroup
 
@@ -63,7 +63,7 @@ fun WhisperListSheet(
                 AppIcons.Whisper,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = Color(0xFF4CAF50),
+                tint = WhisperAmber,
             )
             Spacer(Modifier.width(8.dp))
             Text(

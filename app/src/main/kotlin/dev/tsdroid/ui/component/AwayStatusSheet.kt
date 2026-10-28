@@ -34,15 +34,18 @@ import androidx.compose.ui.unit.dp
 import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.AlertRed
+import dev.tsdroid.ui.theme.OnlineGreen
+import dev.tsdroid.ui.theme.WhisperAmber
 
 /** Longest away message the sheet accepts; nobody reads a novel next to a name. */
 const val AWAY_MESSAGE_MAX_LENGTH = 100
 
 /** Colour of one status: green online, amber away, red do-not-disturb. */
 fun awayStatusColor(status: AwayStatus): Color = when (status) {
-    AwayStatus.ONLINE -> Color(0xFF4CAF50)
-    AwayStatus.AWAY -> Color(0xFFFFB300)
-    AwayStatus.DND -> Color(0xFFE53935)
+    AwayStatus.ONLINE -> OnlineGreen
+    AwayStatus.AWAY -> WhisperAmber
+    AwayStatus.DND -> AlertRed
 }
 
 /**

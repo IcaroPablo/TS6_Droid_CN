@@ -5,9 +5,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.RadioButtonChecked
@@ -44,9 +37,12 @@ import kotlin.math.absoluteValue
 import dev.tsdroid.han.R
 import dev.tslib.User
 import dev.tsdroid.ui.icon.AppIcons
-
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.IconButton
+import dev.tsdroid.ui.theme.AlertRed
+import dev.tsdroid.ui.theme.MutedOrange
+import dev.tsdroid.ui.theme.TalkingBlue
+import dev.tsdroid.ui.theme.WhisperAmber
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -115,7 +111,7 @@ fun UserItem(
                     color = Color.White,
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFFE53935))
+                        .background(AlertRed)
                         .clickable(enabled = onWatchStream != null) { onWatchStream?.invoke() }
                         .padding(horizontal = 5.dp, vertical = 1.dp),
                 )
@@ -128,7 +124,7 @@ fun UserItem(
                     Icons.Default.RadioButtonChecked,
                     contentDescription = stringResource(R.string.status_recording),
                     modifier = Modifier.size(14.dp),
-                    tint = Color(0xFFF44336),
+                    tint = AlertRed,
                 )
                 Spacer(Modifier.width(2.dp))
             }
@@ -137,7 +133,8 @@ fun UserItem(
                     Icons.Default.NightsStay,
                     contentDescription = stringResource(R.string.status_away),
                     modifier = Modifier.size(14.dp),
-                    tint = Color(0xFFFF9800),
+                    // The colour of the away dot in the status sheet
+                    tint = WhisperAmber,
                 )
                 Spacer(Modifier.width(2.dp))
             }
@@ -155,7 +152,7 @@ fun UserItem(
                             if (isWhisperTarget) R.string.whisper_remove_target else R.string.whisper_add_target,
                         ),
                         modifier = Modifier.size(16.dp),
-                        tint = if (isWhisperTarget) Color(0xFF4CAF50)
+                        tint = if (isWhisperTarget) WhisperAmber
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
                 }
@@ -171,7 +168,7 @@ fun UserItem(
                         AppIcons.SpeakerOff,
                         contentDescription = stringResource(if (isLocallyMuted) R.string.unmute_user else R.string.mute_user),
                         modifier = Modifier.size(16.dp),
-                        tint = if (isLocallyMuted) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        tint = if (isLocallyMuted) MutedOrange else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
                 }
             } else if (isLocallyMuted) {
@@ -179,7 +176,7 @@ fun UserItem(
                     AppIcons.SpeakerOff,
                     contentDescription = stringResource(R.string.user_muted),
                     modifier = Modifier.size(14.dp),
-                    tint = Color(0xFFFF9800),
+                    tint = MutedOrange,
                 )
                 Spacer(Modifier.width(2.dp))
             }
@@ -198,6 +195,10 @@ private val defaultAvatarColors = listOf(
     Color(0xFFEC407A), // pink
 )
 
+/** The background of the letter shown for a member without an avatar. */
+internal fun avatarColorFor(nickname: String): Color =
+    defaultAvatarColors[nickname.hashCode().absoluteValue % defaultAvatarColors.size]
+
 @Composable
 private fun AvatarWithRing(
     avatar: ImageBitmap?,
@@ -212,9 +213,9 @@ private fun AvatarWithRing(
     // Amber marks a whisper talker, matching the floating bubble's ring, so a
     // private voice is never read as plain channel talk.
     val ringColor = when {
-        isRecording -> Color(0xFFF44336)
-        isTalking && isWhisperTalking -> Color(0xFFFFB300)
-        isTalking -> Color(0xFF2196F3)
+        isRecording -> AlertRed
+        isTalking && isWhisperTalking -> WhisperAmber
+        isTalking -> TalkingBlue
         else -> Color.Transparent
     }
 
@@ -239,9 +240,7 @@ private fun AvatarWithRing(
                 contentScale = ContentScale.Crop,
             )
         } else {
-            val bgColor = defaultAvatarColors[
-                nickname.hashCode().absoluteValue % defaultAvatarColors.size
-            ]
+            val bgColor = avatarColorFor(nickname)
             val letter = nickname.firstOrNull()?.uppercase() ?: "?"
             Box(
                 modifier = Modifier
@@ -270,7 +269,7 @@ private fun AvatarWithRing(
                     .offset(x = 2.dp, y = 2.dp)
                     .background(MaterialTheme.colorScheme.surface, CircleShape)
                     .padding(1.dp),
-                tint = Color(0xFFF44336),
+                tint = AlertRed,
             )
         }
         if (isOutputMuted) {
@@ -283,7 +282,7 @@ private fun AvatarWithRing(
                     .offset(x = (-2).dp, y = 2.dp)
                     .background(MaterialTheme.colorScheme.surface, CircleShape)
                     .padding(1.dp),
-                tint = Color(0xFFFF9800),
+                tint = AlertRed,
             )
         }
     }

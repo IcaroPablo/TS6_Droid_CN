@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -78,11 +80,15 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.TalkingBlue
+import dev.tsdroid.ui.theme.WhisperAmber
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -438,7 +444,8 @@ private fun CollapsedBubble(
                 color = when {
                     whisperTint -> WhisperAmber
                     talking -> liveColor
-                    speaking -> MaterialTheme.colorScheme.primary
+                    // The member list's talking colour, in the app as here
+                    speaking -> TalkingBlue
                     else -> MaterialTheme.colorScheme.outlineVariant
                 },
             ),
@@ -870,7 +877,7 @@ private fun MembersList(members: List<FloatingOverlayMember>) {
                         .size(24.dp)
                         .then(
                             if (member.speaking) {
-                                Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
+                                Modifier.background(TalkingBlue, CircleShape)
                             } else {
                                 Modifier
                             },
@@ -900,7 +907,7 @@ private fun MembersList(members: List<FloatingOverlayMember>) {
                     text = member.nickname,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (member.speaking) {
-                        MaterialTheme.colorScheme.primary
+                        TalkingBlue
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
@@ -986,6 +993,14 @@ private fun ChannelsList(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 textStyle = MaterialTheme.typography.bodySmall,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = {
+                    if (password.isNotEmpty()) {
+                        onMoveToChannel(channel.id, password)
+                        passwordChannel = null
+                        password = ""
+                    }
+                }),
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(passwordFocus),
@@ -1098,7 +1113,8 @@ private fun EmptyHint(text: String) {
  * The panel's actions: microphone, sound, disconnect.
  *
  * One microphone control only — the push-to-talk duplicate was confusing, and the toggle it sat next
- * to does the same job.
+ * to does the same job. Disconnecting takes a second tap: the button sits among the others in a
+ * small window that is easy to brush past.
  */
 @Composable
 private fun ActionBar(
@@ -1109,6 +1125,16 @@ private fun ActionBar(
     onWhisperTalkStop: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    var confirmDisconnect by remember { mutableStateOf(false) }
+    LaunchedEffect(confirmDisconnect) {
+        if (confirmDisconnect) {
+            delay(DISCONNECT_CONFIRM_MS)
+            confirmDisconnect = false
+        }
+    }
+    if (confirmDisconnect) {
+        WarningStrip(text = stringResource(R.string.floating_overlay_tap_again_to_disconnect))
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1119,7 +1145,7 @@ private fun ActionBar(
         ActionButton(
             icon = if (state.micMuted) AppIcons.MicOff else AppIcons.MicOn,
             contentDescription = stringResource(
-                if (state.micMuted) R.string.notif_unmute else R.string.notif_mute,
+                if (state.micMuted) R.string.unmute_mic else R.string.mute_mic,
             ),
             active = state.micMuted,
             onClick = onToggleMic,
@@ -1137,16 +1163,21 @@ private fun ActionBar(
         ActionButton(
             icon = if (state.outputMuted) AppIcons.SpeakerOff else AppIcons.SpeakerOn,
             contentDescription = stringResource(
-                if (state.outputMuted) R.string.notif_unmute else R.string.notif_mute,
+                if (state.outputMuted) R.string.voice_undeafen else R.string.voice_deafen,
             ),
             active = state.outputMuted,
             onClick = onToggleOutput,
         )
+        // Red, as a warning, but filled only once a first tap has armed it: a filled
+        // button is what a muted microphone or speaker looks like
         ActionButton(
             icon = AppIcons.Exit,
             contentDescription = stringResource(R.string.disconnect),
-            active = true,
-            onClick = onDisconnect,
+            active = confirmDisconnect,
+            tint = MaterialTheme.colorScheme.error,
+            onClick = {
+                if (confirmDisconnect) onDisconnect() else confirmDisconnect = true
+            },
         )
     }
 }
@@ -1183,7 +1214,7 @@ private fun HoldActionButton(
             },
         shape = CircleShape,
         color = if (active) {
-            Color(0xFFFFB300).copy(alpha = if (pressed) 0.34f else 0.22f)
+            WhisperAmber.copy(alpha = if (pressed) 0.34f else 0.22f)
         } else {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         },
@@ -1192,7 +1223,7 @@ private fun HoldActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = if (active) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurface,
+                tint = if (active) WhisperAmber else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -1205,6 +1236,8 @@ private fun ActionButton(
     contentDescription: String,
     active: Boolean,
     onClick: () -> Unit,
+    /** The icon's colour while not active */
+    tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -1224,7 +1257,7 @@ private fun ActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                tint = if (active) MaterialTheme.colorScheme.error else tint,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -1262,6 +1295,9 @@ private val PanelWidth = 264.dp
 private val PanelMaxHeight = 360.dp
 private val ListMaxHeight = 200.dp
 
+/** How long the disconnect button waits for its second tap. */
+private const val DISCONNECT_CONFIRM_MS = 3_000L
+
 /** How long expanding/collapsing takes. Must match the anchor window in the service. */
 private const val REVEAL_ANIMATION_MS = 200
 
@@ -1279,12 +1315,6 @@ private val AppPink = Color(0xFFFF69B4)
 
 /** Half transparent on purpose: the bubble must not hide much of what is behind it. */
 private const val AppPinkAlpha = 0.5f
-
-/**
- * 密聊 (whisper) colour, shared with the member list's amber ring: a private voice is
- * neither the blue of channel talk nor the app's live-microphone tint.
- */
-private val WhisperAmber = Color(0xFFFFB300)
 
 /**
  * The overlay's surface colour: a translucent version of the app's own surface, so the window follows

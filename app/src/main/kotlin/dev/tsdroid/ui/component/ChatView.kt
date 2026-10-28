@@ -36,22 +36,14 @@ fun ChatView(
     var visibleCount by remember { mutableIntStateOf(INITIAL_PAGE) }
 
     // reverseLayout=true: index 0 = bottom (newest), high index = top (oldest)
-    // Timestamps have ms resolution, so two messages can share one — LazyColumn
-    // crashes on duplicate keys. Force strict monotonic order before rendering.
     val displayMessages = remember(messages, visibleCount) {
-        val tail = messages.takeLast(visibleCount.coerceAtMost(messages.size))
-        var lastTs = Long.MIN_VALUE
-        val deduped = tail.map { msg ->
-            val ts = if (msg.timestamp <= lastTs) lastTs + 1 else msg.timestamp
-            lastTs = ts
-            if (ts == msg.timestamp) msg else msg.copy(timestamp = ts)
-        }
-        deduped.asReversed()
+        messages.takeLast(visibleCount.coerceAtMost(messages.size)).asReversed()
     }
 
-    // Auto-scroll to bottom on new messages (only if already near bottom)
+    // Auto-scroll to bottom on new messages: when already near the bottom, or
+    // when the new message is one's own
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && listState.firstVisibleItemIndex <= 3) {
+        if (messages.isNotEmpty() && (listState.firstVisibleItemIndex <= 3 || messages.last().isMe)) {
             listState.animateScrollToItem(0)
         }
     }
@@ -77,7 +69,7 @@ fun ChatView(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         reverseLayout = true,
     ) {
-        items(displayMessages, key = { it.timestamp }) { message ->
+        items(displayMessages, key = { it.id }) { message ->
             MessageBubble(
                 message = message,
                 showLinkThumbnails = showLinkThumbnails,

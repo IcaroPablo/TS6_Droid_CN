@@ -7,6 +7,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -61,9 +63,7 @@ import coil.compose.AsyncImage
 import dev.tslib.BBCode
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.FileAttachment
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /**
  * Wallpaper currently painted behind the screen. Glass surfaces that live inside a container which
@@ -128,7 +128,8 @@ fun MessageBubble(
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.isMe
-    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
 
     val linkColor = MaterialTheme.colorScheme.primary
     // Inline code used to paint an opaque `surfaceContainerHighest` chip; over glass that is a
@@ -185,15 +186,16 @@ fun MessageBubble(
                         )
                     }
 
-                    // Video thumbnails
-                    for (thumbUrl in parsed.thumbnailUrls) {
+                    // Video thumbnails, which open their video
+                    for ((videoUrl, thumbUrl) in parsed.thumbnails) {
                         AsyncImage(
                             model = thumbUrl,
                             contentDescription = null,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { runCatching { uriHandler.openUri(videoUrl) } },
                             contentScale = ContentScale.FillWidth,
                         )
                     }
@@ -250,7 +252,7 @@ fun MessageBubble(
                 }
 
                 Text(
-                    text = timeFormat.format(Date(message.timestamp)),
+                    text = remember(message.timestamp) { formatMessageTime(context, message.timestamp) },
                     style = MaterialTheme.typography.labelSmall,
                     color = LocalContentColor.current.copy(alpha = 0.7f),
                 )
@@ -262,7 +264,8 @@ fun MessageBubble(
 private data class ParsedMessage(
     val text: AnnotatedString,
     val imageUrls: List<String>,
-    val thumbnailUrls: List<String> = emptyList(),
+    /** Each video link with its thumbnail */
+    val thumbnails: List<Pair<String, String>> = emptyList(),
 )
 
 @Composable
@@ -322,7 +325,7 @@ private fun FileAttachmentCard(
             .padding(vertical = 4.dp)
             .then(
                 when {
-                    download != null && downloadState is DownloadState.Idle ->
+                    download != null && (downloadState is DownloadState.Idle || downloadState is DownloadState.Error) ->
                         Modifier.clickable {
                             initiatedHere = true
                             downloadStateFlow = download(attachment)
@@ -404,7 +407,7 @@ private fun FileAttachmentCard(
                 }
             }
         }
-        if (download != null && downloadState is DownloadState.Idle) {
+        if (download != null && (downloadState is DownloadState.Idle || downloadState is DownloadState.Error)) {
             Icon(
                 imageVector = if (attachment.isImage) Icons.Default.Image else Icons.Default.Download,
                 contentDescription = stringResource(R.string.download),
@@ -416,25 +419,32 @@ private fun FileAttachmentCard(
 }
 
 private fun openFile(context: android.content.Context, uri: android.net.Uri, fileName: String) {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mimeType)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
     try {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
         context.startActivity(intent)
-    } catch (_: Exception) {}
+    } catch (_: android.content.ActivityNotFoundException) {
+        Toast.makeText(context, R.string.no_app_to_open, Toast.LENGTH_SHORT).show()
+    }
 }
 
-private fun formatFileSize(context: android.content.Context, bytes: Long): String {
-    if (bytes < 1024) return context.getString(R.string.file_size_bytes, bytes)
-    val kb = bytes / 1024.0
-    if (kb < 1024) return context.getString(R.string.file_size_kb, kb)
-    val mb = kb / 1024.0
-    if (mb < 1024) return context.getString(R.string.file_size_mb, mb)
-    val gb = mb / 1024.0
-    return context.getString(R.string.file_size_gb, gb)
+/**
+ * When a message was sent: the time in the phone's 12 or 24 hour format, with
+ * the date in front unless it was today.
+ */
+private fun formatMessageTime(context: android.content.Context, timestamp: Long): String {
+    val time = android.text.format.DateFormat.getTimeFormat(context).format(Date(timestamp))
+    if (android.text.format.DateUtils.isToday(timestamp)) return time
+    val date = android.text.format.DateUtils.formatDateTime(
+        context,
+        timestamp,
+        android.text.format.DateUtils.FORMAT_SHOW_DATE or android.text.format.DateUtils.FORMAT_ABBREV_MONTH,
+    )
+    return "$date $time"
 }
 
 private fun parseMessage(rawText: String, linkColor: Color, codeBackground: Color, showThumbnails: Boolean = false): ParsedMessage {
@@ -541,11 +551,14 @@ private fun parseMessage(rawText: String, linkColor: Color, codeBackground: Colo
         AnnotatedString(BBCode.strip(cleanText))
     }
 
-    val thumbnailUrls = if (showThumbnails) {
-        URL_REGEX.findAll(rawText).mapNotNull { extractThumbnailUrl(it.value) }.distinct().toList()
+    val thumbnails = if (showThumbnails) {
+        URL_REGEX.findAll(rawText)
+            .mapNotNull { match -> extractThumbnailUrl(match.value)?.let { match.value to it } }
+            .distinctBy { it.second }
+            .toList()
     } else {
         emptyList()
     }
 
-    return ParsedMessage(displayText, imageUrls.distinct(), thumbnailUrls)
+    return ParsedMessage(displayText, imageUrls.distinct(), thumbnails)
 }

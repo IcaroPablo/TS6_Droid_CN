@@ -286,7 +286,8 @@ private fun PanelAvatar(nickname: String, avatar: ImageBitmap?) {
                 contentScale = ContentScale.Crop,
             )
         } else {
-            val bgColor = Color(0xFF5C6BC0)
+            // The same colour as in the member list
+            val bgColor = avatarColorFor(nickname)
             Box(
                 modifier = Modifier
                     .size(40.dp)

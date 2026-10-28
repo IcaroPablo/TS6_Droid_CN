@@ -16,8 +16,6 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +26,6 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -42,11 +39,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -55,16 +52,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -77,13 +69,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -92,7 +85,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
 import dev.tsdroid.bridge.AudioBridge
-import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.service.WhisperManager
 import dev.tsdroid.service.WhisperRouting
 import dev.tsdroid.service.WhisperTargets
@@ -100,10 +92,10 @@ import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
-import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.AwayStatusSheet
 import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChannelPasswordDialog
+import dev.tsdroid.ui.component.ChatInput
 import dev.tsdroid.ui.component.NicknameDialog
 import dev.tsdroid.ui.component.ChatView
 import dev.tsdroid.ui.component.CompactTopBar
@@ -121,15 +113,14 @@ import dev.tsdroid.ui.component.WhisperListSheet
 import dev.tsdroid.ui.component.awayStatusColor
 import dev.tsdroid.ui.component.parseSpacer
 import dev.tsdroid.ui.component.rememberGlassBackdrop
+import dev.tsdroid.ui.component.rememberUploadPicker
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
 import dev.tsdroid.viewmodel.ServerViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -156,7 +147,6 @@ fun ServerScreen(
     val channelMessages by viewModel.channelMessages.collectAsStateWithLifecycle()
     val privateMessages by viewModel.privateMessages.collectAsStateWithLifecycle()
     val isPttMode by viewModel.isPttMode.collectAsStateWithLifecycle()
-    val micMode by viewModel.micMode.collectAsStateWithLifecycle()
     val userVolumes by viewModel.userVolumes.collectAsStateWithLifecycle()
     val isOutputMuted by viewModel.isOutputMuted.collectAsStateWithLifecycle()
     val isMicMuted by viewModel.isMicMuted.collectAsStateWithLifecycle()
@@ -188,7 +178,9 @@ fun ServerScreen(
     var chatOpen by remember { mutableStateOf(false) }
     var chatEverOpened by remember { mutableStateOf(false) }
     var chatTab by remember { mutableIntStateOf(0) }
-    var messageText by remember { mutableStateOf("") }
+    // Shared by the chat panel and the stream viewer's chat, and kept across
+    // the stream viewer's rotation, which recreates the activity
+    var messageText by rememberSaveable { mutableStateOf("") }
     // Conversations are identified by the peer's permanent uid, not by the session
     // client id: a reconnect used to reassign the client id and split one person
     // into several conversation chips.
@@ -259,7 +251,10 @@ fun ServerScreen(
 
     // Back closes what is open on top of the channel tree before it leaves the
     // server screen; the chat is drawn over the file manager, so it goes first
-    BackHandler(enabled = fileManagerOpen) { viewModel.closeFileManager() }
+    BackHandler(enabled = fileManagerOpen) {
+        // In a folder, back goes up to its parent first
+        if (currentFilePath != "/") viewModel.navigateUp() else viewModel.closeFileManager()
+    }
     BackHandler(enabled = chatOpen) { chatOpen = false }
     // A closed chat must not keep the keyboard up for its hidden input
     val focusManager = LocalFocusManager.current
@@ -334,7 +329,7 @@ fun ServerScreen(
                             Icon(
                                 AppIcons.Whisper,
                                 contentDescription = stringResource(R.string.whisper_list_title),
-                                tint = if (whisperHasTargets) Color(0xFF4CAF50)
+                                tint = if (whisperHasTargets) WhisperAmber
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -421,7 +416,7 @@ fun ServerScreen(
                                 Icon(
                                     AppIcons.Sms,
                                     contentDescription = stringResource(R.string.chat),
-                                    tint = Color(0xFF4CAF50),
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
                             if (totalUnread > 0) {
@@ -549,21 +544,18 @@ fun ServerScreen(
                             }
                         }
 
-                        // Toggle voice mode (PTT →Voice Activity)
+                        // Switches between push to talk and an open microphone (the
+                        // three-way choice, voice activation included, lives in
+                        // Settings). It shows the mode a tap switches to, so it
+                        // never looks like a second mute button.
                         IconButton(onClick = { viewModel.toggleVoiceMode() }) {
                             Icon(
-                                if (isPttMode) AppIcons.MicOff else AppIcons.MicOn,
-                                // The three-way mode lives in Settings; here the
-                                // label only has to say what a tap will do.
+                                if (isPttMode) Icons.Default.RecordVoiceOver else Icons.Default.TouchApp,
                                 contentDescription = stringResource(
-                                    when {
-                                        isPttMode -> R.string.unmute_mic
-                                        micMode == MicMode.VAD -> R.string.mic_mode_vad
-                                        else -> R.string.mute_mic
-                                    }
+                                    R.string.mic_mode_switch_to,
+                                    stringResource(if (isPttMode) R.string.mic_mode_open else R.string.push_to_talk),
                                 ),
-                                tint = if (isPttMode) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
 
@@ -672,6 +664,7 @@ fun ServerScreen(
                         files = fileList,
                         isLoading = fileManagerLoading,
                         users = users,
+                        selfId = viewModel.myClientId,
                         permissionHints = channelPermissions,
                         onNavigateToFolder = { viewModel.navigateToFolder(it) },
                         onNavigateUp = { viewModel.navigateUp() },
@@ -897,7 +890,19 @@ fun ServerScreen(
                 onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
                 visible = streamChatVisible,
                 onToggle = viewModel::toggleStreamChat,
-                onSend = viewModel::sendChannelMessage,
+                text = messageText,
+                onTextChange = { messageText = it },
+                whisperTargetName = whisperLabel.takeIf { whisperHasTargets },
+                onSend = {
+                    // Like the chat panel's channel tab: while whispering, the
+                    // text follows the voice to the whisper targets
+                    if (whisperHasTargets) {
+                        viewModel.sendWhisperMessage(messageText)
+                    } else {
+                        viewModel.sendChannelMessage(messageText)
+                    }
+                    messageText = ""
+                },
             ),
             voice = StreamVoiceControls(
                 isMicMuted = isMicMuted,
@@ -983,46 +988,7 @@ fun ChatPanel(
     isWhisperActive: Boolean = false,
     whisperTargetName: String? = null,
 ) {
-    val context = LocalContext.current
-    val uploadScope = rememberCoroutineScope()
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        uploadScope.launch {
-            var fileName: String? = null
-            var data: ByteArray? = null
-            var tooLarge = false
-            // Reading (up to 10 MB) must not happen on the main thread
-            withContext(Dispatchers.IO) {
-                try {
-                    val cursor = context.contentResolver.query(uri, null, null, null, null)
-                    val nameIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME) ?: -1
-                    val sizeIndex = cursor?.getColumnIndex(android.provider.OpenableColumns.SIZE) ?: -1
-                    cursor?.moveToFirst()
-                    fileName = if (nameIndex >= 0) cursor?.getString(nameIndex) ?: "file" else "file"
-                    val fileSize = if (sizeIndex >= 0) cursor?.getLong(sizeIndex) ?: -1L else -1L
-                    cursor?.close()
-                    if (fileSize > 10_485_760) {
-                        tooLarge = true
-                        return@withContext
-                    }
-                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
-                        ?: return@withContext
-                    if (bytes.size > 10_485_760) {
-                        tooLarge = true
-                    } else {
-                        data = bytes
-                    }
-                } catch (_: Exception) {
-                }
-            }
-            when {
-                data != null && fileName != null -> onUploadFile(fileName!!, data!!)
-                tooLarge -> Toast.makeText(context, R.string.file_too_large, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    val pickUpload = rememberUploadPicker(onUploadFile)
     // Full-screen glass panel: this used to be a near-opaque white slab, the cheapest-looking
     // surface in the app. `contentColor` is derived from the wallpaper actually behind the glass,
     // so the children keep their contrast on any backdrop; nothing else about them changes.
@@ -1165,9 +1131,9 @@ fun ChatPanel(
                 }
                 // Swipe left/right to switch between the channel and the private tabs, like the app's
                 // other tab hosts. Only horizontal drags are claimed, so the list still scrolls
-                // vertically; a swipe past a third of the width switches, anything shorter springs
-                // back.
+                // vertically; a swipe of 48dp switches, anything shorter does nothing.
                 var swipeDrag by remember { mutableFloatStateOf(0f) }
+                val swipeThreshold = with(LocalDensity.current) { 48.dp.toPx() }
                 ChatView(
                     messages = messages,
                     showLinkThumbnails = showLinkThumbnails,
@@ -1182,97 +1148,30 @@ fun ChatPanel(
                             onDragStopped = {
                                 val travelled = swipeDrag
                                 swipeDrag = 0f
-                                val threshold = 120f
-                                if (travelled < -threshold && chatTab == 0) onTabChange(1)
-                                else if (travelled > threshold && chatTab == 1) onTabChange(0)
+                                if (travelled < -swipeThreshold && chatTab == 0) onTabChange(1)
+                                else if (travelled > swipeThreshold && chatTab == 1) onTabChange(0)
                             },
                         ),
                 )
 
-                // 密聊 banner: the microphone is on a target set, not the channel,
-                // so this has to be visible right above the input at all times.
-                if (isWhisperActive && whisperTargetName != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                AppIcons.Whisper,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color(0xFF4CAF50),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.whisper_banner, whisperTargetName),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-
-                // Message input
-                Row(
+                // While whispering, a banner above the input says who the text goes to
+                ChatInput(
+                    text = messageText,
+                    onTextChange = onMessageChange,
+                    placeholder = when {
+                        isWhisperActive && whisperTargetName != null ->
+                            stringResource(R.string.whisper_placeholder, whisperTargetName)
+                        chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
+                        else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
+                    },
+                    onSend = onSend,
+                    whisperTargetName = whisperTargetName.takeIf { isWhisperActive },
+                    enabled = chatTab == 0 || pmTarget != null || isWhisperActive,
+                    onAttach = pickUpload.takeIf { canUploadFiles },
+                    // A file goes to the channel or to the chosen person, never to whisper targets
+                    attachEnabled = chatTab == 0 || pmTarget != null,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (canUploadFiles) {
-                        IconButton(
-                            onClick = { filePickerLauncher.launch("*/*") },
-                            enabled = chatTab == 0 || pmTarget != null,
-                        ) {
-                            Icon(AppIcons.File, contentDescription = stringResource(R.string.attach_file))
-                        }
-                    }
-                    OutlinedTextField(
-                        value = messageText,
-                        onValueChange = onMessageChange,
-                        modifier = Modifier.weight(1f),
-                        placeholder = {
-                            Text(
-                                when {
-                                    isWhisperActive && whisperTargetName != null ->
-                                        stringResource(R.string.whisper_placeholder, whisperTargetName)
-                                    chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
-                                    else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
-                                }
-                            )
-                        },
-                        singleLine = true,
-                        enabled = chatTab == 0 || pmTarget != null || isWhisperActive,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            // Light glass: the panel's refraction shows through, the border keeps
-                            // the focus affordance, and every text colour follows the glass.
-                            focusedTextColor = LocalContentColor.current,
-                            unfocusedTextColor = LocalContentColor.current,
-                            disabledTextColor = LocalContentColor.current.copy(alpha = 0.38f),
-                            focusedContainerColor = LocalContentColor.current.copy(alpha = 0.10f),
-                            unfocusedContainerColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = LocalContentColor.current.copy(alpha = 0.35f),
-                            disabledBorderColor = LocalContentColor.current.copy(alpha = 0.15f),
-                            focusedPlaceholderColor = LocalContentColor.current.copy(alpha = 0.55f),
-                            unfocusedPlaceholderColor = LocalContentColor.current.copy(alpha = 0.55f),
-                            disabledPlaceholderColor = LocalContentColor.current.copy(alpha = 0.30f),
-                            cursorColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    )
-                    IconButton(
-                        onClick = onSend,
-                        enabled = messageText.isNotBlank() &&
-                            (chatTab == 0 || pmTarget != null || isWhisperActive),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
-                    }
-                }
+                )
             }
         }
     }
@@ -1388,8 +1287,6 @@ private fun WhisperHoldMic(
     }
 }
 
-/** 密聊 (whisper) accent colour, shared by the member ring and the whisper mic. */
-private val WhisperAmber = Color(0xFFFFB300)
 
 /**
  * Display names for the current密聊 target set, or null while there is none.

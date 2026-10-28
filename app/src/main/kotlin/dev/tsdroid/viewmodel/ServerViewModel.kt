@@ -2,11 +2,9 @@ package dev.tsdroid.viewmodel
 
 import android.app.Application
 import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
-import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
@@ -71,7 +69,17 @@ data class ChatMessage(
     val isPrivate: Boolean = false,
     val senderId: Int = 0,
     val fileAttachment: FileAttachment? = null,
-)
+    /**
+     * Tells this message apart from every other one in this process, even one
+     * sent in the same millisecond; a copy keeps it. Not stored: messages
+     * loaded from the history get new ones.
+     */
+    val id: Long = nextId.incrementAndGet(),
+) {
+    private companion object {
+        val nextId = java.util.concurrent.atomic.AtomicLong()
+    }
+}
 
 sealed class DownloadState {
     data object Idle : DownloadState()

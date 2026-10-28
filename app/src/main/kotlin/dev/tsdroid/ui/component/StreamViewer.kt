@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,11 +24,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.Chat
@@ -41,7 +39,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,7 +53,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -68,7 +64,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -86,6 +81,7 @@ import dev.tsdroid.han.R
 import dev.tsdroid.stream.StreamSession
 import dev.tsdroid.stream.WebRtc
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.AlertRed
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
@@ -385,7 +381,11 @@ private fun ViewerTopBar(
     }
 }
 
-/** The channel chat as the viewer shows it, and whether it is shown. */
+/**
+ * The channel chat as the viewer shows it, and whether it is shown. The text
+ * being written is the chat panel's, and so is where it goes: to the channel,
+ * or to the whisper targets while whispering.
+ */
 class StreamChat(
     val messages: List<ChatMessage>,
     val showLinkThumbnails: Boolean,
@@ -393,19 +393,16 @@ class StreamChat(
     val onDownload: ((FileAttachment) -> StateFlow<DownloadState>)?,
     val visible: Boolean,
     val onToggle: () -> Unit,
-    val onSend: (String) -> Unit,
+    val text: String,
+    val onTextChange: (String) -> Unit,
+    /** Whom the whisper targets are, while whispering */
+    val whisperTargetName: String?,
+    val onSend: () -> Unit,
 )
 
-/** The channel's messages, and a box to write to the channel. */
+/** The channel's messages, and the chat input. */
 @Composable
 private fun StreamChatPanel(chat: StreamChat, modifier: Modifier) {
-    var text by rememberSaveable { mutableStateOf("") }
-    val send = {
-        if (text.isNotBlank()) {
-            chat.onSend(text.trim())
-            text = ""
-        }
-    }
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
         Column(modifier = Modifier.padding(horizontal = 8.dp)) {
             ChatView(
@@ -415,23 +412,18 @@ private fun StreamChatPanel(chat: StreamChat, modifier: Modifier) {
                 onDownload = chat.onDownload,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
-            Row(
+            ChatInput(
+                text = chat.text,
+                onTextChange = chat.onTextChange,
+                placeholder = if (chat.whisperTargetName != null) {
+                    stringResource(R.string.whisper_placeholder, chat.whisperTargetName)
+                } else {
+                    stringResource(R.string.message_channel_placeholder)
+                },
+                onSend = chat.onSend,
+                whisperTargetName = chat.whisperTargetName,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(R.string.message_channel_placeholder)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { send() }),
-                )
-                IconButton(onClick = send, enabled = text.isNotBlank()) {
-                    Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send))
-                }
-            }
+            )
         }
     }
 }
@@ -449,7 +441,7 @@ class StreamVoiceControls(
 
 @Composable
 private fun VoiceButtons(voice: StreamVoiceControls) {
-    val off = Color(0xFFEF5350)
+    val off = AlertRed
     if (voice.isPushToTalk) {
         var pressed by remember { mutableStateOf(false) }
         Box(
@@ -537,6 +529,8 @@ private fun StreamTile(
     // before `volume` has caught up, so the finish must not read `volume`
     var sliderValue by remember { mutableFloatStateOf(volume) }
     var renderer by remember { mutableStateOf<SurfaceViewRenderer?>(null) }
+    // The video's width over its height, as the frames report it
+    var videoAspect by remember { mutableFloatStateOf(16f / 9f) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     // The gesture handler below is created once
@@ -551,10 +545,20 @@ private fun StreamTile(
     Box(modifier = modifier.background(Color.Black)) {
         AndroidView(
             factory = { context ->
-                // Measured to the video's shape (stretched to the whole tile it
-                // would crop the picture) and centred
+                // Sized here to the video's shape (stretched to the whole tile it
+                // would crop the picture) and centred. Left to measure itself, the
+                // view changed size when the first frame arrived without being
+                // placed again, and sat against the tile's left edge
                 SurfaceViewRenderer(context).apply {
-                    init(WebRtc.eglBase.eglBaseContext, null)
+                    init(WebRtc.eglBase.eglBaseContext, object : RendererCommon.RendererEvents {
+                        override fun onFirstFrameRendered() {}
+
+                        override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
+                            val (w, h) = if (rotation % 180 == 0) width to height else height to width
+                            // Called on the render thread
+                            if (w > 0 && h > 0) post { videoAspect = w.toFloat() / h }
+                        }
+                    })
                     setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
                     keepScreenOn = true
                     renderer = this
@@ -567,7 +571,7 @@ private fun StreamTile(
                 view.translationY = offset.y
             },
             onRelease = { it.release() },
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier.align(Alignment.Center).aspectRatio(videoAspect),
         )
 
         // Gestures on a layer above the video: the SurfaceView itself takes no touch
