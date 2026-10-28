@@ -32,8 +32,6 @@
     <string name="add_bookmark">添加服务器</string>
     <string name="edit_bookmark">编辑服务器</string>
     <string name="save">保存</string>
-    <string name="bookmarks">服务器</string>
-    <string name="no_bookmarks">暂无服务器</string>
     <string name="manual_connection">手动连接</string>
     <string name="auto_reconnect">自动重连</string>
     <string name="remove">移除</string>
@@ -44,9 +42,7 @@
     <!-- ServerScreen -->
     <string name="server">服务器</string>
     <string name="disconnect">断开连接</string>
-    <string name="settings">设置</string>
     <string name="audio_gain">音量增益</string>
-    <string name="audio_gain_value">×%1$.1f</string>
     <string name="mic_gain">麦克风增益</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">显示视频链接缩略图</string>
@@ -68,7 +64,6 @@
     <string name="wallpaper_cache_size">壁纸缓存：%1$s MB（%2$d 张）</string>
     <string name="wallpaper_max_cache">最大缓存：%1$d MB</string>
     <string name="wallpaper_view_cache">查看壁纸缓存</string>
-    <string name="wallpaper_cache_images">张壁纸</string>
     <string name="wallpaper_clear_cache">清空壁纸缓存</string>
     <string name="wallpaper_clear_cache_confirm">确定要清空所有壁纸缓存吗？此操作不可恢复。</string>
     <string name="wallpaper_cache_empty">暂无缓存壁纸</string>
@@ -77,7 +72,6 @@
     <string name="wallpaper_export_done">已保存 %1$d 张到相册</string>
     <string name="wallpaper_export_failed">保存到相册失败</string>
     <string name="session_running">会话进行中</string>
-    <string name="session_running_desc">会话在后台继续运行</string>
     <string name="back_to_session">返回会话</string>
     <string name="back_to_home">返回首页</string>
     <string name="floating_overlay_offline">未连接</string>
@@ -88,7 +82,6 @@
     <string name="floating_overlay_no_channels">没有可切换的频道</string>
     <string name="floating_overlay_open_app">返回应用</string>
     <string name="floating_overlay_collapse">收起</string>
-    <string name="floating_overlay_push_to_talk">按住说话</string>
     <string name="floating_overlay_muted">已静音</string>
     <string name="floating_overlay_tap_again_to_disconnect">再次点击以断开连接</string>
     <string name="floating_overlay_talking">麦克风已开启：正在说话</string>
@@ -174,28 +167,21 @@
 
     <!-- UserItem -->
     <string name="status_recording">录音中</string>
-    <string name="status_talking">正在讲话</string>
-    <string name="status_muted">已静音</string>
-    <string name="status_output_muted">输出已静音</string>
     <string name="status_away">离开</string>
 
     <!-- MessageBubble -->
     <string name="image">图片</string>
     <string name="file_attachment_info">%1$s · 已分享文件</string>
     <string name="file_attachment_server">%1$s · 服务器文件</string>
-    <string name="download_not_supported">不支持下载</string>
     <string name="file_in_teamspeak_cloud">存储在 TeamSpeak 云端，TeleSpeak 中不可用</string>
-    <string name="tap_to_download">点击下载</string>
     <string name="tap_to_view">点击查看</string>
     <string name="tap_to_load_images_from">点按以从 %1$s 加载图片</string>
     <string name="remote_images_hint">预览和图片直接从链接的网站（YouTube、Dailymotion、图床）加载，这些网站会看到你的 IP 地址。</string>
-    <string name="retry">重试</string>
     <string name="file_too_large">文件超过 10MB 上限，已取消上传</string>
     <string name="tap_to_open">点击打开</string>
     <string name="no_app_to_open">没有可打开此文件的应用</string>
     <string name="downloading">下载中…</string>
     <string name="download">下载</string>
-    <string name="file_saved_label">已保存到下载目录</string>
     <string name="file_saved">%1$s 已保存</string>
     <string name="attach_file">附件</string>
     <string name="file_size_bytes">%1$d B</string>
@@ -226,7 +212,6 @@
     <string name="notif_mute">静音</string>
 
     <!-- ViewModel -->
-    <string name="unknown_sender">未知</string>
     <string name="me_sender">我</string>
     <string name="error_address_nickname_required">地址和昵称为必填项</string>
     <string name="error_nickname_too_short">昵称至少需要3个字符</string>
@@ -268,7 +253,6 @@
     <string name="battery_optimization">电池优化白名单</string>
     <string name="battery_optimization_desc">加入白名单可避免系统在后台限制录音与网络（省电模式下尤其重要）</string>
     <string name="battery_optimization_allowed">已允许</string>
-    <string name="battery_optimization_action">去设置</string>
     <string name="app_details_settings">应用权限与自启动</string>
     <string name="app_details_settings_desc">小米/华为/OPPO/vivo 等 ROM 请在此允许「自启动」「后台运行/无限制」「后台弹出界面」</string>
 
@@ -326,7 +310,6 @@
     <string name="away_status_dnd_desc">显示勿扰状态并关闭麦克风</string>
     <string name="away_message_label">离开消息</string>
     <string name="away_message_save">保存</string>
-    <string name="away_marker">离开</string>
     <string name="away_status_change">修改状态</string>
     <string name="stream_live">直播中</string>
     <string name="stream_watch">观看直播</string>

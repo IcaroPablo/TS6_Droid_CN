@@ -32,8 +32,6 @@
     <string name="add_bookmark">Ajouter un favori</string>
     <string name="edit_bookmark">Modifier le favori</string>
     <string name="save">Enregistrer</string>
-    <string name="bookmarks">Favoris</string>
-    <string name="no_bookmarks">Aucun favori</string>
     <string name="manual_connection">Connexion manuelle</string>
     <string name="auto_reconnect">Reconnexion automatique</string>
     <string name="remove">Supprimer</string>
@@ -44,9 +42,7 @@
     <!-- ServerScreen -->
     <string name="server">Serveur</string>
     <string name="disconnect">Déconnexion</string>
-    <string name="settings">Paramètres</string>
     <string name="audio_gain">Gain audio</string>
-    <string name="audio_gain_value">×%1$.1f</string>
     <string name="mic_gain">Gain micro</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Miniatures des liens vidéo</string>
@@ -68,7 +64,6 @@
     <string name="wallpaper_cache_size">Cache fond d\'écran : %1$s Mo (%2$d images)</string>
     <string name="wallpaper_max_cache">Cache max : %1$d Mo</string>
     <string name="wallpaper_view_cache">Voir le cache des fonds d\'écran</string>
-    <string name="wallpaper_cache_images">fonds d\'écran</string>
     <string name="wallpaper_clear_cache">Vider le cache des fonds d\'écran</string>
     <string name="wallpaper_clear_cache_confirm">Êtes-vous sûr de vouloir vider tout le cache des fonds d\'écran ? Cette action est irréversible.</string>
     <string name="wallpaper_cache_empty">Aucun fond d\'écran en cache</string>
@@ -77,7 +72,6 @@
     <string name="wallpaper_export_done">%1$d image(s) enregistrée(s) dans la galerie</string>
     <string name="wallpaper_export_failed">Échec de l\'enregistrement dans la galerie</string>
     <string name="session_running">Session en cours</string>
-    <string name="session_running_desc">La session continue en arrière-plan</string>
     <string name="back_to_session">Revenir à la session</string>
     <string name="back_to_home">Retour à l\'accueil</string>
     <string name="floating_overlay_offline">Non connecté</string>
@@ -88,7 +82,6 @@
     <string name="floating_overlay_no_channels">Aucun canal où aller</string>
     <string name="floating_overlay_open_app">Ouvrir l\'application</string>
     <string name="floating_overlay_collapse">Réduire</string>
-    <string name="floating_overlay_push_to_talk">Appuyez pour parler</string>
     <string name="floating_overlay_muted">Micro coupé</string>
     <string name="floating_overlay_tap_again_to_disconnect">Touchez à nouveau pour vous déconnecter</string>
     <string name="floating_overlay_talking">Micro ouvert : vous parlez</string>
@@ -174,28 +167,21 @@
 
     <!-- UserItem -->
     <string name="status_recording">Enregistrement</string>
-    <string name="status_talking">En train de parler</string>
-    <string name="status_muted">Micro coupé</string>
-    <string name="status_output_muted">Son coupé</string>
     <string name="status_away">Absent</string>
 
     <!-- MessageBubble -->
     <string name="image">Image</string>
     <string name="file_attachment_info">%1$s \u00B7 Fichier partagé</string>
     <string name="file_attachment_server">%1$s \u00B7 Fichier du serveur</string>
-    <string name="download_not_supported">Téléchargement non pris en charge</string>
     <string name="file_in_teamspeak_cloud">Stocké sur le cloud de TeamSpeak — indisponible dans TeleSpeak</string>
-    <string name="tap_to_download">Appuyer pour télécharger</string>
     <string name="tap_to_view">Appuyer pour afficher</string>
     <string name="tap_to_load_images_from">Appuyez pour charger les images de %1$s</string>
     <string name="remote_images_hint">Les aperçus et images se chargent directement depuis les sites liés (YouTube, Dailymotion, hébergeurs d\'images), qui voient votre adresse IP.</string>
-    <string name="retry">Réessayer</string>
     <string name="file_too_large">Fichier supérieur à la limite de 10 Mo — envoi annulé</string>
     <string name="tap_to_open">Appuyer pour ouvrir</string>
     <string name="no_app_to_open">Aucune application ne peut ouvrir ce fichier</string>
     <string name="downloading">Téléchargement\u2026</string>
     <string name="download">Télécharger</string>
-    <string name="file_saved_label">Enregistré dans Téléchargements</string>
     <string name="file_saved">%1$s enregistré</string>
     <string name="attach_file">Pièce jointe</string>
     <string name="file_size_bytes">%1$d o</string>
@@ -226,7 +212,6 @@
     <string name="notif_mute">Couper</string>
 
     <!-- ViewModel -->
-    <string name="unknown_sender">Inconnu</string>
     <string name="me_sender">Moi</string>
     <string name="error_address_nickname_required">L\'adresse et le pseudo sont requis</string>
     <string name="error_nickname_too_short">Le pseudo doit contenir au moins 3 caractères</string>
@@ -268,7 +253,6 @@
     <string name="battery_optimization">Exemption d\'optimisation de batterie</string>
     <string name="battery_optimization_desc">Exempter l\'application maintient l\'enregistrement et le réseau en arrière-plan (important en mode économie d\'énergie)</string>
     <string name="battery_optimization_allowed">Exempté</string>
-    <string name="battery_optimization_action">Régler</string>
     <string name="app_details_settings">Autorisations et démarrage auto</string>
     <string name="app_details_settings_desc">Sur les ROM Xiaomi/Huawei/OPPO/vivo, autorisez ici le démarrage auto, l\'exécution illimitée en arrière-plan et les fenêtres contextuelles</string>
 
@@ -326,7 +310,6 @@
     <string name="away_status_dnd_desc">Affiche le statut et coupe le microphone</string>
     <string name="away_message_label">Message d’absence</string>
     <string name="away_message_save">Enregistrer</string>
-    <string name="away_marker">Absent</string>
     <string name="away_status_change">Changer le statut</string>
     <string name="stream_live">EN DIRECT</string>
     <string name="stream_watch">Regarder la diffusion</string>

@@ -30,8 +30,6 @@
     <string name="add_bookmark">Remukaturu servidor</string>
     <string name="edit_bookmark">Remuyeréu servidor</string>
     <string name="save">Remukaturu</string>
-    <string name="bookmarks">Servidor-itá remupitá waá</string>
-    <string name="no_bookmarks">Ti aikwé servidor</string>
     <string name="manual_connection">Rewiké ndé aé</string>
     <string name="auto_reconnect">Rewiké yuíri nhaãsupé</string>
     <string name="remove">Remukanhemu</string>
@@ -40,9 +38,7 @@
     <string name="cancel">Rexari</string>
     <string name="server">Servidor</string>
     <string name="disconnect">Resemu</string>
-    <string name="settings">Mukatusawa</string>
     <string name="audio_gain">Tiapu turususawa</string>
-    <string name="audio_gain_value">×%1$.1f</string>
     <string name="mic_gain">Microfone tiapú</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Vídeo sangawa mirĩ</string>
@@ -63,7 +59,6 @@
     <string name="wallpaper_cache_size">Sangawa pitasawa: %1$s MB (%2$d sangawa)</string>
     <string name="wallpaper_max_cache">Turusú-eté: %1$d MB</string>
     <string name="wallpaper_view_cache">Remaã sangawa-itá</string>
-    <string name="wallpaper_cache_images">sangawa</string>
     <string name="wallpaper_clear_cache">Remukanhemu sangawa-itá</string>
     <string name="wallpaper_clear_cache_confirm">Remukanhemu panhẽ sangawa taá? Ti reyuíri kurí.</string>
     <string name="wallpaper_cache_empty">Ti aikwé sangawa</string>
@@ -72,7 +67,6 @@
     <string name="wallpaper_export_done">%1$d sangawa upitá galeria upé</string>
     <string name="wallpaper_export_failed">Ti upitá galeria upé</string>
     <string name="session_running">Reiku servidor upé</string>
-    <string name="session_running_desc">Reiku yuíri servidor upé, aplicativo resikindá ramé</string>
     <string name="back_to_session">Reyuíri servidor kití</string>
     <string name="back_to_home">Reyuíri uka kití</string>
     <string name="floating_overlay_offline">Ti rewiké</string>
@@ -83,7 +77,6 @@
     <string name="floating_overlay_no_channels">Ti aikwé amú canal</string>
     <string name="floating_overlay_open_app">Repirári aplicativo</string>
     <string name="floating_overlay_collapse">Remumirĩ</string>
-    <string name="floating_overlay_push_to_talk">Repitasuka renheẽ arama</string>
     <string name="floating_overlay_muted">Ti renheẽ</string>
     <string name="floating_overlay_talking">Microfone upirari: renheẽ</string>
     <string name="floating_overlay_mic_not_working">Microfone ti upurakí</string>
@@ -158,25 +151,18 @@
     <string name="send">Remundu</string>
     <string name="user_fallback">Mira %1$d</string>
     <string name="status_recording">Upitasuka tiapú</string>
-    <string name="status_talking">Unheẽ</string>
-    <string name="status_muted">Ukirirĩ</string>
-    <string name="status_output_muted">Ti usendú</string>
     <string name="status_away">Ti uikú ape</string>
     <string name="image">Sangawa</string>
     <string name="file_attachment_info">%1$s · Papera umeẽ waá</string>
     <string name="file_attachment_server">%1$s · Servidor papera</string>
     <string name="file_in_teamspeak_cloud">Uikú TeamSpeak papera-rirú upé — TeleSpeak ti upisika</string>
-    <string name="tap_to_download">Repuẽ repisika arama</string>
     <string name="tap_to_view">Repuẽ remaã arama</string>
     <string name="tap_to_load_images_from">Repuẽ repisika arama sangawa %1$s suí</string>
     <string name="remote_images_hint">Sangawa-itá usú site-itá suí (YouTube, Dailymotion, amú-itá); nhaã site-itá umaã ne IP.</string>
-    <string name="retry">Remunhã yuíri</string>
     <string name="file_too_large">Papera turusú-eté 10 MB suí — ti umundú</string>
     <string name="tap_to_open">Repuẽ repirari arama</string>
-    <string name="download_not_supported">Ti repisika kwá</string>
     <string name="downloading">Apisika rikú…</string>
     <string name="download">Repisika</string>
-    <string name="file_saved_label">Upitá Downloads upé</string>
     <string name="file_saved">%1$s upitá ana</string>
     <string name="attach_file">Remundu papera</string>
     <string name="file_size_bytes">%1$d B</string>
@@ -199,7 +185,6 @@
     <string name="share_file_title">Remeẽ %1$s</string>
     <string name="notif_unmute">Renheẽ yuíri</string>
     <string name="notif_mute">Remukirirĩ</string>
-    <string name="unknown_sender">Ti akwáu awá</string>
     <string name="me_sender">Ixé</string>
     <string name="error_address_nickname_required">Remeẽ servidor mamé uikú asuí ne rera</string>
     <string name="error_nickname_too_short">Ne rera uputari musapiri letra, panhẽ</string>
@@ -235,7 +220,6 @@
     <string name="battery_optimization">Bateria ti umukirirí aplicativo</string>
     <string name="battery_optimization_desc">Remeẽ ramé, aplicativo upurakí yuíri resikindá ramé</string>
     <string name="battery_optimization_allowed">Umeẽ ana</string>
-    <string name="battery_optimization_action">Remuyeréu</string>
     <string name="app_details_settings">Licença-itá</string>
     <string name="app_details_settings_desc">Xiaomi/Huawei/OPPO/vivo celular upé, remeẽ ape licença-itá aplicativo upurakí arama nhaãsupé</string>
     <string name="diag_log_title">Aplicativo mbeusawa</string>
@@ -287,6 +271,5 @@
     <string name="away_status_dnd_desc">Amu-itá ukwáu, asuí microfone ukirirí</string>
     <string name="away_message_label">Nheenga ti reikú ramé</string>
     <string name="away_message_save">Remukaturu</string>
-    <string name="away_marker">Ti uikú</string>
     <string name="away_status_change">Remuyeréu mayé reikú</string>
 </resources>

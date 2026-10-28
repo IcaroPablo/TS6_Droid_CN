@@ -32,8 +32,6 @@
     <string name="add_bookmark">Add bookmark</string>
     <string name="edit_bookmark">Edit bookmark</string>
     <string name="save">Save</string>
-    <string name="bookmarks">Bookmarks</string>
-    <string name="no_bookmarks">No bookmarks</string>
     <string name="manual_connection">Manual connection</string>
     <string name="auto_reconnect">Auto-reconnect</string>
     <string name="remove">Remove</string>
@@ -44,9 +42,7 @@
     <!-- ServerScreen -->
     <string name="server">Server</string>
     <string name="disconnect">Disconnect</string>
-    <string name="settings">Settings</string>
     <string name="audio_gain">Audio gain</string>
-    <string name="audio_gain_value">×%1$.1f</string>
     <string name="mic_gain">Mic gain</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Video link thumbnails</string>
@@ -67,7 +63,6 @@
     <string name="wallpaper_cache_size">Wallpaper cache: %1$s MB (%2$d images)</string>
     <string name="wallpaper_max_cache">Max cache: %1$d MB</string>
     <string name="wallpaper_view_cache">View wallpaper cache</string>
-    <string name="wallpaper_cache_images">images</string>
     <string name="wallpaper_clear_cache">Clear wallpaper cache</string>
     <string name="wallpaper_clear_cache_confirm">Are you sure you want to clear all wallpaper cache? This cannot be undone.</string>
     <string name="wallpaper_cache_empty">No cached wallpapers</string>
@@ -76,7 +71,6 @@
     <string name="wallpaper_export_done">Saved %1$d image(s) to the gallery</string>
     <string name="wallpaper_export_failed">Could not save to the gallery</string>
     <string name="session_running">Session running</string>
-    <string name="session_running_desc">The session keeps running in the background</string>
     <string name="back_to_session">Return to session</string>
     <string name="back_to_home">Back to home</string>
     <string name="floating_overlay_offline">Not connected</string>
@@ -87,7 +81,6 @@
     <string name="floating_overlay_no_channels">No channels to switch to</string>
     <string name="floating_overlay_open_app">Open the app</string>
     <string name="floating_overlay_collapse">Collapse</string>
-    <string name="floating_overlay_push_to_talk">Hold to talk</string>
     <string name="floating_overlay_muted">Muted</string>
     <string name="floating_overlay_tap_again_to_disconnect">Tap again to disconnect</string>
     <string name="floating_overlay_talking">Microphone open: you are talking</string>
@@ -173,9 +166,6 @@
 
     <!-- UserItem -->
     <string name="status_recording">Recording</string>
-    <string name="status_talking">Talking</string>
-    <string name="status_muted">Muted</string>
-    <string name="status_output_muted">Output muted</string>
     <string name="status_away">Away</string>
 
     <!-- MessageBubble -->
@@ -183,18 +173,14 @@
     <string name="file_attachment_info">%1$s \u00B7 Shared file</string>
     <string name="file_attachment_server">%1$s \u00B7 Server file</string>
     <string name="file_in_teamspeak_cloud">Stored on TeamSpeak\'s cloud — not available in TeleSpeak</string>
-    <string name="tap_to_download">Tap to download</string>
     <string name="tap_to_view">Tap to view</string>
     <string name="tap_to_load_images_from">Tap to load images from %1$s</string>
     <string name="remote_images_hint">Previews and images load straight from the linked sites (YouTube, Dailymotion, image hosts), which see your IP address.</string>
-    <string name="retry">Retry</string>
     <string name="file_too_large">File exceeds the 10 MB limit — upload cancelled</string>
     <string name="tap_to_open">Tap to open</string>
     <string name="no_app_to_open">No app can open this file</string>
-    <string name="download_not_supported">Download not supported</string>
     <string name="downloading">Downloading\u2026</string>
     <string name="download">Download</string>
-    <string name="file_saved_label">Saved to Downloads</string>
     <string name="file_saved">%1$s saved</string>
     <string name="attach_file">Attach file</string>
     <string name="file_size_bytes">%1$d B</string>
@@ -225,7 +211,6 @@
     <string name="notif_mute">Mute</string>
 
     <!-- ViewModel -->
-    <string name="unknown_sender">Unknown</string>
     <string name="me_sender">Me</string>
     <string name="error_address_nickname_required">Address and nickname are required</string>
     <string name="error_nickname_too_short">Nickname must be at least 3 characters long</string>
@@ -268,7 +253,6 @@
     <string name="battery_optimization">Battery optimization exemption</string>
     <string name="battery_optimization_desc">Exempting the app keeps recording and networking alive in the background (important in power-save modes)</string>
     <string name="battery_optimization_allowed">Exempt</string>
-    <string name="battery_optimization_action">Set</string>
     <string name="app_details_settings">App permissions &amp; auto-start</string>
     <string name="app_details_settings_desc">On Xiaomi/Huawei/OPPO/vivo ROMs, allow auto-start, unrestricted background running and background pop-ups here</string>
 
@@ -326,7 +310,6 @@
     <string name="away_status_dnd_desc">Shows the status and closes the microphone</string>
     <string name="away_message_label">Away message</string>
     <string name="away_message_save">Save</string>
-    <string name="away_marker">Away</string>
     <string name="away_status_change">Change status</string>
     <string name="stream_live">LIVE</string>
     <string name="stream_watch">Watch stream</string>
