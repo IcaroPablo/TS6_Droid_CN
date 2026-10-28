@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -39,6 +40,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.theme.IconSize
 import kotlin.math.roundToInt
 
 @Composable
@@ -71,7 +73,7 @@ fun CropScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, null, tint = Color.White)
+                    Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(IconSize))
                 }
                 Text(stringResource(R.string.crop_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
                 IconButton(onClick = {
@@ -84,7 +86,7 @@ fun CropScreen(
                         ((cropOffset.y + cropH) * sy).roundToInt().coerceAtMost(bitmap.height)
                     )
                 }) {
-                    Icon(Icons.Default.Check, null, tint = Color.White)
+                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(IconSize))
                 }
             }
 

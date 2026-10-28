@@ -5,9 +5,9 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -33,7 +33,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
@@ -62,7 +61,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,9 +74,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -89,9 +87,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.han.R
-import dev.tslib.ConnectionState
 import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AnimeWallpaperState
@@ -100,17 +98,24 @@ import dev.tsdroid.ui.component.CompactTopBar
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.GlassDialog
 import dev.tsdroid.ui.component.GlassMenuItem
+import dev.tsdroid.ui.component.Island
 import dev.tsdroid.ui.component.LiquidGlassNavBar
 import dev.tsdroid.ui.component.LiquidGlassNavBarClearance
 import dev.tsdroid.ui.component.LiquidGlassNavItem
 import dev.tsdroid.ui.component.LiquidGlassPanel
+import dev.tsdroid.ui.component.ServerIcon
+import dev.tsdroid.ui.component.rememberAppearance
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.OnlineGreen
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.viewmodel.ConnectionViewModel
+import dev.tslib.ConnectionState
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -240,15 +245,26 @@ fun ConnectionScreen(
         // Floating tab bar: laid over the content instead of taking a Scaffold.bottomBar slot, so it
         // reserves no height and the content area keeps the whole screen. zIndex keeps it above the
         // Scaffold (drawn later) even though it is declared first.
+        // Home and Settings are the two pages; between them sit two actions: back into the running
+        // session (only while there is one) and adding a server
+        val homeItem = LiquidGlassNavItem(AppIcons.Home, stringResource(R.string.tab_home))
+        val serverItem = LiquidGlassNavItem(AppIcons.Server, stringResource(R.string.nav_server))
+        val addItem = LiquidGlassNavItem(Icons.Default.Add, stringResource(R.string.nav_add))
+        val settingsItem = LiquidGlassNavItem(AppIcons.Settings, stringResource(R.string.tab_settings))
+        val navItems = listOfNotNull(homeItem, serverItem.takeIf { sessionRunning }, addItem, settingsItem)
         LiquidGlassNavBar(
-            items = listOf(
-                LiquidGlassNavItem(AppIcons.Home, stringResource(R.string.tab_home)),
-                LiquidGlassNavItem(AppIcons.Settings, stringResource(R.string.tab_settings)),
-            ),
-            selectedIndex = selectedTab,
+            items = navItems,
+            selectedIndex = navItems.indexOf(if (selectedTab == 0) homeItem else settingsItem),
             onSelect = { index ->
-                selectedTab = index
-                scope.launch { pagerState.animateScrollToPage(index) }
+                when (navItems[index]) {
+                    serverItem -> onConnected()
+                    addItem -> showBottomSheet = true
+                    else -> {
+                        val page = if (navItems[index] == homeItem) 0 else 1
+                        selectedTab = page
+                        scope.launch { pagerState.animateScrollToPage(page) }
+                    }
+                }
             },
             // Frosted like every other surface: it used to be transparent so the wallpaper showed
             // straight through, which left the items floating on the photo with no bar at all.
@@ -268,42 +284,9 @@ fun ConnectionScreen(
                 CompactTopBar(
                     title = if (selectedTab == 0) stringResource(R.string.app_name)
                     else stringResource(R.string.tab_settings),
-                    actions = {
-                        // A session is running but the user is here, so give them the way back into
-                        // it: a connection in the service is not visible anywhere else. It rides in
-                        // the title's row instead of taking a row of its own.
-                        if (sessionRunning) {
-                            RunningSessionPill(
-                                onClick = onConnected,
-                                wallpaper = rememberGlassBackdrop(animeBackground),
-                            )
-                        }
-                    },
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
-            floatingActionButton = {
-                if (selectedTab == 0) {
-                    GlassCard(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clickable { showBottomSheet = true },
-                        wallpaper = rememberGlassBackdrop(animeBackground),
-                        shape = CircleShape,
-                        elevation = 6.dp,
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = stringResource(R.string.manual_connection),
-                            )
-                        }
-                    }
-                }
-            },
         ) { padding ->
             // The tabs are real pages now: swipe between them, and the bar keeps up in both
             // directions. The old hand-rolled alpha/translation swap is gone with it.
@@ -333,40 +316,29 @@ fun ConnectionScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .padding(horizontal = Spacing.Gap)
                                 .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
                         ) {
                             if (connectingAddress != null && bookmarks.none { it.address == connectingAddress }) {
                                 ConnectingCard(wallpaper = rememberGlassBackdrop(animeBackground))
                             }
                             bookmarks.forEachIndexed { index, bookmark ->
-                                    GlassCard(
-                                        modifier = Modifier.fillMaxWidth(),
+                                    Island(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            // The connected / connecting line comes and goes smoothly
+                                            .animateContentSize(),
                                         wallpaper = rememberGlassBackdrop(animeBackground),
                                     ) {
                                         Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            val icon = if (bookmark.iconId != 0L) bookmarkIcons[bookmark.iconId] else null
-                                            if (icon != null) {
-                                                Image(
-                                                    bitmap = icon,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(32.dp),
-                                                    contentScale = ContentScale.Fit,
-                                                )
-                                            } else {
-                                                Icon(
-                                                    AppIcons.Server,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(32.dp),
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                )
-                                            }
+                                            ServerIcon(
+                                                name = bookmark.serverName ?: bookmark.name,
+                                                icon = if (bookmark.iconId != 0L) bookmarkIcons[bookmark.iconId] else null,
+                                            )
                                             Spacer(Modifier.width(12.dp))
                                             // Deliberately no address line: the home list is the screen users
                                             // screenshot most, and a server's address is exactly what should not
@@ -402,16 +374,25 @@ fun ConnectionScreen(
                                                 }
                                             }
                                             FilledTonalButton(
+                                                shape = Shapes.Small,
                                                 onClick = {
-                                                    if (isActive) onConnected()
-                                                    else viewModel.connectBookmark(bookmark, onConnected)
+                                                    when {
+                                                        isActive -> onConnected()
+                                                        isConnectingHere -> {}
+                                                        else -> viewModel.connectBookmark(bookmark, onConnected)
+                                                    }
                                                 },
-                                                enabled = isActive || !isConnecting,
+                                                // Not greyed out while it shows this bookmark's progress,
+                                                // or the spinner would be greyed out with it
+                                                enabled = isActive || isConnectingHere || !isConnecting,
                                             ) {
                                                 if (isConnectingHere) {
                                                     CircularProgressIndicator(
                                                         modifier = Modifier.size(18.dp),
                                                         strokeWidth = 2.dp,
+                                                        // The button's text colour: the default
+                                                        // accent disappears into the tonal button
+                                                        color = LocalContentColor.current,
                                                     )
                                                 } else {
                                                     Text(stringResource(if (isActive) R.string.open_session else R.string.connect))
@@ -434,7 +415,7 @@ fun ConnectionScreen(
                                                     anchorBottom = position.y + coordinates.size.height
                                                 },
                                             ) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = null)
+                                                Icon(Icons.Default.MoreVert, contentDescription = null, modifier = Modifier.size(IconSize))
                                             }
                                         }
                                     }
@@ -462,7 +443,7 @@ fun ConnectionScreen(
                     body = {
                         Text(
                             text = stringResource(R.string.confirm_delete, bookmarkName),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     },
@@ -510,6 +491,7 @@ fun ConnectionScreen(
             // where there is no wallpaper behind it to frost. Same material as the cards, hung from
             // the icon it belongs to.
             menuIndex?.let { index ->
+                val menuAppear = rememberAppearance()
                 Box(modifier = Modifier.fillMaxSize().zIndex(3f)) {
                     Box(
                         modifier = Modifier
@@ -532,9 +514,16 @@ fun ConnectionScreen(
                                     x = (menuAnchorRight - rootSize.width).toInt(),
                                     y = menuAnchorBottom.toInt() + with(density) { 4.dp.roundToPx() },
                                 )
+                            }
+                            // Grows out of the corner its button is in
+                            .graphicsLayer {
+                                alpha = menuAppear.value
+                                scaleX = 0.9f + 0.1f * menuAppear.value
+                                scaleY = 0.9f + 0.1f * menuAppear.value
+                                transformOrigin = TransformOrigin(1f, 0f)
                             },
                         wallpaper = rememberGlassBackdrop(animeBackground),
-                        shape = RoundedCornerShape(18.dp),
+                        shape = Shapes.Medium,
                         elevation = 6.dp,
                         contentPadding = PaddingValues(vertical = 4.dp),
                     ) {
@@ -609,7 +598,7 @@ fun ConnectionScreen(
                             // Keeps the panel above the keyboard while a field is being typed in.
                             .imePadding(),
                         wallpaper = rememberGlassBackdrop(animeBackground),
-                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        shape = Shapes.Sheet,
                         elevation = 10.dp,
                         contentPadding = PaddingValues(0.dp),
                     ) { contentColor ->
@@ -651,7 +640,7 @@ fun ConnectionScreen(
                                 ) {
                                     Text(
                                         stringResource(if (isEditing) R.string.edit_bookmark else R.string.manual_connection),
-                                        style = MaterialTheme.typography.titleLarge,
+                                        style = MaterialTheme.typography.titleMedium,
                                     )
 
                                     OutlinedTextField(
@@ -706,7 +695,7 @@ fun ConnectionScreen(
                                             )
                                         } else {
                                             IconButton(onClick = { viewModel.browseChannels() }, enabled = !isConnecting) {
-                                                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.browse_channels))
+                                                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.browse_channels), modifier = Modifier.size(IconSize))
                                             }
                                         }
                                     },
@@ -722,6 +711,7 @@ fun ConnectionScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Button(
+                                        shape = Shapes.Small,
                                         onClick = {
                                             showBottomSheet = false
                                             viewModel.connect(onConnected)
@@ -739,12 +729,12 @@ fun ConnectionScreen(
                                         Text(stringResource(if (isConnecting) R.string.connecting else R.string.connect))
                                     }
 
-                                    FilledTonalButton(onClick = {
+                                    FilledTonalButton(shape = Shapes.Small, onClick = {
                                         viewModel.saveBookmark()
                                         showBottomSheet = false
                                     }) {
                                         if (!isEditing) {
-                                            Icon(Icons.Default.Star, contentDescription = null)
+                                            Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(IconSize))
                                             Spacer(Modifier.width(4.dp))
                                         }
                                         Text(stringResource(if (isEditing) R.string.save else R.string.add_bookmark))
@@ -762,11 +752,9 @@ fun ConnectionScreen(
 /** Stands in for a bookmark card while a connection typed by hand is being made. */
 @Composable
 private fun ConnectingCard(wallpaper: ImageBitmap?) {
-    GlassCard(modifier = Modifier.fillMaxWidth(), wallpaper = wallpaper) {
+    Island(modifier = Modifier.fillMaxWidth(), wallpaper = wallpaper) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -776,45 +764,3 @@ private fun ConnectingCard(wallpaper: ImageBitmap?) {
     }
 }
 
-/**
- * The way back into a session that is still running in the background.
- *
- * Leaving the server screen no longer disconnects, so the connection has to stay visible from here;
- * it rides in the top bar's action slot rather than in a row of its own.
- */
-@Composable
-private fun RunningSessionPill(
-    onClick: () -> Unit,
-    wallpaper: ImageBitmap?,
-) {
-    GlassCard(
-        modifier = Modifier
-            .padding(end = 8.dp)
-            .clickable(onClick = onClick),
-        wallpaper = wallpaper,
-        shape = CircleShape,
-        elevation = 2.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = stringResource(R.string.session_running),
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.NavigateNext,
-                contentDescription = stringResource(R.string.back_to_session),
-                modifier = Modifier.size(16.dp),
-            )
-        }
-    }
-}

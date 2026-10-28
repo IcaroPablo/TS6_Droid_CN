@@ -2,8 +2,8 @@ package dev.tsdroid.ui.component
 
 import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,11 +29,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tslib.Channel
 import dev.tslib.ChannelTree as JChannelTree
 import dev.tslib.User
-import dev.tsdroid.ui.icon.AppIcons
-import dev.tsdroid.ui.theme.WhisperAmber
 
 sealed class TreeItem {
     data class ChannelNode(val channel: Channel, val depth: Int) : TreeItem()
@@ -84,6 +84,8 @@ fun ChannelTree(
                 is TreeItem.UserNode -> "usr_${item.user.id}"
             }
         }) { item ->
+            // Members joining, leaving and moving between channels slide into place
+            Box(modifier = Modifier.animateItem()) {
             when (item) {
                 is TreeItem.ChannelNode -> ChannelRow(
                     channel = item.channel,
@@ -98,7 +100,9 @@ fun ChannelTree(
                 is TreeItem.UserNode -> UserItem(
                     user = item.user,
                     avatar = item.user.uid?.let { userAvatars[it] },
-                    modifier = Modifier.fillMaxWidth().padding(start = (item.depth * 24 + 32).dp),
+                    // Under the channel's name rather than a further step in: the avatar starts where
+                    // the name does (a channel row's icon and its gap are 32dp)
+                    modifier = Modifier.fillMaxWidth().padding(start = ((item.depth - 1) * 24 + 28).dp),
                     onClick = onUserClick?.let { { it(item.user) } },
                     onLongClick = onUserLongPress?.let { { it(item.user) } },
                     onToggleMute = onUserLongClick?.let { { it(item.user) } },
@@ -111,6 +115,7 @@ fun ChannelTree(
                     isStreaming = item.user.id in streamingUserIds,
                     onWatchStream = onWatchStream?.let { { it(item.user) } },
                 )
+            }
             }
         }
     }
@@ -188,36 +193,36 @@ private fun ChannelRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) {
-                Image(
-                    bitmap = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    contentScale = ContentScale.Fit,
-                )
-            } else {
-                // Empty channels are dimmed, so the ones with people in them stand out
-                Icon(
-                    AppIcons.Channel,
-                    contentDescription = null,
-                    tint = if (isCurrent || userCount > 0) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
-            }
+            ChannelIcon(
+                icon = icon,
+                userCount = userCount,
+                maxClients = channel.maxClients,
+                isCurrent = isCurrent,
+            )
             Spacer(Modifier.width(8.dp))
             Text(
                 text = channel.name,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (isCurrent) FontWeight.SemiBold else null,
                 color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.Unspecified,
                 modifier = Modifier.weight(1f),
             )
+            // Where newcomers land, marked as the desktop client marks it
+            if (channel.isDefault) {
+                Icon(
+                    AppIcons.Home,
+                    contentDescription = stringResource(R.string.channel_default),
+                    modifier = Modifier.size(IconSize),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             // Whole-channel whisper target, marked like the member rows
             if (isWhisperTarget) {
                 Icon(
                     AppIcons.Whisper,
                     contentDescription = stringResource(R.string.whisper_channel_target),
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(IconSize),
                     tint = WhisperAmber,
                 )
                 Spacer(Modifier.width(4.dp))
@@ -228,7 +233,7 @@ private fun ChannelRow(
                 Icon(
                     AppIcons.Lock,
                     contentDescription = stringResource(R.string.channel_password_required),
-                    modifier = Modifier.size(13.dp),
+                    modifier = Modifier.size(IconSize),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(4.dp))

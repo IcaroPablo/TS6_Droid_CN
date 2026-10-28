@@ -1,5 +1,11 @@
 package dev.tsdroid.ui.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -46,6 +52,8 @@ import androidx.compose.ui.unit.sp
 import dev.tsdroid.bridge.LiveStream
 import dev.tsdroid.han.R
 import dev.tsdroid.service.UserGroups
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 import dev.tslib.ChannelGroup
 import dev.tslib.ServerGroup
 import dev.tslib.User
@@ -141,6 +149,7 @@ fun UserPanelSheet(
                 streams.forEach { stream ->
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(
+                        shape = Shapes.Small,
                         onClick = { onWatchStream(stream) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -170,7 +179,7 @@ fun UserPanelSheet(
             ) {
                 Text(
                     text = stringResource(if (isMuted) R.string.unmute_user else R.string.mute_user),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
                 Switch(checked = isMuted, onCheckedChange = { onToggleMute() })
@@ -185,7 +194,7 @@ fun UserPanelSheet(
                 ) {
                     Text(
                         text = stringResource(R.string.whisper_switch_label),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f),
                     )
                     Switch(checked = isWhisperTarget, onCheckedChange = { onToggleWhisper() })
@@ -193,7 +202,7 @@ fun UserPanelSheet(
             }
 
             Spacer(Modifier.height(8.dp))
-            FilledTonalButton(onClick = onPrivateMessage, modifier = Modifier.fillMaxWidth()) {
+            FilledTonalButton(shape = Shapes.Small, onClick = onPrivateMessage, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.private_message))
             }
         }
@@ -214,12 +223,21 @@ fun UserPanelSheet(
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f),
             )
+            // Turns like an island's chevron
+            val turn by animateFloatAsState(if (detailsOpen) 0f else -90f, label = "detailsChevron")
             Icon(
-                if (detailsOpen) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                Icons.Default.KeyboardArrowDown,
                 contentDescription = null,
+                modifier = Modifier.size(IconSize).rotate(turn),
             )
         }
-        if (detailsOpen) UserDetails(user, knownServerGroups, knownChannelGroups)
+        AnimatedVisibility(
+            visible = detailsOpen,
+            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+        ) {
+            Column { UserDetails(user, knownServerGroups, knownChannelGroups) }
+        }
     }
 }
 
@@ -249,7 +267,7 @@ private fun UserDetails(
     Text(
         text = stringResource(R.string.user_server_groups) +
             if (user.serverGroups.isNotEmpty()) " (${user.serverGroups.size})" else "",
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(2.dp))
@@ -286,7 +304,7 @@ private fun UserDetails(
         Spacer(Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.user_channel_group),
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(2.dp))
@@ -361,7 +379,7 @@ private fun VolumeSlider(
     Column {
         Text(
             text = stringResource(R.string.user_volume) + " " + formatDb(db, defaultLabel),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
         )
         Slider(
             value = db,

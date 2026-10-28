@@ -1,6 +1,7 @@
 package dev.tsdroid.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -13,6 +14,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
+/**
+ * The app's text styles. Screens use six of them, one per role, so the same kind of text is the
+ * same size everywhere:
+ * - titleLarge: a screen's title, in its top bar
+ * - titleMedium: a dialog's, sheet's or panel's title
+ * - labelLarge: a section heading inside a panel, and button labels
+ * - bodyLarge: list items and running text (a channel, a person, a setting, a message)
+ * - bodySmall: the secondary line under an item, hints and details
+ * - labelSmall: captions, badges, chips and timestamps
+ */
+/**
+ * Material's own components take their corners from here, so they match the app's: text fields and
+ * menus get an island's corner, chips are pills like the buttons, dialogs and sheets the large one.
+ */
+private val MaterialShapes = androidx.compose.material3.Shapes(
+    extraSmall = RoundedCornerShape(Corners.Medium),
+    small = RoundedCornerShape(percent = 50),
+    medium = RoundedCornerShape(Corners.Medium),
+    large = RoundedCornerShape(Corners.Large),
+    extraLarge = RoundedCornerShape(Corners.Large),
+)
+
 private val AppTypography = Typography(
     displayLarge = TextStyle(fontSize = 57.sp, fontWeight = FontWeight.Normal, lineHeight = 64.sp, letterSpacing = (-0.25).sp),
     displayMedium = TextStyle(fontSize = 45.sp, fontWeight = FontWeight.Normal, lineHeight = 52.sp),
@@ -23,12 +46,12 @@ private val AppTypography = Typography(
     titleLarge = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.15.sp),
     titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.1.sp),
-    bodyLarge = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.5.sp),
+    bodyLarge = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Normal, lineHeight = 22.sp, letterSpacing = 0.25.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp, letterSpacing = 0.25.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal, lineHeight = 16.sp, letterSpacing = 0.4.sp),
+    bodySmall = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Normal, lineHeight = 18.sp, letterSpacing = 0.25.sp),
     labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.1.sp),
     labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.5.sp),
-    labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.5.sp),
+    labelSmall = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.4.sp),
 )
 
 private fun Color.hsl(): Triple<Float, Float, Float> {
@@ -88,7 +111,9 @@ fun generateColorScheme(seed: Color, isDark: Boolean): androidx.compose.material
     val tertiaryContainer = hslToColor(terH, (s * 0.4f).coerceAtMost(1f), if (isDark) 0.25f else 0.9f)
     val onTertiaryContainer = if (isDark) hslToColor(terH, 0.4f, 0.85f) else hslToColor(terH, 0.6f, 0.15f)
 
-    val surface = if (isDark) Color(0xFF1C1B1F) else Color(0xFFFFFBFE)
+    // The page sits a step darker (lighter in the light theme) than surfaceContainer, the colour of
+    // the islands on it, so sections read as rounded blocks with gaps between them.
+    val surface = if (isDark) Color(0xFF141317) else Color(0xFFEFEDF2)
     val onSurface = if (isDark) Color(0xFFE6E1E5) else Color(0xFF1C1B1F)
     val surfaceVariant = if (isDark) Color(0xFF49454F) else Color(0xFFE7E0EC)
     val onSurfaceVariant = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F)
@@ -122,12 +147,12 @@ fun generateColorScheme(seed: Color, isDark: Boolean): androidx.compose.material
             inverseSurface = Color(0xFFE6E1E5),
             inverseOnSurface = Color(0xFF313033),
             inversePrimary = hslToColor(h, (s * 0.8f).coerceAtMost(1f), 0.8f),
-            surfaceDim = Color(0xFF141218),
+            surfaceDim = Color(0xFF141317),
             surfaceBright = Color(0xFF3B383E),
-            surfaceContainerLowest = Color(0xFF0F0D13),
-            surfaceContainerLow = Color(0xFF1D1B20),
-            surfaceContainer = Color(0xFF211F26),
-            surfaceContainerHigh = Color(0xFF2B2930),
+            surfaceContainerLowest = Color(0xFF0F0E12),
+            surfaceContainerLow = Color(0xFF1D1C21),
+            surfaceContainer = Color(0xFF232228),
+            surfaceContainerHigh = Color(0xFF2C2B31),
             surfaceContainerHighest = Color(0xFF36343B),
         )
     } else {
@@ -160,12 +185,12 @@ fun generateColorScheme(seed: Color, isDark: Boolean): androidx.compose.material
             inverseOnSurface = Color(0xFFF4EFF4),
             inversePrimary = hslToColor(h, (s * 0.8f).coerceAtMost(1f), 0.8f),
             surfaceDim = Color(0xFFDED8E1),
-            surfaceBright = Color(0xFFFFFBFE),
+            surfaceBright = Color(0xFFFFFFFF),
             surfaceContainerLowest = Color(0xFFFFFFFF),
-            surfaceContainerLow = Color(0xFFF7F2FA),
-            surfaceContainer = Color(0xFFF3EDF7),
-            surfaceContainerHigh = Color(0xFFECE6F0),
-            surfaceContainerHighest = Color(0xFFE6E0E9),
+            surfaceContainerLow = Color(0xFFFCFBFE),
+            surfaceContainer = Color(0xFFFFFFFF),
+            surfaceContainerHigh = Color(0xFFF6F4F9),
+            surfaceContainerHighest = Color(0xFFECEAF0),
         )
     }
 }
@@ -185,6 +210,7 @@ fun TsDroidTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AppTypography,
+        shapes = MaterialShapes,
         content = content,
     )
 }

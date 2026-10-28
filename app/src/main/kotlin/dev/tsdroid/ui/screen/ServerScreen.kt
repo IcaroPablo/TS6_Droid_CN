@@ -5,128 +5,142 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
-import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.service.WhisperManager
 import dev.tsdroid.service.WhisperRouting
 import dev.tsdroid.service.WhisperTargets
-import dev.tslib.Channel
-import dev.tslib.ConnectionState
-import dev.tslib.User
 import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.AwayStatusSheet
-import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChannelPasswordDialog
+import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChatInput
-import dev.tsdroid.ui.component.NicknameDialog
 import dev.tsdroid.ui.component.ChatView
-import dev.tsdroid.ui.component.CompactTopBar
+import dev.tsdroid.ui.component.ChoicePill
 import dev.tsdroid.ui.component.FileManagerDialog
+import dev.tsdroid.ui.component.FoldableIsland
 import dev.tsdroid.ui.component.GlassCard
 import dev.tsdroid.ui.component.GlassMenuItem
-import dev.tsdroid.ui.component.LiquidGlassPanel
-import dev.tsdroid.ui.component.LocalGlassWallpaper
+import dev.tsdroid.ui.component.Island
+import dev.tsdroid.ui.component.IslandHeaderHeight
+import dev.tsdroid.ui.component.NicknameDialog
+import dev.tsdroid.ui.component.ServerIcon
+import dev.tsdroid.ui.component.ServerInfoContent
 import dev.tsdroid.ui.component.ShareTarget
-import dev.tsdroid.ui.component.StreamChat
+import dev.tsdroid.ui.component.StreamTiles
 import dev.tsdroid.ui.component.StreamViewer
-import dev.tsdroid.ui.component.StreamVoiceControls
-import dev.tsdroid.ui.component.ServerInfoSheet
 import dev.tsdroid.ui.component.UserPanelSheet
+import dev.tsdroid.ui.component.VoiceBar
+import dev.tsdroid.ui.component.VoiceBarState
 import dev.tsdroid.ui.component.WhisperListSheet
-import dev.tsdroid.ui.component.awayStatusColor
 import dev.tsdroid.ui.component.parseSpacer
+import dev.tsdroid.ui.component.rememberAppearance
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.component.rememberUploadPicker
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
 import dev.tsdroid.viewmodel.ServerViewModel
+import dev.tslib.Channel
+import dev.tslib.ConnectionState
+import dev.tslib.User
 import kotlinx.coroutines.flow.StateFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ServerScreen(
     onBackToHome: () -> Unit,
@@ -144,7 +158,6 @@ fun ServerScreen(
     }
     val streamSessions by viewModel.streamSessions.collectAsStateWithLifecycle()
     val streamLandscape by viewModel.streamLandscape.collectAsStateWithLifecycle()
-    val streamChatVisible by viewModel.streamChatVisible.collectAsStateWithLifecycle()
     val channelIcons by viewModel.channelIcons.collectAsStateWithLifecycle()
     val userAvatars by viewModel.avatars.collectAsStateWithLifecycle()
     val serverInfo by viewModel.serverInfo.collectAsStateWithLifecycle()
@@ -179,8 +192,14 @@ fun ServerScreen(
     val reconnectStatus by viewModel.reconnectStatus.collectAsStateWithLifecycle()
     val micStatus by viewModel.micStatus.collectAsStateWithLifecycle()
 
-    var chatOpen by remember { mutableStateOf(false) }
-    var chatEverOpened by remember { mutableStateOf(false) }
+    // The channel list and the chat docked under it can each be folded to their header
+    var channelsOpen by rememberSaveable { mutableStateOf(true) }
+    var chatOpen by rememberSaveable { mutableStateOf(false) }
+    // The chat's share of the room when both are open, set by dragging the border between them
+    var chatFraction by rememberSaveable { mutableFloatStateOf(0.55f) }
+    // Whether the channels island shows the streams being watched rather than the channel list
+    var showStream by rememberSaveable { mutableStateOf(false) }
+    var draggingBorder by remember { mutableStateOf(false) }
     var chatTab by remember { mutableIntStateOf(0) }
     // Shared by the chat panel and the stream viewer's chat, and kept across
     // the stream viewer's rotation, which recreates the activity
@@ -260,9 +279,8 @@ fun ServerScreen(
         // In a folder, back goes up to its parent first
         if (currentFilePath != "/") viewModel.navigateUp() else viewModel.closeFileManager()
     }
-    BackHandler(enabled = chatOpen) { chatOpen = false }
     BackHandler(enabled = serverMenuOpen) { serverMenuOpen = false }
-    // A closed chat must not keep the keyboard up for its hidden input
+    // A folded chat must not keep the keyboard up for its hidden input
     val focusManager = LocalFocusManager.current
     LaunchedEffect(chatOpen) {
         if (!chatOpen) focusManager.clearFocus()
@@ -317,14 +335,26 @@ fun ServerScreen(
     // Per-user panel (volume / mute / info) — opened by long-pressing a row
     var userPanelUserId by remember { mutableStateOf<Int?>(null) }
 
-    if (showServerInfo) {
-        ServerInfoSheet(
-            info = serverInfo,
-            address = serverAddressLabel,
-            wallpaper = glassWallpaper,
-            onDismiss = { showServerInfo = false },
-        )
-    }
+    // The voice controls, the same bar here and in the stream viewer
+    val voiceState = VoiceBarState(
+        isMicMuted = isMicMuted,
+        isOutputMuted = isOutputMuted,
+        isPushToTalk = isPttMode,
+        onToggleMic = viewModel::toggleMicMute,
+        onPushToTalk = viewModel::setPushToTalk,
+        onToggleOutput = viewModel::toggleOutputMute,
+        onToggleMode = viewModel::toggleVoiceMode,
+        whisperReady = whisperHasTargets,
+        // The empty check happens in the ViewModel, at press time
+        onWhisperHold = {
+            if (!viewModel.beginWhisperHold()) {
+                Toast.makeText(context, context.getString(R.string.whisper_need_targets), Toast.LENGTH_SHORT).show()
+            }
+        },
+        onWhisperRelease = { viewModel.endWhisperHold() },
+        awayStatus = awayStatus,
+        onOpenStatus = { awaySheetOpen = true },
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         AnimeBackground(enabled = animeBackground)
@@ -332,38 +362,33 @@ fun ServerScreen(
         Scaffold(
             containerColor = Color.Transparent,
         topBar = {
-            Column {
-                CompactTopBar(
-                    title = serverInfo?.name ?: stringResource(R.string.server),
-                    // Leaving the server screen is not disconnecting: the session keeps running in
-                    // the service, so it can be picked up again from the home screen.
-                    navigationIcon = {
-                        IconButton(onClick = onBackToHome) {
-                            Icon(
-                                AppIcons.Home,
-                                contentDescription = stringResource(R.string.back_to_home),
-                            )
-                        }
-                    },
-                    actions = {
-                        // 密聊: green while a target set is live, and the way into
-                        // the whisper list editor (desktop's whisper list).
-                        IconButton(onClick = { whisperSheetOpen = true }) {
-                            Icon(
-                                AppIcons.Whisper,
-                                contentDescription = stringResource(R.string.whisper_list_title),
-                                tint = if (whisperHasTargets) WhisperAmber
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // Server info, files and disconnect are occasional: they share a menu
-                        // instead of three unlabelled icons, and disconnecting takes a second
-                        // tap like it does in the floating window.
-                        IconButton(onClick = { serverMenuOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
-                        }
-                    },
-                )
+            Column(
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(start = Spacing.Gap, end = Spacing.Gap, top = Spacing.Gap),
+            ) {
+                ServerBar(
+                    serverName = serverInfo?.name ?: stringResource(R.string.server),
+                    serverIcon = serverInfo?.iconId?.takeIf { it != 0L }?.let { channelIcons[it] },
+                    infoOpen = showServerInfo,
+                    onToggleInfo = { showServerInfo = !showServerInfo },
+                    whisperActive = whisperHasTargets,
+                    onHome = onBackToHome,
+                    onWhisperList = { whisperSheetOpen = true },
+                    onMenu = { serverMenuOpen = true },
+                    wallpaper = glassWallpaper,
+                ) {
+                    ServerInfoContent(
+                        info = serverInfo,
+                        address = serverAddressLabel,
+                        clientsOnline = users.size,
+                        channelCount = channels.size,
+                        modifier = Modifier
+                            .heightIn(max = 320.dp)
+                            .padding(start = Spacing.Inner, end = Spacing.Inner, bottom = Spacing.Inner),
+                    )
+                }
+                Spacer(Modifier.height(Spacing.Gap))
                 // Connection / microphone health, so a silent failure is never invisible again
                 if (reconnectStatus.active) {
                     StatusBanner(
@@ -384,234 +409,14 @@ fun ServerScreen(
             }
         },
         bottomBar = {
-            Box(
+            VoiceBar(
+                state = voiceState,
+                wallpaper = glassWallpaper,
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                // The controls used to float straight on the wallpaper with no panel at all, so
-                // their contrast was pure luck. They now sit on a floating glass bar.
-                LiquidGlassPanel(
-                    modifier = Modifier.fillMaxWidth(),
-                    wallpaper = glassWallpaper,
-                    shape = RoundedCornerShape(28.dp),
-                    elevation = 6.dp,
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                ) {
-                    // The box around the panel already clears the navigation bar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // 状态 entry where the desktop client keeps its status menu:
-                        // the dot is the current state, one tap opens the sheet.
-                        IconButton(onClick = { awaySheetOpen = true }) {
-                            Box(
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .border(
-                                        width = 1.5.dp,
-                                        color = awayStatusColor(awayStatus).copy(alpha = 0.65f),
-                                        shape = CircleShape,
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .background(awayStatusColor(awayStatus), CircleShape),
-                                )
-                            }
-                        }
-
-                        // Chat FAB with badge
-                        Box {
-                            IconButton(onClick = {
-                                chatOpen = !chatOpen
-                            }) {
-                                Icon(
-                                    AppIcons.Sms,
-                                    contentDescription = stringResource(R.string.chat),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                            if (totalUnread > 0) {
-                                Badge(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .offset(x = (-4).dp, y = 4.dp),
-                                ) {
-                                    Text("$totalUnread")
-                                }
-                            }
-                        }
-
-                        // Hold-to-whisper microphone, immediately left of the main
-                        // one: a second push-to-talk that only reaches the whisper
-                        // list, so nothing has to be switched on beforehand.
-                        WhisperHoldMic(
-                            enabled = whisperHasTargets,
-                            // The empty check happens in the ViewModel, at press
-                            // time: this gesture handler is created once and would
-                            // otherwise keep a stale "no targets" answer forever.
-                            onHold = {
-                                if (!viewModel.beginWhisperHold()) {
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.whisper_need_targets),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            },
-                            onRelease = { viewModel.endWhisperHold() },
-                        )
-
-                        // Center button: PTT or Mute depending on MODE (not mute state)
-                        if (isPttMode) {
-                            // PTT mode: hold to talk — a glass circle whose pressed state is carried
-                            // by the icon tint and the rim, not by an opaque fill.
-                            var isPressed by remember { mutableStateOf(false) }
-                            GlassCard(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onPress = {
-                                                isPressed = true
-                                                viewModel.setPushToTalk(true)
-                                                tryAwaitRelease()
-                                                viewModel.setPushToTalk(false)
-                                                isPressed = false
-                                            },
-                                        )
-                                    },
-                                wallpaper = glassWallpaper,
-                                shape = CircleShape,
-                                elevation = 4.dp,
-                            ) {
-                                val pttTint = if (isPressed) MaterialTheme.colorScheme.primary
-                                    else LocalContentColor.current.copy(alpha = 0.88f)
-                                val pttRim = if (isPressed) MaterialTheme.colorScheme.primary
-                                    else LocalContentColor.current.copy(alpha = 0.30f)
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .border(
-                                            width = if (isPressed) 2.dp else 1.dp,
-                                            color = pttRim,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(
-                                            AppIcons.MicOn,
-                                            contentDescription = stringResource(R.string.push_to_talk),
-                                            modifier = Modifier.size(28.dp),
-                                            tint = pttTint,
-                                        )
-                                        Text(
-                                            stringResource(R.string.ptt),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = pttTint,
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            // Hands-free modes: a plain mute switch that keeps the mode, labelled with
-                            // what a tap will do. The colour is carried by the icon tint and the rim.
-                            // Deafened (microphone and speakers both off) reads as one state, and a
-                            // tap brings both back, as in the desktop client: two "Unmute" buttons
-                            // side by side left it unclear which one to press.
-                            val deafened = isMicMuted && isOutputMuted
-                            val muteTint = if (isMicMuted) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error
-                            GlassCard(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clickable {
-                                        if (deafened) viewModel.toggleOutputMute()
-                                        viewModel.toggleMicMute()
-                                    },
-                                wallpaper = glassWallpaper,
-                                shape = CircleShape,
-                                elevation = 4.dp,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .border(
-                                            width = 1.5.dp,
-                                            color = muteTint,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(
-                                            when {
-                                                deafened -> AppIcons.SpeakerOff
-                                                isMicMuted -> AppIcons.MicOn
-                                                else -> AppIcons.MicOff
-                                            },
-                                            contentDescription = stringResource(
-                                                when {
-                                                    deafened -> R.string.voice_undeafen
-                                                    isMicMuted -> R.string.unmute_mic
-                                                    else -> R.string.mute_mic
-                                                },
-                                            ),
-                                            modifier = Modifier.size(28.dp),
-                                            tint = muteTint,
-                                        )
-                                        Text(
-                                            stringResource(
-                                                when {
-                                                    deafened -> R.string.voice_undeafen
-                                                    isMicMuted -> R.string.notif_unmute
-                                                    else -> R.string.mute
-                                                },
-                                            ),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = muteTint,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Switches between push to talk and an open microphone (the
-                        // three-way choice, voice activation included, lives in
-                        // Settings). It shows the mode a tap switches to, so it
-                        // never looks like a second mute button.
-                        IconButton(onClick = { viewModel.toggleVoiceMode() }) {
-                            Icon(
-                                if (isPttMode) Icons.Default.RecordVoiceOver else Icons.Default.TouchApp,
-                                contentDescription = stringResource(
-                                    R.string.mic_mode_switch_to,
-                                    stringResource(if (isPttMode) R.string.mic_mode_open else R.string.push_to_talk),
-                                ),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-
-                        // Toggle Output Mute (Deafen)
-                        IconButton(onClick = { viewModel.toggleOutputMute() }) {
-                            Icon(
-                                if (isOutputMuted) AppIcons.SpeakerOff else AppIcons.SpeakerOn,
-                                contentDescription = stringResource(if (isOutputMuted) R.string.voice_undeafen else R.string.voice_deafen),
-                                tint = if (isOutputMuted) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
-            }
+                    .padding(Spacing.Gap),
+            )
         },
     ) { padding ->
         Box(
@@ -621,9 +426,96 @@ fun ServerScreen(
                 // The bars already clear the status and navigation bars: the
                 // panels below must not do it a second time, and the keyboard
                 // only has to push them up by what it covers beyond the bottom bar
-                .consumeWindowInsets(padding),
+                .consumeWindowInsets(padding)
+                // Shrinks above the keyboard, so the chat input stays in view
+                // without the window sliding the top bar off the screen
+                .imePadding()
+                .padding(horizontal = Spacing.Gap),
         ) {
-            // Channel tree —full screen
+            // Two islands: the channels and the chat. Each folds down to its header; their heights
+            // are worked out here and animated, so folding one hands its room to the other. With
+            // both open, the handle between them moves the border.
+            val imeVisible = WindowInsets.isImeVisible
+            val density = LocalDensity.current
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            // What the two islands share: everything but the gap between them
+            val shared = (maxHeight - Spacing.Gap).coerceAtLeast(IslandHeaderHeight * 2)
+            // Neither island can be dragged smaller than its header and a few rows
+            val minFraction = ((IslandHeaderHeight + 72.dp) / shared).coerceAtMost(0.5f)
+            val fraction = (if (imeVisible) maxOf(chatFraction, 0.75f) else chatFraction)
+                .coerceIn(minFraction, 1f - minFraction)
+            val chatShare = shared * fraction
+            val channelsTarget = when {
+                channelsOpen && chatOpen -> shared - chatShare
+                channelsOpen -> shared - IslandHeaderHeight
+                else -> IslandHeaderHeight
+            }
+            val chatTarget = when {
+                chatOpen && channelsOpen -> chatShare
+                chatOpen -> shared - IslandHeaderHeight
+                else -> IslandHeaderHeight
+            }
+            // Folding animates; dragging follows the finger
+            val heightSpec = if (draggingBorder) snap() else spring<Dp>(stiffness = Spring.StiffnessMediumLow)
+            val channelsHeight by animateDpAsState(channelsTarget, heightSpec, label = "channelsHeight")
+            val chatHeight by animateDpAsState(chatTarget, heightSpec, label = "chatHeight")
+            Column(modifier = Modifier.fillMaxSize()) {
+            val watching = streamSessions.isNotEmpty()
+            FoldableIsland(
+                title = stringResource(R.string.server_channels),
+                icon = AppIcons.Channel,
+                expanded = channelsOpen,
+                onToggle = { channelsOpen = !channelsOpen },
+                // While a stream is watched, it shares this island with the channel list
+                actions = if (watching) {
+                    {
+                        ChoicePill(
+                            label = stringResource(R.string.channels_list),
+                            selected = !showStream,
+                            onClick = { showStream = false },
+                        )
+                        ChoicePill(
+                            label = stringResource(R.string.stream_tab),
+                            selected = showStream,
+                            onClick = { showStream = true },
+                        )
+                    }
+                } else {
+                    null
+                },
+                wallpaper = glassWallpaper,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(channelsHeight),
+                summary = {
+                    Text(
+                        text = stringResource(R.string.people_online, users.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalContentColor.current.copy(alpha = 0.72f),
+                    )
+                },
+            ) {
+            if (watching && showStream) {
+                val watched = streamSessions.map { it.stream.id }.toSet()
+                StreamTiles(
+                    sessions = streamSessions,
+                    nameOf = { id -> users.find { it.id == id }?.nickname ?: "" },
+                    addable = if (streamSessions.size < ServerViewModel.MAX_WATCHED_STREAMS) {
+                        streams.values.filter { it.id !in watched }
+                    } else {
+                        emptyList()
+                    },
+                    onAdd = { viewModel.watchStream(it.id) },
+                    onVolumeChange = viewModel::setStreamVolume,
+                    onRetryWithTeamSpeakStun = viewModel::retryStreamWithTeamSpeakStun,
+                    onCloseStream = { viewModel.stopWatching(it) },
+                    onFullscreen = viewModel::toggleStreamLandscape,
+                    onCloseAll = { viewModel.stopWatching() },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
+                )
+            } else
             ChannelTree(
                 channels = channels,
                 users = users,
@@ -679,8 +571,71 @@ fun ServerScreen(
                 selfId = viewModel.myClientId,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp),
+                    .padding(start = Spacing.Inner, end = Spacing.Inner, bottom = Spacing.Inner),
             )
+            }
+            Spacer(Modifier.height(Spacing.Gap))
+            ChatPanel(
+                recipientName = pmTarget?.nickname,
+                expanded = chatOpen,
+                onToggleExpanded = { chatOpen = !chatOpen },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(chatHeight),
+                chatTab = chatTab,
+                onTabChange = { chatTab = it },
+                wallpaper = glassWallpaper,
+                channelMessages = channelMessages,
+                privateMessages = pmTargetUid?.let { uid ->
+                    privateMessages[uid] ?: emptyList()
+                } ?: privateMessages.values.flatten().sortedBy { it.timestamp },
+                latestMessage = (channelMessages + privateMessages.values.flatten())
+                    .maxByOrNull { it.timestamp },
+                messageText = messageText,
+                onMessageChange = { messageText = it },
+                pmTarget = pmTarget,
+                pmConversationUsers = pmConversationUsers,
+                onSelectPmUser = { uid -> pmTargetUid = uid },
+                onClearPmTarget = { pmTargetUid = null },
+                onSend = {
+                    when {
+                        // While密聊 is live the microphone is on the target
+                        // set, so the text follows the voice: it goes to
+                        // those same people as private messages.
+                        whisperHasTargets -> viewModel.sendWhisperMessage(messageText)
+                        chatTab == 0 -> viewModel.sendChannelMessage(messageText)
+                        else -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
+                    }
+                    messageText = ""
+                },
+                unreadChannel = unreadChannel,
+                unreadPrivateTotal = totalUnreadPrivate,
+                unreadPrivatePerUser = unreadPrivate,
+                showLinkThumbnails = showLinkThumbnails,
+                autoLoadImages = autoLoadImages,
+                canUploadFiles = (channelPermissions and dev.tslib.Channel.PERM_FILE_UPLOAD) != 0L,
+                onUploadFile = { fileName, data ->
+                    viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
+                },
+                onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
+                isWhisperActive = whisperHasTargets,
+                whisperTargetName = whisperLabel,
+            )
+            }
+            if (channelsOpen && chatOpen) {
+                BorderHandle(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = channelsHeight + Spacing.Gap / 2 - BorderHandleHeight / 2),
+                    onDragStarted = { draggingBorder = true },
+                    onDrag = { deltaPx ->
+                        val delta = with(density) { deltaPx.toDp() }
+                        chatFraction = (fraction - delta / shared).coerceIn(minFraction, 1f - minFraction)
+                    },
+                    onDragStopped = { draggingBorder = false },
+                )
+            }
+            }
 
             // File manager —slides up from bottom, fills content area
             val fileManagerProgress by animateFloatAsState(
@@ -692,7 +647,6 @@ fun ServerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .imePadding()
                         .graphicsLayer { translationY = size.height * fileManagerProgress },
                 ) {
                     FileManagerDialog(
@@ -727,74 +681,11 @@ fun ServerScreen(
                 }
             }
 
-            // Chat panel —slides up from bottom, fills content area
-            // Once opened, stay composed so re-opening is instant (no recomposition)
-            if (chatOpen) chatEverOpened = true
-            val chatProgress by animateFloatAsState(
-                targetValue = if (chatOpen) 0f else 1f,
-                animationSpec = tween(300),
-                label = "chat",
-            )
-            if (chatEverOpened) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        // Shrinks above the keyboard, so the input stays in view
-                        // without the window sliding the top bar off the screen
-                        .imePadding()
-                        .clipToBounds()
-                        .graphicsLayer { translationY = size.height * chatProgress },
-                ) {
-                    ChatPanel(
-                        chatTab = chatTab,
-                        onTabChange = { chatTab = it },
-                        wallpaper = glassWallpaper,
-                        channelMessages = channelMessages,
-                        privateMessages = pmTargetUid?.let { uid ->
-                            privateMessages[uid] ?: emptyList()
-                        } ?: privateMessages.values.flatten().sortedBy { it.timestamp },
-                        messageText = messageText,
-                        onMessageChange = { messageText = it },
-                        pmTarget = pmTarget,
-                        pmConversationUsers = pmConversationUsers,
-                        onSelectPmUser = { uid -> pmTargetUid = uid },
-                        onClearPmTarget = { pmTargetUid = null },
-                        onSend = {
-                            when {
-                                // While密聊 is live the microphone is on the target
-                                // set, so the text follows the voice: it goes to
-                                // those same people as private messages.
-                                whisperHasTargets -> viewModel.sendWhisperMessage(messageText)
-                                chatTab == 0 -> viewModel.sendChannelMessage(messageText)
-                                else -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
-                            }
-                            messageText = ""
-                        },
-                        onClose = { chatOpen = false },
-                        unreadChannel = unreadChannel,
-                        unreadPrivateTotal = totalUnreadPrivate,
-                        unreadPrivatePerUser = unreadPrivate,
-                        showLinkThumbnails = showLinkThumbnails,
-                        autoLoadImages = autoLoadImages,
-                        canUploadFiles = (channelPermissions and dev.tslib.Channel.PERM_FILE_UPLOAD) != 0L,
-                        onUploadFile = { fileName, data ->
-                            viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
-                        },
-                        onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
-                        isWhisperActive = whisperHasTargets,
-                        whisperTargetName = whisperLabel,
-                    )
-                }
-            }
         }
 
         if (serverMenuOpen) {
             ServerMenu(
                 wallpaper = glassWallpaper,
-                onServerInfo = {
-                    serverMenuOpen = false
-                    showServerInfo = true
-                },
                 onFiles = {
                     serverMenuOpen = false
                     viewModel.toggleFileManager()
@@ -925,9 +816,23 @@ fun ServerScreen(
         },
     )
 
-    // The stream viewer, and the landscape its rotate button asks for. The
-    // choice lives in the view model: rotating recreates the activity.
-    if (streamSessions.isNotEmpty()) {
+    // Streams are watched in the channels island; a new one brings it forward, and the island
+    // goes back to the channel list when the last one closes
+    val watchingCount = streamSessions.size
+    var previousWatchingCount by remember { mutableIntStateOf(watchingCount) }
+    LaunchedEffect(watchingCount) {
+        if (watchingCount > previousWatchingCount) {
+            showStream = true
+            channelsOpen = true
+        }
+        if (watchingCount == 0) showStream = false
+        previousWatchingCount = watchingCount
+    }
+
+    // Full screen, in landscape, when the island's full-screen button asks for it. The choice
+    // lives in the view model: rotating recreates the activity.
+    val fullscreen = streamSessions.isNotEmpty() && streamLandscape
+    if (fullscreen) {
         val watched = streamSessions.map { it.stream.id }.toSet()
         StreamViewer(
             sessions = streamSessions,
@@ -941,43 +846,28 @@ fun ServerScreen(
             onAdd = { viewModel.watchStream(it.id) },
             onRetryWithTeamSpeakStun = viewModel::retryStreamWithTeamSpeakStun,
             onCloseStream = { viewModel.stopWatching(it) },
-            chat = StreamChat(
-                messages = channelMessages,
-                showLinkThumbnails = showLinkThumbnails,
-                autoLoadImages = autoLoadImages,
-                onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
-                visible = streamChatVisible,
-                onToggle = viewModel::toggleStreamChat,
-                text = messageText,
-                onTextChange = { messageText = it },
-                whisperTargetName = whisperLabel.takeIf { whisperHasTargets },
-                onSend = {
-                    // Like the chat panel's channel tab: while whispering, the
-                    // text follows the voice to the whisper targets
-                    if (whisperHasTargets) {
-                        viewModel.sendWhisperMessage(messageText)
-                    } else {
-                        viewModel.sendChannelMessage(messageText)
-                    }
-                    messageText = ""
-                },
-            ),
-            voice = StreamVoiceControls(
-                isMicMuted = isMicMuted,
-                isOutputMuted = isOutputMuted,
-                isPushToTalk = isPttMode,
-                onToggleMic = viewModel::toggleMicMute,
-                onPushToTalk = viewModel::setPushToTalk,
-                onToggleOutput = viewModel::toggleOutputMute,
+            voice = VoiceBarState(
+                isMicMuted = voiceState.isMicMuted,
+                isOutputMuted = voiceState.isOutputMuted,
+                isPushToTalk = voiceState.isPushToTalk,
+                onToggleMic = voiceState.onToggleMic,
+                onPushToTalk = voiceState.onPushToTalk,
+                onToggleOutput = voiceState.onToggleOutput,
+                onToggleMode = voiceState.onToggleMode,
+                whisperReady = voiceState.whisperReady,
+                onWhisperHold = voiceState.onWhisperHold,
+                onWhisperRelease = voiceState.onWhisperRelease,
+                // The status sheet opens in the main window, behind the viewer
+                awayStatus = voiceState.awayStatus,
             ),
             onRotate = viewModel::toggleStreamLandscape,
-            onClose = { viewModel.stopWatching() },
+            // Back to the island, where the streams keep playing
+            onClose = viewModel::toggleStreamLandscape,
         )
     }
-    val watching = streamSessions.isNotEmpty()
-    LaunchedEffect(watching && streamLandscape) {
+    LaunchedEffect(fullscreen) {
         context.findActivity()?.requestedOrientation =
-            if (watching && streamLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
@@ -1022,11 +912,19 @@ fun ServerScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatPanel(
+    /** Whom the private tab writes to, if anyone is chosen */
+    recipientName: String?,
+    /** Unfolded; folded, only the header with the latest message shows */
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    modifier: Modifier = Modifier,
     chatTab: Int,
     onTabChange: (Int) -> Unit,
     wallpaper: ImageBitmap? = null,
     channelMessages: List<ChatMessage>,
     privateMessages: List<ChatMessage>,
+    /** Shown on the folded header */
+    latestMessage: ChatMessage?,
     messageText: String,
     onMessageChange: (String) -> Unit,
     pmTarget: User?,
@@ -1034,7 +932,6 @@ fun ChatPanel(
     onSelectPmUser: (String) -> Unit,
     onClearPmTarget: () -> Unit,
     onSend: () -> Unit,
-    onClose: () -> Unit,
     unreadChannel: Int,
     unreadPrivateTotal: Int,
     unreadPrivatePerUser: Map<String, Int>,
@@ -1047,136 +944,74 @@ fun ChatPanel(
     whisperTargetName: String? = null,
 ) {
     val pickUpload = rememberUploadPicker(onUploadFile)
-    // Full-screen glass panel: this used to be a near-opaque white slab, the cheapest-looking
-    // surface in the app. `contentColor` is derived from the wallpaper actually behind the glass,
-    // so the children keep their contrast on any backdrop; nothing else about them changes.
-    LiquidGlassPanel(
-        modifier = Modifier.fillMaxSize(),
+    val unread = unreadChannel + unreadPrivateTotal
+    // An island like the channel list above it, folding the same way. Folded, its header carries
+    // the latest message and the unread count.
+    FoldableIsland(
+        title = stringResource(R.string.chat),
+        icon = AppIcons.Sms,
+        expanded = expanded,
+        onToggle = onToggleExpanded,
+        modifier = modifier,
         wallpaper = wallpaper,
-        shape = RoundedCornerShape(0.dp),
-        elevation = 0.dp,
-        contentPadding = PaddingValues(0.dp),
-    ) { contentColor ->
-        CompositionLocalProvider(
-            LocalContentColor provides contentColor,
-            LocalGlassWallpaper provides wallpaper,
-        ) {
+        summary = {
+            Text(
+                text = latestMessage?.let { "${it.sender}: ${it.text}" } ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalContentColor.current.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (unread > 0) {
+                Spacer(Modifier.width(8.dp))
+                Badge { Text("$unread") }
+            }
+        },
+        // Unfolded, the header holds the two conversations instead of a tab row of its own
+        // The header spaces them by the island gap, like the channels island's pills
+        actions = {
+            ChoicePill(
+                label = stringResource(R.string.tab_channel),
+                selected = chatTab == 0,
+                unread = unreadChannel,
+                onClick = { onTabChange(0) },
+            )
+            ChoicePill(
+                label = stringResource(R.string.tab_private),
+                selected = chatTab == 1,
+                unread = unreadPrivateTotal,
+                onClick = { onTabChange(1) },
+            )
+        },
+    ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp),
+                    .padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
             ) {
-                // Header: tabs + close
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TabRow(
-                        selectedTabIndex = chatTab,
-                        modifier = Modifier.weight(1f),
-                        containerColor = Color.Transparent,
-                    ) {
-                        Tab(
-                            selected = chatTab == 0,
-                            onClick = { onTabChange(0) },
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(stringResource(R.string.tab_channel))
-                                    if (unreadChannel > 0) {
-                                        Spacer(Modifier.width(4.dp))
-                                        Badge { Text("$unreadChannel") }
-                                    }
-                                }
-                            },
-                        )
-                        Tab(
-                            selected = chatTab == 1,
-                            onClick = { onTabChange(1) },
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(stringResource(R.string.tab_private))
-                                    if (unreadPrivateTotal > 0) {
-                                        Spacer(Modifier.width(4.dp))
-                                        Badge { Text("$unreadPrivateTotal") }
-                                    }
-                                }
-                            },
-                        )
-                    }
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
-                    }
-                }
-
                 // PM conversation selector
                 if (chatTab == 1 && pmConversationUsers.isNotEmpty()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            .padding(bottom = Spacing.Gap),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.Gap),
                     ) {
-                        // "All" chip — the selected container is a small glass pill, not an
-                        // opaque primary/secondary container fill.
-                        GlassFilterChip(selected = pmTarget == null, wallpaper = wallpaper) {
-                            val chipColor = if (pmTarget == null) LocalContentColor.current
-                                else LocalContentColor.current.copy(alpha = 0.78f)
-                            FilterChip(
-                                selected = pmTarget == null,
-                                onClick = { onClearPmTarget() },
-                                label = {
-                                    Text(stringResource(R.string.filter_all), color = chipColor)
-                                },
-                                leadingIcon = if (pmTarget == null) {
-                                    {
-                                        Icon(
-                                            AppIcons.Sms,
-                                            null,
-                                            Modifier.size(16.dp),
-                                            tint = chipColor,
-                                        )
-                                    }
-                                } else null,
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color.Transparent,
-                                ),
-                            )
-                        }
-                        // One chip per conversation peer (keyed by uid)
+                        ChoicePill(
+                            label = stringResource(R.string.filter_all),
+                            selected = pmTarget == null,
+                            onClick = onClearPmTarget,
+                        )
+                        // One pill per conversation peer (keyed by uid)
                         pmConversationUsers.forEach { (peerKey, nickname) ->
-                            val isSelected = pmTarget?.uid == peerKey
-                            val userUnread = unreadPrivatePerUser[peerKey] ?: 0
-                            GlassFilterChip(selected = isSelected, wallpaper = wallpaper) {
-                                val chipColor = if (isSelected) LocalContentColor.current
-                                    else LocalContentColor.current.copy(alpha = 0.78f)
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { onSelectPmUser(peerKey) },
-                                    label = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(nickname, color = chipColor)
-                                            if (userUnread > 0) {
-                                                Spacer(Modifier.width(4.dp))
-                                                Badge { Text("$userUnread") }
-                                            }
-                                        }
-                                    },
-                                    leadingIcon = if (isSelected) {
-                                        {
-                                            Icon(
-                                                Icons.Default.Person,
-                                                null,
-                                                Modifier.size(16.dp),
-                                                tint = chipColor,
-                                            )
-                                        }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color.Transparent,
-                                    ),
-                                )
-                            }
+                            ChoicePill(
+                                label = nickname,
+                                selected = pmTarget?.uid == peerKey,
+                                onClick = { onSelectPmUser(peerKey) },
+                                unread = unreadPrivatePerUser[peerKey] ?: 0,
+                            )
                         }
                     }
                 }
@@ -1197,9 +1032,11 @@ fun ChatPanel(
                     showLinkThumbnails = showLinkThumbnails,
                     autoLoadImages = autoLoadImages,
                     onDownload = onDownload,
-                    emptyText = stringResource(
-                        if (chatTab == 0) R.string.chat_empty_channel else R.string.chat_empty_private,
-                    ),
+                    emptyText = when {
+                        chatTab == 0 -> stringResource(R.string.chat_empty_channel)
+                        recipientName != null -> stringResource(R.string.chat_empty_private_with, recipientName)
+                        else -> stringResource(R.string.chat_empty_private)
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -1235,32 +1072,10 @@ fun ChatPanel(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
     }
 }
 
-/**
- * Selected filter chips sit on a small glass pill instead of the previous opaque
- * primary/secondary container fill. The chip's own container stays transparent, and the chip's
- * label/icon colours are set explicitly to `LocalContentColor` at the call site, so the selected
- * state reads as "brighter label on glass" and the unselected one stays flat on the panel glass.
- */
-@Composable
-private fun GlassFilterChip(
-    selected: Boolean,
-    wallpaper: ImageBitmap?,
-    chip: @Composable () -> Unit,
-) {
-    if (selected) {
-        GlassCard(
-            wallpaper = wallpaper,
-            shape = RoundedCornerShape(8.dp),
-            elevation = 2.dp,
-        ) { chip() }
-    } else {
-        chip()
-    }
-}
+
 
 /**
  * The top bar's menu, hung under its ⋯ button. Drawn in place like the bookmark menu on the home
@@ -1269,11 +1084,11 @@ private fun GlassFilterChip(
 @Composable
 private fun ServerMenu(
     wallpaper: ImageBitmap?,
-    onServerInfo: () -> Unit,
     onFiles: () -> Unit,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val menuAppear = rememberAppearance()
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -1289,15 +1104,21 @@ private fun ServerMenu(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 48.dp, end = 8.dp)
-                .width(200.dp),
+                .padding(top = Spacing.Gap + ServerBarHeight, end = Spacing.Gap)
+                .width(200.dp)
+                .graphicsLayer {
+                    alpha = menuAppear.value
+                    scaleX = 0.9f + 0.1f * menuAppear.value
+                    scaleY = 0.9f + 0.1f * menuAppear.value
+                    // Grows out of the corner its button is in
+                    transformOrigin = TransformOrigin(1f, 0f)
+                },
             wallpaper = wallpaper,
-            shape = RoundedCornerShape(18.dp),
+            shape = Shapes.Medium,
             elevation = 6.dp,
             contentPadding = PaddingValues(vertical = 4.dp),
         ) {
             Column {
-                GlassMenuItem(AppIcons.Info, stringResource(R.string.server_info), onClick = onServerInfo)
                 GlassMenuItem(AppIcons.File, stringResource(R.string.file_manager), onClick = onFiles)
                 GlassMenuItem(
                     icon = AppIcons.Exit,
@@ -1310,6 +1131,126 @@ private fun ServerMenu(
     }
 }
 
+/** Height of the server bar's row. */
+private val ServerBarHeight = 52.dp
+
+/**
+ * The server screen's top bar, as an island: home, the server's icon and name, the whisper list and
+ * the menu. Tapping the name unfolds the server's details inside the same island, and tapping it
+ * again folds them away.
+ */
+@Composable
+private fun ServerBar(
+    serverName: String,
+    serverIcon: ImageBitmap?,
+    infoOpen: Boolean,
+    onToggleInfo: () -> Unit,
+    whisperActive: Boolean,
+    onHome: () -> Unit,
+    onWhisperList: () -> Unit,
+    onMenu: () -> Unit,
+    wallpaper: ImageBitmap?,
+    info: @Composable () -> Unit,
+) {
+    val chevronTurn by animateFloatAsState(if (infoOpen) 180f else 0f, label = "serverInfoChevron")
+    Island(modifier = Modifier.fillMaxWidth(), wallpaper = wallpaper, padded = false) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ServerBarHeight)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Leaving the server screen is not disconnecting: the session keeps running in
+            // the service, so it can be picked up again from the home screen.
+            IconButton(onClick = onHome) {
+                Icon(AppIcons.Home, contentDescription = stringResource(R.string.back_to_home), modifier = Modifier.size(IconSize))
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(Shapes.Small)
+                    .clickable(onClick = onToggleInfo)
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ServerIcon(name = serverName, icon = serverIcon, size = 28.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = serverName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.server_info),
+                    modifier = Modifier
+                        .size(IconSize)
+                        .rotate(chevronTurn),
+                )
+            }
+            // 密聊: amber while a target set is live, and the way into the whisper list editor
+            IconButton(onClick = onWhisperList) {
+                Icon(
+                    AppIcons.Whisper,
+                    contentDescription = stringResource(R.string.whisper_list_title),
+                    tint = if (whisperActive) WhisperAmber else LocalContentColor.current,
+                    modifier = Modifier.size(IconSize),
+                )
+            }
+            // Files and disconnect are occasional: they share a menu instead of unlabelled icons,
+            // and disconnecting takes a second tap like it does in the floating window
+            IconButton(onClick = onMenu) {
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options), modifier = Modifier.size(IconSize))
+            }
+        }
+        AnimatedVisibility(
+            visible = infoOpen,
+            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+        ) {
+            info()
+        }
+    }
+}
+
+/** How tall the strip that takes a drag on the border between two islands is. */
+private val BorderHandleHeight = 24.dp
+
+/**
+ * The border between the channels and the chat: drag it to share the room differently. It reaches
+ * a little into both islands so a finger finds it; the visible part is a short bar in the gap.
+ */
+@Composable
+private fun BorderHandle(
+    modifier: Modifier,
+    onDragStarted: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragStopped: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(BorderHandleHeight)
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState(onDrag),
+                onDragStarted = { onDragStarted() },
+                onDragStopped = { onDragStopped() },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 36.dp, height = 4.dp)
+                .clip(CircleShape)
+                .background(LocalContentColor.current.copy(alpha = 0.35f)),
+        )
+    }
+}
+
 /** Inline status strip used for reconnect / microphone health warnings. */
 @Composable
 private fun StatusBanner(
@@ -1318,7 +1259,10 @@ private fun StatusBanner(
     contentColor: Color,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = Spacing.Gap),
+        shape = Shapes.Medium,
         color = containerColor,
         contentColor = contentColor,
     ) {
@@ -1329,74 +1273,13 @@ private fun StatusBanner(
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(IconSize),
             )
             Spacer(Modifier.width(8.dp))
             Text(text = text, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
-
-/**
- * Hold-to-whisper microphone for the bottom bar, sitting next to the main one.
- *
- * It is a second push-to-talk, not a mode switch: while held the microphone is
- * open and routed to the whisper list; on release both go back. The normal
- * microphone keeps talking to the channel, so the two never share a hidden
- * state — the amber tint and the small whisper mark are the only difference,
- * and either button works without preparing anything first.
- */
-@Composable
-private fun WhisperHoldMic(
-    enabled: Boolean,
-    onHold: () -> Unit,
-    onRelease: () -> Unit,
-) {
-    var pressed by remember { mutableStateOf(false) }
-    val tint = if (enabled) WhisperAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-    // `pointerInput(Unit)` keeps the lambda it was created with, so the newest
-    // callbacks have to be read through these references on every press.
-    val latestHold by rememberUpdatedState(onHold)
-    val latestRelease by rememberUpdatedState(onRelease)
-
-    Box(
-        modifier = Modifier
-            .size(52.dp)
-            .background(
-                if (pressed) WhisperAmber.copy(alpha = 0.18f) else Color.Transparent,
-                CircleShape,
-            )
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        pressed = true
-                        latestHold()
-                        tryAwaitRelease()
-                        latestRelease()
-                        pressed = false
-                    },
-                )
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            AppIcons.MicOn,
-            contentDescription = stringResource(R.string.whisper_hold_mic),
-            modifier = Modifier.size(24.dp),
-            tint = tint,
-        )
-        Icon(
-            AppIcons.Whisper,
-            contentDescription = null,
-            modifier = Modifier
-                .size(13.dp)
-                .align(Alignment.BottomEnd)
-                .offset(x = (-9).dp, y = (-9).dp),
-            tint = tint,
-        )
-    }
-}
-
 
 /**
  * Display names for the current密聊 target set, or null while there is none.

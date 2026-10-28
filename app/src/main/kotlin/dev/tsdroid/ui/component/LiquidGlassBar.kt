@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +64,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 
 /**
  * One entry of [LiquidGlassNavBar].
@@ -85,7 +86,7 @@ data class LiquidGlassNavItem(
 fun LiquidGlassPanel(
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
-    shape: Shape = RoundedCornerShape(28.dp),
+    shape: Shape = Shapes.Large,
     elevation: Dp = 10.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
@@ -128,8 +129,9 @@ fun LiquidGlassPanel(
 fun GlassCard(
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
-    shape: Shape = RoundedCornerShape(22.dp),
-    elevation: Dp = 3.dp,
+    shape: Shape = Shapes.Medium,
+    // Islands barely lift off the page: the gap around them does the separating
+    elevation: Dp = 1.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit,
 ) {
@@ -276,7 +278,7 @@ fun LiquidGlassNavBar(
                                 contentDescription = item.label,
                                 tint = tint,
                                 modifier = Modifier
-                                    .size(22.dp)
+                                    .size(IconSize)
                                     .graphicsLayer {
                                         scaleX = iconScale
                                         scaleY = iconScale

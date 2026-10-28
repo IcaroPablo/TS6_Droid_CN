@@ -20,6 +20,12 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import dev.tslib.AudioConfig
 import dev.tslib.OpusCodec
+import java.util.ArrayDeque
+import java.util.Arrays
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.log10
+import kotlin.math.sqrt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,12 +40,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.ArrayDeque
-import java.util.Arrays
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.log10
-import kotlin.math.sqrt
 
 class AudioBridge(
     private val context: Context,
@@ -1054,6 +1054,10 @@ class AudioBridge(
 
     fun toggleMute() {
         val newState = !_isMuted.value
+        // Unmuting while deafened brings the speakers back too, as the desktop client does:
+        // talking without hearing anyone is never what the tap meant. Every microphone button
+        // (bottom bar, stream viewer, floating window, notification) comes through here.
+        if (!newState && _isOutputMuted.value) setOutputMuted(false)
         _isMuted.value = newState
         tsClient.setInputMuted(newState)
     }

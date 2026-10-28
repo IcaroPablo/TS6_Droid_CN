@@ -1,9 +1,9 @@
 package dev.tsdroid.ui.screen
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -25,11 +25,11 @@ import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,33 +40,41 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.mikepenz.markdown.m3.Markdown
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.mikepenz.markdown.m3.Markdown
 import dev.tsdroid.AppLanguage
 import dev.tsdroid.bridge.IdentityFileStore
 import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.VadGate
 import dev.tsdroid.data.JoinVoiceState
-import dev.tsdroid.data.VoiceEnhancement
 import dev.tsdroid.data.SettingsStore
+import dev.tsdroid.data.VoiceEnhancement
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
-import dev.tsdroid.ui.component.GlassCard
+import dev.tsdroid.ui.component.ChoicePill
 import dev.tsdroid.ui.component.GlassDialog
+import dev.tsdroid.ui.component.Island
 import dev.tsdroid.ui.component.LiquidGlassNavBarClearance
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
 import dev.tsdroid.ui.component.WallpaperExporter
 import dev.tsdroid.ui.component.rememberGlassBackdrop
+import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
+import java.io.File
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -118,7 +126,7 @@ fun SettingsPage(
             body = {
                 Text(
                     text = stringResource(R.string.language_change_message, label),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             },
@@ -201,15 +209,18 @@ fun SettingsPage(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = Spacing.Gap),
     ) {
         // ── 外观 ──
-        GlassCard(
+        Island(
             modifier = Modifier.fillMaxWidth(),
             wallpaper = rememberGlassBackdrop(animeBackground),
+            title = stringResource(R.string.section_appearance),
+            icon = Icons.Default.Palette,
+            // The rows carry the island's inner padding themselves, so a tap lights up the whole row
+            padded = false,
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.section_appearance))
+            Column(modifier = Modifier.padding(bottom = 6.dp)) {
 
                 // 悬浮窗
                 SettingsSwitchRow(
@@ -253,18 +264,21 @@ fun SettingsPage(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Spacing.Gap))
 
         // ── 音频 ──
-        GlassCard(
+        Island(
             modifier = Modifier.fillMaxWidth(),
             wallpaper = rememberGlassBackdrop(animeBackground),
+            title = stringResource(R.string.section_audio),
+            icon = AppIcons.MicOn,
+            // The rows carry the island's inner padding themselves, so a tap lights up the whole row
+            padded = false,
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.section_audio))
+            Column(modifier = Modifier.padding(bottom = 6.dp)) {
 
                 // 扬声器音量增益（0% = 静音）
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
                     var gainValue by remember(audioGain) { mutableFloatStateOf(audioGain) }
                     Text(
                         text = stringResource(
@@ -285,7 +299,7 @@ fun SettingsPage(
                 }
 
                 // 麦克风增益（0% = 关麦；超过 100% 由软限幅防破音）
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
                     var micGainValue by remember(micGain) { mutableFloatStateOf(micGain) }
                     Text(
                         text = stringResource(
@@ -313,7 +327,7 @@ fun SettingsPage(
                 )
 
                 // ── 麦克风模式：按住说话 / 语音激活 / 开放麦克风 ──
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
                     Text(
                         text = stringResource(R.string.mic_mode),
                         style = MaterialTheme.typography.bodyLarge,
@@ -322,21 +336,22 @@ fun SettingsPage(
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        FilterChip(
+                        ChoicePill(
+                            label = stringResource(R.string.push_to_talk),
                             selected = micMode == MicMode.PTT,
                             onClick = { scope.launch { settingsStore.setMicMode(MicMode.PTT) } },
-                            label = { Text(stringResource(R.string.push_to_talk)) },
                         )
-                        FilterChip(
+                        ChoicePill(
+                            label = stringResource(R.string.mic_mode_vad),
                             selected = micMode == MicMode.VAD,
                             onClick = { scope.launch { settingsStore.setMicMode(MicMode.VAD) } },
-                            label = { Text(stringResource(R.string.mic_mode_vad)) },
                         )
-                        FilterChip(
+                        ChoicePill(
+                            label = stringResource(R.string.mic_mode_open),
                             selected = micMode == MicMode.OPEN,
                             onClick = { scope.launch { settingsStore.setMicMode(MicMode.OPEN) } },
-                            label = { Text(stringResource(R.string.mic_mode_open)) },
                         )
                     }
                     if (micMode == MicMode.VAD) {
@@ -364,7 +379,7 @@ fun SettingsPage(
                 }
 
                 // ── When joining voice: deafened / muted / ready to talk ──
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
                     Text(
                         text = stringResource(R.string.join_voice_state),
                         style = MaterialTheme.typography.bodyLarge,
@@ -373,16 +388,17 @@ fun SettingsPage(
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         for ((state, label) in listOf(
                             JoinVoiceState.DEAFENED to R.string.join_voice_deafened,
                             JoinVoiceState.MUTED to R.string.join_voice_muted,
                             JoinVoiceState.NORMAL to R.string.join_voice_normal,
                         )) {
-                            FilterChip(
+                            ChoicePill(
+                                label = stringResource(label),
                                 selected = joinVoiceState == state,
                                 onClick = { scope.launch { settingsStore.setJoinVoiceState(state) } },
-                                label = { Text(stringResource(label)) },
                             )
                         }
                     }
@@ -395,7 +411,7 @@ fun SettingsPage(
                 }
 
                 // ── Voice enhancement: opus's neural decoding of friends' voices ──
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
                     Text(
                         text = stringResource(R.string.voice_enhancement),
                         style = MaterialTheme.typography.bodyLarge,
@@ -404,6 +420,7 @@ fun SettingsPage(
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         for ((level, label) in listOf(
                             VoiceEnhancement.OFF to R.string.voice_enhancement_off,
@@ -411,10 +428,10 @@ fun SettingsPage(
                             VoiceEnhancement.CLEAN_UP to R.string.voice_enhancement_clean_up,
                             VoiceEnhancement.STRONG_CLEAN_UP to R.string.voice_enhancement_strong_clean_up,
                         )) {
-                            FilterChip(
+                            ChoicePill(
+                                label = stringResource(label),
                                 selected = voiceEnhancement == level,
                                 onClick = { scope.launch { settingsStore.setVoiceEnhancement(level) } },
-                                label = { Text(stringResource(label)) },
                             )
                         }
                     }
@@ -428,19 +445,22 @@ fun SettingsPage(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Spacing.Gap))
 
         // ── 身份 ──
         // Same frosted surface as the other groups: this card arrived with the
         // identity export/import feature and was still a plain Material Card,
         // which is the one place the settings page did not match.
-        GlassCard(
+        Island(
             modifier = Modifier.fillMaxWidth(),
             wallpaper = rememberGlassBackdrop(animeBackground),
+            title = stringResource(R.string.identity_section),
+            icon = Icons.Default.Person,
+            // The rows carry the island's inner padding themselves, so a tap lights up the whole row
+            padded = false,
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.identity_section))
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Column(modifier = Modifier.padding(bottom = 6.dp)) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
                     Text(
                         text = identityUid?.let { stringResource(R.string.identity_uid, it) }
                             ?: stringResource(R.string.identity_uid_none),
@@ -448,13 +468,14 @@ fun SettingsPage(
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(
+                        FilledTonalButton(
+                            shape = Shapes.Small,
                             onClick = { exportIdentityLauncher.launch("telespeak_identity.ini") },
                             enabled = identityUid != null,
                         ) {
                             Text(stringResource(R.string.identity_export))
                         }
-                        OutlinedButton(onClick = { importIdentityLauncher.launch(arrayOf("*/*")) }) {
+                        FilledTonalButton(shape = Shapes.Small, onClick = { importIdentityLauncher.launch(arrayOf("*/*")) }) {
                             Text(stringResource(R.string.identity_import))
                         }
                     }
@@ -468,15 +489,18 @@ fun SettingsPage(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Spacing.Gap))
 
         // ── 聊天 ──
-        GlassCard(
+        Island(
             modifier = Modifier.fillMaxWidth(),
             wallpaper = rememberGlassBackdrop(animeBackground),
+            title = stringResource(R.string.section_chat),
+            icon = AppIcons.Sms,
+            // The rows carry the island's inner padding themselves, so a tap lights up the whole row
+            padded = false,
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.section_chat))
+            Column(modifier = Modifier.padding(bottom = 6.dp)) {
 
                 SettingsSwitchRow(
                     label = stringResource(R.string.show_link_thumbnails),
@@ -492,7 +516,7 @@ fun SettingsPage(
                     text = stringResource(R.string.remote_images_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                    modifier = Modifier.padding(start = Spacing.Inner, end = Spacing.Inner, bottom = 10.dp),
                 )
                 SettingsSwitchRow(
                     label = stringResource(R.string.encrypt_files),
@@ -503,19 +527,22 @@ fun SettingsPage(
                     text = stringResource(R.string.encrypt_files_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                    modifier = Modifier.padding(start = Spacing.Inner, end = Spacing.Inner, bottom = 10.dp),
                 )
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Spacing.Gap))
 
-        GlassCard(
+        Island(
             modifier = Modifier.fillMaxWidth(),
             wallpaper = rememberGlassBackdrop(animeBackground),
+            title = stringResource(R.string.section_connection),
+            icon = AppIcons.Server,
+            // The rows carry the island's inner padding themselves, so a tap lights up the whole row
+            padded = false,
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.section_connection))
+            Column(modifier = Modifier.padding(bottom = 6.dp)) {
 
                 SettingsSwitchRow(
                     label = stringResource(R.string.auto_reconnect),
@@ -531,20 +558,23 @@ fun SettingsPage(
                     text = stringResource(R.string.stream_use_teamspeak_stun_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                    modifier = Modifier.padding(start = Spacing.Inner, end = Spacing.Inner, bottom = 10.dp),
                 )
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Spacing.Gap))
 
         // ── 更多 ──
-        GlassCard(
+        Island(
             modifier = Modifier.fillMaxWidth(),
             wallpaper = rememberGlassBackdrop(animeBackground),
+            title = stringResource(R.string.section_more),
+            icon = Icons.Default.MoreHoriz,
+            // The rows carry the island's inner padding themselves, so a tap lights up the whole row
+            padded = false,
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.section_more))
+            Column(modifier = Modifier.padding(bottom = 6.dp)) {
 
                 // 语言切换：就地展开选项，而不是弹 DropdownMenu —— 下拉菜单是独立窗口，背后没有
                 // 壁纸可模糊；三个固定选项铺开在卡片上也更好点。
@@ -554,7 +584,7 @@ fun SettingsPage(
                     trailing = {
                         Text(
                             text = selectedLanguageLabel,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = LocalContentColor.current.copy(alpha = 0.72f),
                         )
                     },
@@ -620,18 +650,6 @@ fun SettingsPage(
 // ── 可复用组件 ──
 
 @Composable
-private fun SettingsSectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        // Derive from the glass backdrop instead of assuming a light surface: `primary` on a
-        // light wallpaper washed the section labels out until they were barely readable.
-        color = LocalContentColor.current.copy(alpha = 0.75f),
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-    )
-}
-
-@Composable
 private fun SettingsSwitchRow(
     label: String,
     checked: Boolean,
@@ -640,7 +658,7 @@ private fun SettingsSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = Spacing.Inner, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -663,7 +681,7 @@ private fun SettingsClickableRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = Spacing.Inner, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -686,6 +704,7 @@ private fun RowChevron() {
         Icons.AutoMirrored.Filled.NavigateNext,
         null,
         tint = LocalContentColor.current.copy(alpha = 0.6f),
+        modifier = Modifier.size(IconSize),
     )
 }
 
@@ -707,12 +726,12 @@ private fun LanguageOptionRow(
             .clickable(onClick = onClick)
             // Indented one step further than the row it belongs to, so the choice reads as a
             // sub-item rather than as another setting.
-            .padding(start = 32.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = 32.dp, end = Spacing.Inner, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = if (selected) MaterialTheme.colorScheme.primary
             else LocalContentColor.current.copy(alpha = 0.85f),
             modifier = Modifier.weight(1f),
@@ -722,7 +741,7 @@ private fun LanguageOptionRow(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(IconSize),
             )
         }
     }
@@ -876,7 +895,7 @@ private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
             body = {
                 Text(
                     text = stringResource(R.string.custom_bg_delete_confirm),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             },
@@ -904,26 +923,26 @@ private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
 
     Text(
         text = stringResource(R.string.custom_bg_title),
-        style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = Modifier.padding(start = Spacing.Inner, top = 4.dp, bottom = 2.dp),
     )
     Text(
         text = if (hasCustom) stringResource(R.string.custom_bg_active) else stringResource(R.string.custom_bg_inactive),
         style = MaterialTheme.typography.bodySmall,
         color = if (hasCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+        modifier = Modifier.padding(start = Spacing.Inner, bottom = 8.dp),
     )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = Spacing.Inner, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+        FilledTonalButton(shape = Shapes.Small, onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.custom_bg_upload))
         }
         if (hasCustom) {
-            OutlinedButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.weight(1f)) {
+            TextButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.custom_bg_delete), color = MaterialTheme.colorScheme.error)
             }
         }
@@ -948,7 +967,7 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
             body = {
                 Text(
                     text = stringResource(R.string.wallpaper_clear_cache_confirm),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             },
@@ -997,7 +1016,7 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
                 if (cachedFiles.isEmpty()) {
                     Text(
                         text = stringResource(R.string.wallpaper_cache_empty),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(top = 12.dp),
                     )
                 } else {
@@ -1025,11 +1044,11 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
                                 AsyncImage(model = file, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                                 Icon(Icons.Default.Download, stringResource(R.string.wallpaper_export),
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(22.dp)
+                                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(IconSize)
                                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f), CircleShape).padding(3.dp))
                                 Icon(Icons.Default.Close, stringResource(R.string.remove),
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp)
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(IconSize)
                                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f), CircleShape).padding(3.dp)
                                         .clickable {
                                             WallpaperCacheManager.deleteFile(file)
@@ -1059,9 +1078,9 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
         text = stringResource(R.string.wallpaper_cache_size, String.format("%.1f", cacheSizeMB.floatValue), cacheCount.intValue),
         style = MaterialTheme.typography.bodySmall,
         color = LocalContentColor.current.copy(alpha = 0.72f),
-        modifier = Modifier.padding(start = 16.dp, top = 8.dp),
+        modifier = Modifier.padding(start = Spacing.Inner, top = 8.dp),
     )
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 4.dp)) {
         Text(
             text = stringResource(R.string.wallpaper_max_cache, maxSize.longValue),
             style = MaterialTheme.typography.labelSmall,
@@ -1076,13 +1095,13 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
         )
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.Inner, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedButton(onClick = { showCacheViewer = true }, modifier = Modifier.weight(1f)) {
+        FilledTonalButton(shape = Shapes.Small, onClick = { showCacheViewer = true }, modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.wallpaper_view_cache))
         }
-        OutlinedButton(onClick = { showClearConfirm = true }, modifier = Modifier.weight(1f)) {
+        TextButton(onClick = { showClearConfirm = true }, modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.wallpaper_clear_cache), color = MaterialTheme.colorScheme.error)
         }
     }
@@ -1120,7 +1139,7 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                 ) {
                     if (isDownloading) {
                         if (downloadProgress >= 0f) {
-                            Text("${stringResource(R.string.update_downloading)} ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                            Text("${stringResource(R.string.update_downloading)} ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.height(8.dp))
                             LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth())
                         } else {
@@ -1128,7 +1147,7 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.update_downloading), style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.update_downloading), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                         downloadError?.let {
@@ -1140,7 +1159,7 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                         if (changelog.isBlank()) {
                             Text(
                                 text = stringResource(R.string.update_no_changelog),
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyLarge,
                             )
                         } else {
                             Markdown(
@@ -1156,7 +1175,7 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
             },
             confirmButton = {
                 if (!isDownloading) {
-                    FilledTonalButton(onClick = {
+                    Button(shape = Shapes.Small, onClick = {
                         isDownloading = true
                         downloadError = null
                         downloadProgress = 0f

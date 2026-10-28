@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.TsDroidTheme
 
 @Preview(name = "Chat Panel", showBackground = true, widthDp = 360, heightDp = 600)
@@ -37,7 +39,7 @@ private fun PreviewChatPanel() {
                         Tab(selected = false, onClick = {}, text = { Text("私信") })
                     }
                     IconButton(onClick = {}) {
-                        Icon(Icons.Default.Close, "关闭")
+                        Icon(Icons.Default.Close, "关闭", modifier = Modifier.size(IconSize))
                     }
                 }
 
@@ -112,7 +114,7 @@ private fun PreviewSettingsDialog() {
                     .padding(32.dp),
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    Text("设置", style = MaterialTheme.typography.headlineSmall)
+                    Text("设置", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(16.dp))
 
                     Text("音量增益 : ×1.5", style = MaterialTheme.typography.bodyLarge)
@@ -148,13 +150,13 @@ private fun PreviewBottomNav() {
             NavigationBarItem(
                 selected = true,
                 onClick = {},
-                icon = { Icon(AppIcons.Home, contentDescription = null) },
+                icon = { Icon(AppIcons.Home, contentDescription = null, modifier = Modifier.size(IconSize)) },
                 label = { Text("主页") },
             )
             NavigationBarItem(
                 selected = false,
                 onClick = {},
-                icon = { Icon(AppIcons.Settings, contentDescription = null) },
+                icon = { Icon(AppIcons.Settings, contentDescription = null, modifier = Modifier.size(IconSize)) },
                 label = { Text("设置") },
             )
         }
@@ -176,13 +178,13 @@ private fun PreviewBookmarkCard() {
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                Icon(Icons.Default.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(IconSize))
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("yuaxi.cn", fontWeight = FontWeight.Medium)
                     Text("yuaxi.cn:9987", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                FilledTonalButton(onClick = {}) {
+                FilledTonalButton(shape = Shapes.Small, onClick = {}) {
                     Text("连接")
                 }
             }

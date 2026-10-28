@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -60,15 +58,17 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import dev.tsdroid.han.R
+import androidx.compose.ui.zIndex
 import dev.tsdroid.bridge.TsFileEntry
+import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 import dev.tslib.Channel
 import dev.tslib.User
 import java.text.DateFormat
@@ -137,7 +137,7 @@ fun FileManagerDialog(
         files.sortedWith(compareBy<TsFileEntry> { it.isFile }.thenBy { it.name.lowercase() })
     }
 
-    // Full-screen glass panel: this used to be an opaque `colorScheme.surface` slab. The
+    // An island over the channels and the chat: this used to be an opaque `colorScheme.surface` slab. The
     // `contentColor` comes from the wallpaper actually behind the glass, so everything below
     // adapts through LocalContentColor instead of assuming a light backdrop.
     LiquidGlassPanel(
@@ -148,53 +148,48 @@ fun FileManagerDialog(
                 panelSize = coordinates.size
             },
         wallpaper = wallpaper,
-        shape = RoundedCornerShape(0.dp),
-        elevation = 0.dp,
+        shape = Shapes.Medium,
+        elevation = 1.dp,
         contentPadding = PaddingValues(0.dp),
     ) { contentColor ->
         CompositionLocalProvider(LocalContentColor provides contentColor) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .navigationBarsPadding(),
-            ) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 // The same compact bar as the rest of the app, but its title and actions keep taking
                 // their colour from the glass behind them instead of from the theme.
-                CompactTopBar(
-                    // "/" alone did not say whose files these are
+                // The same header as every island; "/" alone did not say whose files these are
+                IslandHeader(
                     title = when {
                         channelName == null -> currentPath
                         currentPath == "/" -> stringResource(R.string.files_in_channel, channelName)
                         else -> channelName + currentPath
                     },
-                    titleColor = LocalContentColor.current,
-                    iconColor = LocalContentColor.current,
-                    navigationIcon = {
+                    icon = AppIcons.File,
+                    trailing = {
+                        Spacer(Modifier.weight(1f))
                         if (currentPath != "/") {
                             IconButton(onClick = onNavigateUp) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = stringResource(R.string.back),
+                                    modifier = Modifier.size(IconSize),
                                 )
                             }
                         }
-                    },
-                    actions = {
                         if (canCreateDir) {
                             IconButton(onClick = { showNewFolderDialog = true }) {
-                                Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.new_folder))
+                                Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.new_folder), modifier = Modifier.size(IconSize))
                             }
                         }
                         IconButton(onClick = onRefresh) {
-                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh), modifier = Modifier.size(IconSize))
                         }
                         if (canUpload) {
                             IconButton(onClick = pickUpload) {
-                                Icon(Icons.Default.Upload, contentDescription = stringResource(R.string.upload))
+                                Icon(Icons.Default.Upload, contentDescription = stringResource(R.string.upload), modifier = Modifier.size(IconSize))
                             }
                         }
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close), modifier = Modifier.size(IconSize))
                         }
                     },
                 )
@@ -277,7 +272,7 @@ fun FileManagerDialog(
                         )
                     },
                 wallpaper = wallpaper,
-                shape = RoundedCornerShape(18.dp),
+                shape = Shapes.Medium,
                 elevation = 6.dp,
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
@@ -353,7 +348,7 @@ fun FileManagerDialog(
             body = {
                 Text(
                     text = stringResource(R.string.confirm_delete, name),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             },
@@ -415,7 +410,7 @@ private fun ShareTargetDialog(
                             Icons.Default.Folder,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(IconSize),
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
@@ -439,7 +434,7 @@ private fun ShareTargetDialog(
                             Icons.Default.Person,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(IconSize),
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
@@ -495,7 +490,7 @@ private fun FileEntryRow(
             icon,
             contentDescription = if (!entry.isFile) stringResource(R.string.folder) else null,
             tint = tint,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(IconSize),
         )
 
         Spacer(Modifier.width(12.dp))
@@ -504,7 +499,7 @@ private fun FileEntryRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = entry.name,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -541,7 +536,7 @@ private fun FileEntryRow(
             Icon(
                 Icons.Default.MoreVert,
                 contentDescription = stringResource(R.string.more_options),
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(IconSize),
             )
         }
     }

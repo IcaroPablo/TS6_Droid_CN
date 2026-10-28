@@ -17,11 +17,11 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -40,11 +39,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,10 +55,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -79,14 +78,22 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.component.ChoicePill
+import dev.tsdroid.ui.component.micAction
+import dev.tsdroid.ui.component.micIcon
+import dev.tsdroid.ui.component.speakerAction
+import dev.tsdroid.ui.component.speakerIcon
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.ui.theme.TalkingBlue
 import dev.tsdroid.ui.theme.WhisperAmber
 import kotlinx.coroutines.delay
@@ -615,73 +622,70 @@ private fun ExpandedPanel(
     onKeyboardRequest: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    Surface(
+    // Three islands, like the app's screens: the server, the members or channels, the controls
+    Column(
         modifier = Modifier
             .width(PanelWidth)
             .heightIn(max = PanelMaxHeight),
-        shape = RoundedCornerShape(20.dp),
-        color = overlaySurface(),
-        // Explicit: a translucent surface colour matches no theme colour, so Surface could not
-        // derive one and the texts without their own colour (the server name) came out black.
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            PanelHeader(
-                state = state,
-                onToggleExpand = onToggleExpand,
-                onDrag = onDrag,
-                onDragEnd = onDragEnd,
-                onOpenApp = onOpenApp,
-            )
-
-            if (state.reconnecting || state.micUnavailable) {
-                WarningStrip(
-                    text = if (state.reconnecting) {
-                        stringResource(R.string.reconnect_in_progress, maxOf(state.reconnectAttempt, 1))
-                    } else {
-                        stringResource(R.string.mic_unavailable_short)
-                    },
+        OverlayIsland {
+            Column {
+                PanelHeader(
+                    state = state,
+                    onToggleExpand = onToggleExpand,
+                    onDrag = onDrag,
+                    onDragEnd = onDragEnd,
+                    onOpenApp = onOpenApp,
                 )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                SegmentChip(
-                    text = stringResource(R.string.floating_overlay_members, state.members.size),
-                    selected = view == OverlayView.Members,
-                    onClick = { onViewChange(OverlayView.Members) },
-                    modifier = Modifier.weight(1f),
-                )
-                SegmentChip(
-                    text = stringResource(R.string.floating_overlay_channels),
-                    selected = view == OverlayView.Channels,
-                    onClick = { onViewChange(OverlayView.Channels) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Box(modifier = Modifier.weight(1f, fill = false)) {
-                when (view) {
-                    OverlayView.Members -> MembersList(state.members)
-                    OverlayView.Channels -> ChannelsList(
-                        channels = state.channels,
-                        currentChannelId = state.currentChannelId,
-                        onMoveToChannel = onMoveToChannel,
-                        onKeyboardRequest = onKeyboardRequest,
+                if (state.reconnecting || state.micUnavailable) {
+                    WarningStrip(
+                        text = if (state.reconnecting) {
+                            stringResource(R.string.reconnect_in_progress, maxOf(state.reconnectAttempt, 1))
+                        } else {
+                            stringResource(R.string.mic_unavailable_short)
+                        },
                     )
                 }
             }
+        }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                thickness = 1.dp,
-            )
+        OverlayIsland(modifier = Modifier.weight(1f, fill = false)) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ChoicePill(
+                        label = stringResource(R.string.floating_overlay_members, state.members.size),
+                        selected = view == OverlayView.Members,
+                        onClick = { onViewChange(OverlayView.Members) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChoicePill(
+                        label = stringResource(R.string.floating_overlay_channels),
+                        selected = view == OverlayView.Channels,
+                        onClick = { onViewChange(OverlayView.Channels) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Box {
+                    when (view) {
+                        OverlayView.Members -> MembersList(state.members)
+                        OverlayView.Channels -> ChannelsList(
+                            channels = state.channels,
+                            currentChannelId = state.currentChannelId,
+                            onMoveToChannel = onMoveToChannel,
+                            onKeyboardRequest = onKeyboardRequest,
+                        )
+                    }
+                }
+            }
+        }
 
+        OverlayIsland {
             ActionBar(
                 state = state,
                 onToggleMic = onToggleMic,
@@ -692,6 +696,24 @@ private fun ExpandedPanel(
             )
         }
     }
+}
+
+/** One of the floating window's islands: the app's island corner, on the window's own surface. */
+@Composable
+private fun OverlayIsland(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = Shapes.Medium,
+        color = overlaySurface(),
+        // Explicit: a translucent surface colour matches no theme colour, so Surface could not
+        // derive one and the texts without their own colour (the server name) came out black.
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        content = content,
+    )
 }
 
 @Composable
@@ -778,7 +800,7 @@ private fun HeaderIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(iconSize),
+            modifier = Modifier.size(IconSize),
         )
     }
 }
@@ -801,7 +823,7 @@ private fun WarningStrip(text: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 4.dp)
-            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.errorContainer, Shapes.Small)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -809,7 +831,7 @@ private fun WarningStrip(text: String) {
             imageVector = Icons.Default.Warning,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.size(14.dp),
+            modifier = Modifier.size(IconSize),
         )
         Spacer(Modifier.width(6.dp))
         Text(
@@ -818,40 +840,6 @@ private fun WarningStrip(text: String) {
             color = MaterialTheme.colorScheme.onErrorContainer,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun SegmentChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    Surface(
-        modifier = modifier
-            .clip(CircleShape)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        shape = CircleShape,
-        color = when {
-            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            pressed -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            else -> Color.Transparent
-        },
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
         )
     }
 }
@@ -901,7 +889,7 @@ private fun MembersList(members: List<FloatingOverlayMember>) {
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(IconSize),
                         )
                     }
                 }
@@ -923,7 +911,7 @@ private fun MembersList(members: List<FloatingOverlayMember>) {
                         imageVector = AppIcons.MicOff,
                         contentDescription = stringResource(R.string.floating_overlay_muted),
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(IconSize),
                     )
                 }
                 if (member.outputMuted) {
@@ -932,7 +920,7 @@ private fun MembersList(members: List<FloatingOverlayMember>) {
                         imageVector = AppIcons.SpeakerOff,
                         contentDescription = stringResource(R.string.floating_overlay_deafened),
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(IconSize),
                     )
                 }
             }
@@ -984,7 +972,7 @@ private fun ChannelsList(
         ) {
             Text(
                 text = stringResource(R.string.channel_password_title, channel.name),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1063,7 +1051,7 @@ private fun ChannelsList(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier.size(IconSize),
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -1084,7 +1072,7 @@ private fun ChannelsList(
                         imageVector = AppIcons.Lock,
                         contentDescription = stringResource(R.string.channel_password_required),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(IconSize),
                     )
                 }
                 if (current) {
@@ -1092,7 +1080,7 @@ private fun ChannelsList(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(15.dp),
+                        modifier = Modifier.size(IconSize),
                     )
                 }
             }
@@ -1146,10 +1134,8 @@ private fun ActionBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ActionButton(
-            icon = if (state.micMuted) AppIcons.MicOff else AppIcons.MicOn,
-            contentDescription = stringResource(
-                if (state.micMuted) R.string.unmute_mic else R.string.mute_mic,
-            ),
+            icon = micIcon(state.micMuted),
+            contentDescription = micAction(state.micMuted, state.outputMuted),
             active = state.micMuted,
             onClick = onToggleMic,
         )
@@ -1164,10 +1150,8 @@ private fun ActionBar(
             onRelease = onWhisperTalkStop,
         )
         ActionButton(
-            icon = if (state.outputMuted) AppIcons.SpeakerOff else AppIcons.SpeakerOn,
-            contentDescription = stringResource(
-                if (state.outputMuted) R.string.voice_undeafen else R.string.voice_deafen,
-            ),
+            icon = speakerIcon(state.outputMuted),
+            contentDescription = speakerAction(state.outputMuted),
             active = state.outputMuted,
             onClick = onToggleOutput,
         )
@@ -1227,7 +1211,7 @@ private fun HoldActionButton(
                 imageVector = icon,
                 contentDescription = contentDescription,
                 tint = if (active) WhisperAmber else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(IconSize),
             )
         }
     }
@@ -1261,7 +1245,7 @@ private fun ActionButton(
                 imageVector = icon,
                 contentDescription = contentDescription,
                 tint = if (active) MaterialTheme.colorScheme.error else tint,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(IconSize),
             )
         }
     }

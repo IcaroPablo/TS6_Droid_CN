@@ -70,8 +70,6 @@
     <string name="wallpaper_export_all">Save all</string>
     <string name="wallpaper_export_done">Saved %1$d image(s) to the gallery</string>
     <string name="wallpaper_export_failed">Could not save to the gallery</string>
-    <string name="session_running">Session running</string>
-    <string name="back_to_session">Return to session</string>
     <string name="back_to_home">Back to home</string>
     <string name="floating_overlay_offline">Not connected</string>
     <string name="floating_overlay_no_channel">Not in a channel</string>
@@ -316,8 +314,6 @@
     <string name="stream_add">Watch another stream</string>
     <string name="voice_deafen">Deafen</string>
     <string name="voice_undeafen">Undeafen</string>
-    <string name="stream_chat_show">Show the channel chat</string>
-    <string name="stream_chat_hide">Hide the channel chat</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_tagline">A TeamSpeak client for Android, made for a small group of friends. It connects only to the servers you add.</string>
     <string name="about_source_title">Source code</string>
@@ -337,8 +333,19 @@
     <string name="user_details">Details</string>
     <string name="nickname_taken">%1$s was taken on this server, so you joined as %2$s.</string>
     <string name="chat_empty_channel">No messages in this channel yet.</string>
-    <string name="chat_empty_private">No private messages yet. To write to someone, tap them in the channel list.</string>
-    <string name="message_private_no_recipient">Tap someone in the channel list to write to them</string>
+    <string name="chat_empty_private">No private messages yet. To write to someone, tap them in the channel list and choose Private message.</string>
+    <string name="message_private_no_recipient">Choose someone in the channel list first</string>
     <string name="files_in_channel">Files in %1$s</string>
     <string name="stream_screen_share">Screen share</string>
+    <string name="channel_default">Default channel</string>
+    <string name="chat_fold">Fold the chat</string>
+    <string name="chat_unfold">Unfold the chat</string>
+    <string name="people_online">%1$d online</string>
+    <string name="chat_empty_private_with">No messages with %1$s yet.</string>
+    <string name="nav_server">Server</string>
+    <string name="nav_add">Add</string>
+    <string name="stream_fullscreen">Full screen</string>
+    <string name="stream_stop_watching">Stop watching</string>
+    <string name="stream_tab">Stream</string>
+    <string name="channels_list">List</string>
 </resources>

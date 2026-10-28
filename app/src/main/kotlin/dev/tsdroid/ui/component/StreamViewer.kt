@@ -1,6 +1,5 @@
 package dev.tsdroid.ui.component
 
-import android.content.res.Configuration
 import android.os.Build
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
@@ -9,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -19,18 +19,20 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,11 +40,12 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -57,12 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -81,23 +84,21 @@ import dev.tsdroid.bridge.LiveStream
 import dev.tsdroid.han.R
 import dev.tsdroid.stream.StreamSession
 import dev.tsdroid.stream.WebRtc
-import dev.tsdroid.ui.icon.AppIcons
-import dev.tsdroid.ui.theme.AlertRed
-import dev.tsdroid.viewmodel.ChatMessage
-import dev.tsdroid.viewmodel.DownloadState
-import dev.tsdroid.viewmodel.FileAttachment
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
 /**
- * Full-screen viewer for TeamSpeak 6 streams: one stream fills the screen,
- * two split it, three or four share a grid. In each, pinch to zoom, drag to
- * move, double-tap to fit again. In landscape the system bars are hidden and
- * the controls float over the video, shown by a tap.
+ * Full-screen viewer for TeamSpeak 6 streams, in landscape: one stream fills
+ * the screen, two split it, three or four share a grid. In each, pinch to zoom,
+ * drag to move, double-tap to fit again. The system bars are hidden and the
+ * controls float over the video, shown by a tap. Otherwise streams are watched
+ * in the server screen's channels island (see [StreamTiles]).
  */
 @Composable
 fun StreamViewer(
@@ -112,10 +113,9 @@ fun StreamViewer(
     /** After a failed direct connection: turn on TeamSpeak's server and try again */
     onRetryWithTeamSpeakStun: (StreamSession) -> Unit,
     onCloseStream: (StreamSession) -> Unit,
-    /** The voice chat's microphone and speakers, so watching needs no closing to talk */
-    voice: StreamVoiceControls,
-    /** The channel chat, shown below one or two streams in portrait */
-    chat: StreamChat,
+    /** The voice controls, the same bar as the server screen's, so watching needs no closing to talk */
+    voice: VoiceBarState,
+    /** Back to the server screen, where the streams keep playing in their island */
     onRotate: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -143,17 +143,14 @@ fun StreamViewer(
                 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             }
         }
-        val portrait = LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE
-        // Chat fits below one or two streams; three or four need the whole screen
-        val chatFits = portrait && sessions.size <= 2
         var addOpen by remember { mutableStateOf(false) }
         // Streams whose volume slider is open
         var volumeOpenIds by remember { mutableStateOf(emptySet<String>()) }
 
-        // In landscape the controls float over the video and step aside for it:
-        // a tap brings them back, and they leave again after a few seconds
-        // without a touch, unless a menu or a volume slider is open in them
-        val overlayControls = !portrait
+        // The controls float over the video and step aside for it: a tap brings
+        // them back, and they leave again after a few seconds without a touch,
+        // unless a menu or a volume slider is open in them
+        val overlayControls = true
         var controlsVisible by remember { mutableStateOf(true) }
         var touches by remember { mutableIntStateOf(0) }
         val holdControls by rememberUpdatedState(addOpen || sessions.any { it.stream.id in volumeOpenIds })
@@ -192,8 +189,7 @@ fun StreamViewer(
                 addOpen = addOpen,
                 onAddOpenChange = { addOpen = it },
                 onAdd = onAdd,
-                chat = chat.takeIf { chatFits },
-                voice = voice,
+                overVideo = overlayControls,
                 onRotate = onRotate,
                 onClose = onClose,
             )
@@ -215,7 +211,6 @@ fun StreamViewer(
                 },
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                if (!overlayControls) topBar()
 
                 // Clear of the navigation bar (and of a display cutout at the side in
                 // landscape), like the top bar is of the status bar: the tiles' own
@@ -225,7 +220,10 @@ fun StreamViewer(
                         .weight(1f)
                         .fillMaxWidth()
                         .windowInsetsPadding(
-                            WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+                            WindowInsets.safeDrawing.only(
+                                if (overlayControls) WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
+                                else WindowInsetsSides.Horizontal,
+                            ),
                         ),
                 ) {
                     val landscape = maxWidth > maxHeight
@@ -252,18 +250,7 @@ fun StreamViewer(
                             )
                         }
                     }
-                    if (chatFits && chat.visible) {
-                        // Streams at the top, at most at full width (16:9) and at
-                        // most half the space, so the chat always keeps the rest:
-                        // with the keyboard open the streams shrink, not the chat
-                        val streamsHeight = minOf(maxWidth * 9f / 16f * sessions.size, maxHeight / 2)
-                        Column(Modifier.fillMaxSize()) {
-                            Column(Modifier.fillMaxWidth().height(streamsHeight)) {
-                                sessions.forEach { tile(it, Modifier.weight(1f).fillMaxWidth(), false) }
-                            }
-                            StreamChatPanel(chat, Modifier.weight(1f).fillMaxWidth())
-                        }
-                    } else when (sessions.size) {
+                    when (sessions.size) {
                         0 -> {}
                         1 -> tile(sessions[0], Modifier.fillMaxSize(), true)
                         2 -> if (landscape) {
@@ -298,6 +285,113 @@ fun StreamViewer(
                 ) {
                     topBar()
                 }
+                // The voice bar floats at the bottom with the other controls
+                AnimatedVisibility(
+                    visible = controlsVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    VoiceBar(
+                        state = voice,
+                        wallpaper = null,
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .padding(Spacing.Gap)
+                            .widthIn(max = 420.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The streams being watched, as the server screen's channels island shows them: stacked, each with
+ * its volume button, and the controls in a corner to add a stream, go full screen or stop watching.
+ */
+@Composable
+fun StreamTiles(
+    sessions: List<StreamSession>,
+    /** A member's nickname, by client id */
+    nameOf: (Int) -> String,
+    /** Streams in the channel that can be added */
+    addable: List<LiveStream>,
+    onAdd: (LiveStream) -> Unit,
+    onVolumeChange: (session: StreamSession, volume: Float, commit: Boolean) -> Unit,
+    onRetryWithTeamSpeakStun: (StreamSession) -> Unit,
+    onCloseStream: (StreamSession) -> Unit,
+    onFullscreen: () -> Unit,
+    onCloseAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var volumeOpenIds by remember { mutableStateOf(emptySet<String>()) }
+    var addOpen by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
+        ) {
+            sessions.forEach { session ->
+                key(session) {
+                    val id = session.stream.id
+                    StreamTile(
+                        session = session,
+                        streamerName = nameOf(session.stream.clientId),
+                        showHeader = sessions.size > 1,
+                        controlsVisible = true,
+                        headerTopPadding = 0.dp,
+                        volumeOpen = id in volumeOpenIds,
+                        onVolumeOpenChange = { open ->
+                            volumeOpenIds = if (open) volumeOpenIds + id else volumeOpenIds - id
+                        },
+                        onTap = {},
+                        onRetryWithTeamSpeakStun = { onRetryWithTeamSpeakStun(session) },
+                        onVolumeChange = { volume, commit -> onVolumeChange(session, volume, commit) },
+                        onClose = { onCloseStream(session) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            // Nested in the island by the gap, so its corner is the island's less the gap
+                            .clip(Shapes.Small),
+                    )
+                }
+            }
+        }
+        // Add, full screen and stop, in the corner the volume button leaves free
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(Spacing.Gap)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.4f)),
+        ) {
+            if (addable.isNotEmpty()) {
+                Box {
+                    IconButton(onClick = { addOpen = true }) {
+                        Icon(Icons.Default.Add, stringResource(R.string.stream_add), tint = Color.White, modifier = Modifier.size(IconSize))
+                    }
+                    DropdownMenu(expanded = addOpen, onDismissRequest = { addOpen = false }) {
+                        addable.forEach { stream ->
+                            DropdownMenuItem(
+                                text = {
+                                    val name = nameOf(stream.clientId)
+                                    Text(if (stream.name.isBlank()) name else "$name · ${streamDisplayName(stream.name)}")
+                                },
+                                onClick = {
+                                    addOpen = false
+                                    onAdd(stream)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            IconButton(onClick = onFullscreen) {
+                Icon(Icons.Default.Fullscreen, stringResource(R.string.stream_fullscreen), tint = Color.White, modifier = Modifier.size(IconSize))
+            }
+            IconButton(onClick = onCloseAll) {
+                Icon(Icons.Default.Close, stringResource(R.string.stream_stop_watching), tint = Color.White, modifier = Modifier.size(IconSize))
             }
         }
     }
@@ -321,18 +415,29 @@ private fun ViewerTopBar(
     addOpen: Boolean,
     onAddOpenChange: (Boolean) -> Unit,
     onAdd: (LiveStream) -> Unit,
-    chat: StreamChat?,
-    voice: StreamVoiceControls,
+    /** Floating over the video (landscape) rather than above it on the page */
+    overVideo: Boolean,
     onRotate: () -> Unit,
     onClose: () -> Unit,
 ) {
     // Clear of the status bar (and the sides); the bottom is the tiles'
+    CompositionLocalProvider(
+        LocalContentColor provides if (overVideo) Color.White else MaterialTheme.colorScheme.onSurface,
+    ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // Darker at the top edge: in landscape the bar lies on the video itself, where a flat
-            // 40% black left the title and icons hard to read over a bright picture.
-            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.35f))))
+            // Over the video the bar is shaded, darker at the top edge, so the title and icons stay
+            // readable on a bright picture; on the page it is plain, like the app's other bars
+            .then(
+                if (overVideo) {
+                    Modifier.background(
+                        Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.35f))),
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .height(TOP_BAR_HEIGHT)
             .padding(horizontal = 8.dp),
@@ -347,7 +452,7 @@ private fun ViewerTopBar(
         if (addable.isNotEmpty()) {
             Box {
                 IconButton(onClick = { onAddOpenChange(true) }) {
-                    Icon(Icons.Default.Add, stringResource(R.string.stream_add), tint = Color.White)
+                    Icon(Icons.Default.Add, stringResource(R.string.stream_add), modifier = Modifier.size(IconSize))
                 }
                 DropdownMenu(expanded = addOpen, onDismissRequest = { onAddOpenChange(false) }) {
                     addable.forEach { stream ->
@@ -365,124 +470,13 @@ private fun ViewerTopBar(
                 }
             }
         }
-        if (chat != null) {
-            IconButton(onClick = chat.onToggle) {
-                Icon(
-                    if (chat.visible) Icons.AutoMirrored.Filled.Chat else Icons.AutoMirrored.Outlined.Chat,
-                    stringResource(if (chat.visible) R.string.stream_chat_hide else R.string.stream_chat_show),
-                    tint = Color.White,
-                )
-            }
-        }
-        VoiceButtons(voice)
         IconButton(onClick = onRotate) {
-            Icon(Icons.Default.ScreenRotation, stringResource(R.string.stream_rotate), tint = Color.White)
+            Icon(Icons.Default.ScreenRotation, stringResource(R.string.stream_rotate), modifier = Modifier.size(IconSize))
         }
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White)
+            Icon(Icons.Default.Close, stringResource(R.string.close), modifier = Modifier.size(IconSize))
         }
     }
-}
-
-/**
- * The channel chat as the viewer shows it, and whether it is shown. The text
- * being written is the chat panel's, and so is where it goes: to the channel,
- * or to the whisper targets while whispering.
- */
-class StreamChat(
-    val messages: List<ChatMessage>,
-    val showLinkThumbnails: Boolean,
-    val autoLoadImages: Boolean,
-    val onDownload: ((FileAttachment) -> StateFlow<DownloadState>)?,
-    val visible: Boolean,
-    val onToggle: () -> Unit,
-    val text: String,
-    val onTextChange: (String) -> Unit,
-    /** Whom the whisper targets are, while whispering */
-    val whisperTargetName: String?,
-    val onSend: () -> Unit,
-)
-
-/** The channel's messages, and the chat input. */
-@Composable
-private fun StreamChatPanel(chat: StreamChat, modifier: Modifier) {
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp)) {
-            ChatView(
-                messages = chat.messages,
-                showLinkThumbnails = chat.showLinkThumbnails,
-                autoLoadImages = chat.autoLoadImages,
-                onDownload = chat.onDownload,
-                emptyText = stringResource(R.string.chat_empty_channel),
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-            ChatInput(
-                text = chat.text,
-                onTextChange = chat.onTextChange,
-                placeholder = if (chat.whisperTargetName != null) {
-                    stringResource(R.string.whisper_placeholder, chat.whisperTargetName)
-                } else {
-                    stringResource(R.string.message_channel_placeholder)
-                },
-                onSend = chat.onSend,
-                whisperTargetName = chat.whisperTargetName,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            )
-        }
-    }
-}
-
-/** The voice chat's state and controls, as the viewer's top bar shows them. */
-class StreamVoiceControls(
-    val isMicMuted: Boolean,
-    val isOutputMuted: Boolean,
-    /** Push-to-talk: the microphone button is held to talk */
-    val isPushToTalk: Boolean,
-    val onToggleMic: () -> Unit,
-    val onPushToTalk: (pressed: Boolean) -> Unit,
-    val onToggleOutput: () -> Unit,
-)
-
-@Composable
-private fun VoiceButtons(voice: StreamVoiceControls) {
-    val off = AlertRed
-    if (voice.isPushToTalk) {
-        var pressed by remember { mutableStateOf(false) }
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .pointerInput(Unit) {
-                    detectTapGestures(onPress = {
-                        pressed = true
-                        voice.onPushToTalk(true)
-                        tryAwaitRelease()
-                        voice.onPushToTalk(false)
-                        pressed = false
-                    })
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                AppIcons.MicOn,
-                stringResource(R.string.ptt),
-                tint = if (pressed) MaterialTheme.colorScheme.primary else Color.White,
-            )
-        }
-    } else {
-        IconButton(onClick = voice.onToggleMic) {
-            Icon(
-                if (voice.isMicMuted) AppIcons.MicOff else AppIcons.MicOn,
-                stringResource(if (voice.isMicMuted) R.string.unmute_mic else R.string.mute_mic),
-                tint = if (voice.isMicMuted) off else Color.White,
-            )
-        }
-    }
-    IconButton(onClick = voice.onToggleOutput) {
-        Icon(
-            if (voice.isOutputMuted) AppIcons.SpeakerOff else AppIcons.SpeakerOn,
-            stringResource(if (voice.isOutputMuted) R.string.voice_undeafen else R.string.voice_deafen),
-            tint = if (voice.isOutputMuted) off else Color.White,
-        )
     }
 }
 
@@ -490,15 +484,14 @@ private fun VoiceButtons(voice: StreamVoiceControls) {
 private fun StreamTitle(streamerName: String, streamName: String) {
     Text(
         text = streamerName,
-        color = Color.White,
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.titleMedium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
     if (streamName.isNotBlank()) {
         Text(
             text = streamDisplayName(streamName),
-            color = Color.White.copy(alpha = 0.7f),
+            color = LocalContentColor.current.copy(alpha = 0.7f),
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -630,11 +623,11 @@ private fun StreamTile(
                     },
                     color = Color.White,
                     textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(top = 16.dp),
                 )
                 if (state == StreamSession.State.FAILED && !session.useTeamSpeakStun) {
-                    Button(onClick = onRetryWithTeamSpeakStun, modifier = Modifier.padding(top = 16.dp)) {
+                    Button(shape = Shapes.Small, onClick = onRetryWithTeamSpeakStun, modifier = Modifier.padding(top = 16.dp)) {
                         Text(stringResource(R.string.stream_retry_with_teamspeak_stun), textAlign = TextAlign.Center)
                     }
                 }
@@ -653,7 +646,10 @@ private fun StreamTile(
         ) {
             Row(
                 modifier = Modifier
+                    .padding(Spacing.Gap)
                     .then(if (volumeOpen) Modifier.fillMaxWidth() else Modifier)
+                    // Rounded like every other control: a circle, or a pill once the slider is out
+                    .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.4f))
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -671,6 +667,7 @@ private fun StreamTile(
                             if (volume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                             stringResource(if (volume == 0f) R.string.stream_unmute else R.string.stream_mute),
                             tint = Color.White,
+                            modifier = Modifier.size(IconSize),
                         )
                     }
                     Slider(
@@ -697,6 +694,7 @@ private fun StreamTile(
                         else Icons.AutoMirrored.Filled.VolumeUp,
                         stringResource(R.string.stream_volume),
                         tint = Color.White,
+                        modifier = Modifier.size(IconSize),
                     )
                 }
             }
@@ -719,10 +717,12 @@ private fun StreamTile(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        StreamTitle(streamerName, session.stream.name)
+                        CompositionLocalProvider(LocalContentColor provides Color.White) {
+                            StreamTitle(streamerName, session.stream.name)
+                        }
                     }
                     IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White)
+                        Icon(Icons.Default.Close, stringResource(R.string.close), tint = Color.White, modifier = Modifier.size(IconSize))
                     }
                 }
             }

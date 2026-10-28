@@ -32,7 +32,6 @@ private val KEY_VOICE_ENHANCEMENT = stringPreferencesKey("voice_enhancement")
 private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
 private val KEY_STREAM_TEAMSPEAK_STUN = booleanPreferencesKey("stream_teamspeak_stun")
 private val KEY_STREAM_VOLUME = floatPreferencesKey("stream_volume")
-private val KEY_STREAM_CHAT = booleanPreferencesKey("stream_chat")
 
 class SettingsStore(private val context: Context) {
 
@@ -162,14 +161,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setStreamVolume(volume: Float) {
         context.settingsDataStore.edit { it[KEY_STREAM_VOLUME] = volume }
-    }
-
-    /** Whether the stream viewer shows the channel chat below the streams (in portrait). */
-    val streamChat: Flow<Boolean> = context.settingsDataStore.data
-        .map { it[KEY_STREAM_CHAT] ?: true }
-
-    suspend fun setStreamChat(visible: Boolean) {
-        context.settingsDataStore.edit { it[KEY_STREAM_CHAT] = visible }
     }
 
     val joinVoiceState: Flow<JoinVoiceState> = context.settingsDataStore.data

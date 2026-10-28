@@ -1,7 +1,10 @@
 package dev.tsdroid.ui.component
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -23,13 +26,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
@@ -44,10 +47,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
 import kotlin.math.roundToInt
 
 /**
@@ -111,7 +117,7 @@ fun GlassDialog(
     title: String,
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
-    shape: Shape = RoundedCornerShape(28.dp),
+    shape: Shape = Shapes.Large,
     zIndex: Float = 4f,
     /** Shown between the title and the buttons: a list, a tree, text fields — anything. */
     body: (@Composable ColumnScope.() -> Unit)? = null,
@@ -182,18 +188,25 @@ private fun GlassDialogPanel(
         )
         // Centred in what the keyboard leaves free, so a text field in the body stays in view
         Box(modifier = Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.Center) {
+            val appear = rememberAppearance()
             LiquidGlassPanel(
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
-                    .widthIn(max = 420.dp),
+                    .widthIn(max = 420.dp)
+                    .graphicsLayer {
+                        alpha = appear.value
+                        val scale = 0.92f + 0.08f * appear.value
+                        scaleX = scale
+                        scaleY = scale
+                    },
                 wallpaper = wallpaper,
                 shape = shape,
                 elevation = 10.dp,
                 contentPadding = PaddingValues(0.dp),
             ) { contentColor ->
                 CompositionLocalProvider(LocalContentColor provides contentColor) {
-                    Column(modifier = Modifier.padding(24.dp)) {
-                        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+                    Column(modifier = Modifier.padding(Spacing.Inner)) {
+                        Text(text = title, style = MaterialTheme.typography.titleMedium)
                         body?.invoke(this)
                         Row(
                             modifier = Modifier
@@ -270,11 +283,21 @@ private fun GlassBottomSheetPanel(
                     onClick = onDismissRequest,
                 ),
         )
+        val appear = rememberAppearance()
         LiquidGlassPanel(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                // An island like the rest of the app: off the screen's edges by the usual gap, above
+                // the keyboard and the gesture bar
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(Spacing.Gap)
                 .offset { IntOffset(0, dragOffset.roundToInt()) }
+                .graphicsLayer {
+                    alpha = appear.value
+                    translationY = (1f - appear.value) * size.height / 3f
+                }
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
@@ -293,8 +316,7 @@ private fun GlassBottomSheetPanel(
                     },
                 ),
             wallpaper = wallpaper,
-            // Only the top corners are rounded: the panel meets the bottom edge of the screen.
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            shape = Shapes.Large,
             elevation = 10.dp,
             contentPadding = PaddingValues(0.dp),
         ) { contentColor ->
@@ -302,14 +324,9 @@ private fun GlassBottomSheetPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // The glass itself reaches the bottom edge; only its content has to
-                        // clear the keyboard or the gesture bar, otherwise the panel would
-                        // float above them.
-                        .imePadding()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 24.dp)
+                        .padding(horizontal = Spacing.Inner)
                         .padding(top = 10.dp)
-                        .padding(bottom = 24.dp),
+                        .padding(bottom = Spacing.Inner),
                 ) {
                     // Grabber: the drag affordance Material's sheet draws, so the sheet still
                     // reads as draggable now that it is our own panel.
@@ -326,4 +343,12 @@ private fun GlassBottomSheetPanel(
             }
         }
     }
+}
+
+/** 0 → 1 over a short spring when an overlay first appears: its entrance animation. */
+@Composable
+fun rememberAppearance(): Animatable<Float, AnimationVector1D> {
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 500f)) }
+    return appear
 }

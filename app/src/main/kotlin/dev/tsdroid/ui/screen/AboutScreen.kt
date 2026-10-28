@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +37,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 
 private const val REPO_URL = "https://github.com/IcaroPablo/TS6_Droid_CN"
 private const val UPSTREAM_URL = "https://github.com/YUAXI/TS6_Droid_CN"
@@ -69,6 +70,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.back),
+                        modifier = Modifier.size(IconSize),
                     )
                 }
                 Text(
@@ -89,16 +91,16 @@ fun AboutScreen(onBack: () -> Unit) {
                         contentDescription = null,
                         modifier = Modifier
                             .size(64.dp)
-                            .clip(RoundedCornerShape(16.dp)),
+                            .clip(Shapes.Medium),
                     )
                     Column(modifier = Modifier.padding(start = 16.dp)) {
                         Text(
                             text = stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.headlineSmall,
+                            style = MaterialTheme.typography.titleLarge,
                         )
                         Text(
                             text = stringResource(R.string.about_version, versionName),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -142,7 +144,7 @@ private fun AboutSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun AboutText(text: String) {
-    Text(text = text, style = MaterialTheme.typography.bodyMedium)
+    Text(text = text, style = MaterialTheme.typography.bodyLarge)
 }
 
 /** A link the user opens on purpose; the app itself never contacts these sites. */
@@ -152,7 +154,7 @@ private fun AboutLink(url: String) {
     Text(
         text = url.removePrefix("https://"),
         color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodyLarge,
         textDecoration = TextDecoration.Underline,
         modifier = Modifier
             .padding(top = 8.dp)

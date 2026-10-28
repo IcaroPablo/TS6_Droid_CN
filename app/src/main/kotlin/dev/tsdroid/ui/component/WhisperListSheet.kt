@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.service.WhisperTargets
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tslib.Channel
 import dev.tslib.ServerGroup
@@ -62,7 +63,7 @@ fun WhisperListSheet(
             Icon(
                 AppIcons.Whisper,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(IconSize),
                 tint = WhisperAmber,
             )
             Spacer(Modifier.width(8.dp))
@@ -161,7 +162,7 @@ fun WhisperListSheet(
 private fun SectionHeader(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
     )
@@ -186,7 +187,7 @@ private fun CheckRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )

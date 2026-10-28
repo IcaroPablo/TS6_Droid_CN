@@ -71,8 +71,6 @@
     <string name="wallpaper_export_all">全部保存</string>
     <string name="wallpaper_export_done">已保存 %1$d 张到相册</string>
     <string name="wallpaper_export_failed">保存到相册失败</string>
-    <string name="session_running">会话进行中</string>
-    <string name="back_to_session">返回会话</string>
     <string name="back_to_home">返回首页</string>
     <string name="floating_overlay_offline">未连接</string>
     <string name="floating_overlay_no_channel">不在任何频道</string>
@@ -316,8 +314,6 @@
     <string name="stream_add">观看其他直播</string>
     <string name="voice_deafen">关闭声音</string>
     <string name="voice_undeafen">打开声音</string>
-    <string name="stream_chat_show">显示频道聊天</string>
-    <string name="stream_chat_hide">隐藏频道聊天</string>
     <string name="about_version">版本 %1$s</string>
     <string name="about_tagline">一个为小圈子朋友打造的 Android TeamSpeak 客户端。它只连接你添加的服务器。</string>
     <string name="about_source_title">源代码</string>
@@ -337,8 +333,19 @@
     <string name="user_details">详细信息</string>
     <string name="nickname_taken">%1$s 在此服务器上已被占用，你以 %2$s 的身份加入。</string>
     <string name="chat_empty_channel">此频道还没有消息。</string>
-    <string name="chat_empty_private">还没有私聊消息。要给某人发消息，请在频道列表中点按他们。</string>
-    <string name="message_private_no_recipient">在频道列表中点按某人即可给他们发消息</string>
+    <string name="chat_empty_private">还没有私聊消息。要给某人发消息，请在频道列表中点按他们，然后选择「私聊」。</string>
+    <string name="message_private_no_recipient">请先在频道列表中选择一个人</string>
     <string name="files_in_channel">%1$s 的文件</string>
     <string name="stream_screen_share">屏幕共享</string>
+    <string name="channel_default">默认频道</string>
+    <string name="chat_fold">收起聊天</string>
+    <string name="chat_unfold">展开聊天</string>
+    <string name="people_online">%1$d 人在线</string>
+    <string name="chat_empty_private_with">还没有与 %1$s 的消息。</string>
+    <string name="nav_server">服务器</string>
+    <string name="nav_add">添加</string>
+    <string name="stream_fullscreen">全屏</string>
+    <string name="stream_stop_watching">停止观看</string>
+    <string name="stream_tab">直播</string>
+    <string name="channels_list">列表</string>
 </resources>

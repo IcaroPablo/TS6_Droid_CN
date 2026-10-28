@@ -8,12 +8,12 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.compose.ui.graphics.ImageBitmap
-import dev.tsdroid.bridge.AvatarCache
 import dev.tsdroid.bridge.AudioBridge
+import dev.tsdroid.bridge.AvatarCache
 import dev.tsdroid.bridge.FileCache
 import dev.tsdroid.bridge.IconCache
 import dev.tsdroid.bridge.LiveStream
@@ -21,14 +21,14 @@ import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.bridge.TsFileEntry
 import dev.tsdroid.bridge.VadGate
-import dev.tsdroid.han.R
 import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.MessageStore
-import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.data.NicknameRules
 import dev.tsdroid.data.PrivateConversations
+import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.data.UserAudioStore
+import dev.tsdroid.han.R
 import dev.tsdroid.service.ReconnectStatus
 import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.service.WhisperManager
@@ -43,9 +43,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -374,14 +374,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val autoLoadImages: StateFlow<Boolean> = settingsStore.autoLoadImages
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    val streamChatVisible: StateFlow<Boolean> = settingsStore.streamChat
-        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
-
-    fun toggleStreamChat() {
-        val visible = !streamChatVisible.value
-        viewModelScope.launch { settingsStore.setStreamChat(visible) }
-    }
-
     val enableFloatingWindow: StateFlow<Boolean> = settingsStore.enableFloatingWindow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
@@ -554,9 +546,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                         val addr = serverAddress ?: service.tsClient.serverAddress ?: ""
                         if (addr.isNotEmpty()) {
                             bookmarkStore.updateServerInfo(addr, info.name, info.iconId)
-                            // Download server icon if needed
+                            // Download server icon if needed; it joins the channel icons, which
+                            // are keyed by icon id, so the top bar can show it
                             if (info.iconId != 0L) {
                                 iconCache.loadIcon(info.iconId, service.tsClient)
+                                iconCache.getIcon(info.iconId)?.let { icon ->
+                                    _channelIcons.value = _channelIcons.value + (info.iconId to icon)
+                                }
                             }
                         }
                     }

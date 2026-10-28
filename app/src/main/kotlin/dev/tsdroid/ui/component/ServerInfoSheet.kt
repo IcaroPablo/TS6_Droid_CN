@@ -1,21 +1,18 @@
 package dev.tsdroid.ui.component
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -23,83 +20,69 @@ import dev.tsdroid.han.R
 import dev.tslib.ServerInfo
 
 /**
- * Read-only server details, opened from the server screen's top bar.
+ * Read-only server details, unfolded as an island from the server's name in the top bar.
  *
  * Everything shown here comes from the [ServerInfo] snapshot the client already
- * refreshes with every state update, so the sheet needs no extra polling and no
+ * refreshes with every state update, so it needs no extra polling and no
  * native call of its own.
  */
 @Composable
-fun ServerInfoSheet(
+fun ServerInfoContent(
     info: ServerInfo?,
     address: String?,
-    wallpaper: ImageBitmap?,
-    onDismiss: () -> Unit,
+    /** Counted from the lists the app keeps: the server's own counters are not always filled in */
+    clientsOnline: Int,
+    channelCount: Int,
+    modifier: Modifier = Modifier,
 ) {
-    GlassDialog(
-        onDismissRequest = onDismiss,
-        title = stringResource(R.string.server_info),
-        wallpaper = wallpaper,
-        body = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                if (info == null) {
-                    Text(
-                        text = stringResource(R.string.server_platform_version) + ": —",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    return@Column
-                }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        if (info == null) {
+            Text(
+                text = stringResource(R.string.server_platform_version) + ": —",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            return@Column
+        }
 
-                InfoRow(stringResource(R.string.server), info.name)
-                address?.takeIf { it.isNotBlank() }?.let {
-                    InfoRow(stringResource(R.string.server_address), it)
-                }
-                InfoRow(
-                    stringResource(R.string.server_platform_version),
-                    "${info.platform} / ${info.version}",
-                )
-                InfoRow(
-                    stringResource(R.string.server_clients),
-                    stringResource(
-                        R.string.server_clients_format,
-                        info.clientsOnline,
-                        info.maxClients,
-                    ),
-                )
-                InfoRow(stringResource(R.string.server_channels), info.channelsOnline.toString())
-                if (info.uptime > 0L) {
-                    InfoRow(stringResource(R.string.server_uptime), formatUptime(info.uptime))
-                }
+        address?.takeIf { it.isNotBlank() }?.let {
+            InfoRow(stringResource(R.string.server_address), it)
+        }
+        InfoRow(
+            stringResource(R.string.server_platform_version),
+            "${info.platform} / ${info.version}",
+        )
+        InfoRow(
+            stringResource(R.string.server_clients),
+            stringResource(
+                R.string.server_clients_format,
+                clientsOnline,
+                info.maxClients,
+            ),
+        )
+        InfoRow(stringResource(R.string.server_channels), channelCount.toString())
+        if (info.uptime > 0L) {
+            InfoRow(stringResource(R.string.server_uptime), formatUptime(info.uptime))
+        }
 
-                val welcome = stripBbCode(info.welcomeMessage)
-                if (welcome.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.server_welcome),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = welcome,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
-            }
-        },
-    )
+        val welcome = stripBbCode(info.welcomeMessage)
+        if (welcome.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.server_welcome),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = welcome,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
 }
 
 @Composable
@@ -109,15 +92,18 @@ private fun InfoRow(label: String, value: String) {
             .fillMaxWidth()
             .padding(vertical = 4.dp),
     ) {
+        // Label and value in two columns, so the values line up
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(end = 12.dp),
+            modifier = Modifier
+                .width(120.dp)
+                .padding(end = 12.dp),
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )

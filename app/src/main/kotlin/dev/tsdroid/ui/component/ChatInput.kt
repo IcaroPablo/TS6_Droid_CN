@@ -1,14 +1,17 @@
 package dev.tsdroid.ui.component
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -17,19 +20,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.WhisperAmber
 
 /**
@@ -61,7 +71,7 @@ fun ChatInput(
         if (whisperTargetName != null) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(8.dp),
+                shape = Shapes.Small,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
             ) {
                 Row(
@@ -71,57 +81,81 @@ fun ChatInput(
                     Icon(
                         AppIcons.Whisper,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize),
                         tint = WhisperAmber,
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = stringResource(R.string.whisper_banner, whisperTargetName),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
         }
+        // One filled field with the attach and send buttons inside it, instead of an outlined box
+        // beside loose icons. Its corner is a control's: nested inside the island by the gap.
+        var focused by remember { mutableStateOf(false) }
+        val fill by animateColorAsState(
+            LocalContentColor.current.copy(alpha = if (focused) 0.14f else 0.08f),
+            label = "chatInputFill",
+        )
+        val contentColor = LocalContentColor.current
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ControlHeight)
+                .clip(Shapes.Small)
+                .background(fill),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (onAttach != null) {
-                IconButton(onClick = onAttach, enabled = attachEnabled) {
-                    Icon(AppIcons.File, contentDescription = stringResource(R.string.attach_file))
+                IconButton(onClick = onAttach, enabled = attachEnabled, modifier = Modifier.size(ControlHeight)) {
+                    Icon(
+                        AppIcons.File,
+                        contentDescription = stringResource(R.string.attach_file),
+                        modifier = Modifier.size(IconSize),
+                    )
                 }
+            } else {
+                Spacer(Modifier.width(12.dp))
             }
-            OutlinedTextField(
+            BasicTextField(
                 value = text,
                 onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(placeholder) },
-                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 10.dp)
+                    .onFocusChanged { focused = it.isFocused },
                 enabled = enabled,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    // Light glass: the panel's refraction shows through, the border keeps
-                    // the focus affordance, and every text colour follows the glass.
-                    focusedTextColor = LocalContentColor.current,
-                    unfocusedTextColor = LocalContentColor.current,
-                    disabledTextColor = LocalContentColor.current.copy(alpha = 0.38f),
-                    focusedContainerColor = LocalContentColor.current.copy(alpha = 0.10f),
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = LocalContentColor.current.copy(alpha = 0.35f),
-                    disabledBorderColor = LocalContentColor.current.copy(alpha = 0.15f),
-                    focusedPlaceholderColor = LocalContentColor.current.copy(alpha = 0.55f),
-                    unfocusedPlaceholderColor = LocalContentColor.current.copy(alpha = 0.55f),
-                    disabledPlaceholderColor = LocalContentColor.current.copy(alpha = 0.30f),
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                ),
+                decorationBox = { field ->
+                    Box {
+                        if (text.isEmpty()) {
+                            Text(
+                                text = placeholder,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = contentColor.copy(alpha = if (enabled) 0.55f else 0.30f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        field()
+                    }
+                },
             )
-            IconButton(onClick = onSend, enabled = canSend) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
+            // Lights up once there is something to send
+            IconButton(onClick = onSend, enabled = canSend, modifier = Modifier.size(ControlHeight)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    contentDescription = stringResource(R.string.send),
+                    modifier = Modifier.size(IconSize),
+                    tint = if (canSend) MaterialTheme.colorScheme.primary else contentColor.copy(alpha = 0.38f),
+                )
             }
         }
     }

@@ -71,8 +71,6 @@
     <string name="wallpaper_export_all">Tout enregistrer</string>
     <string name="wallpaper_export_done">%1$d image(s) enregistrée(s) dans la galerie</string>
     <string name="wallpaper_export_failed">Échec de l\'enregistrement dans la galerie</string>
-    <string name="session_running">Session en cours</string>
-    <string name="back_to_session">Revenir à la session</string>
     <string name="back_to_home">Retour à l\'accueil</string>
     <string name="floating_overlay_offline">Non connecté</string>
     <string name="floating_overlay_no_channel">Dans aucun canal</string>
@@ -316,8 +314,6 @@
     <string name="stream_add">Regarder une autre diffusion</string>
     <string name="voice_deafen">Couper le son</string>
     <string name="voice_undeafen">Rétablir le son</string>
-    <string name="stream_chat_show">Afficher le chat du salon</string>
-    <string name="stream_chat_hide">Masquer le chat du salon</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_tagline">Un client TeamSpeak pour Android, fait pour un petit groupe d\'amis. Il ne se connecte qu\'aux serveurs que vous ajoutez.</string>
     <string name="about_source_title">Code source</string>
@@ -337,8 +333,19 @@
     <string name="user_details">Détails</string>
     <string name="nickname_taken">%1$s était déjà pris sur ce serveur, vous êtes donc connecté en tant que %2$s.</string>
     <string name="chat_empty_channel">Aucun message dans ce salon pour l\'instant.</string>
-    <string name="chat_empty_private">Aucun message privé pour l\'instant. Pour écrire à quelqu\'un, touchez son nom dans la liste des salons.</string>
-    <string name="message_private_no_recipient">Touchez quelqu\'un dans la liste des salons pour lui écrire</string>
+    <string name="chat_empty_private">Aucun message privé pour l\'instant. Pour écrire à quelqu\'un, touchez son nom dans la liste des salons et choisissez Message privé.</string>
+    <string name="message_private_no_recipient">Choisissez d\'abord quelqu\'un dans la liste des salons</string>
     <string name="files_in_channel">Fichiers de %1$s</string>
     <string name="stream_screen_share">Partage d\'écran</string>
+    <string name="channel_default">Salon par défaut</string>
+    <string name="chat_fold">Replier le chat</string>
+    <string name="chat_unfold">Déplier le chat</string>
+    <string name="people_online">%1$d en ligne</string>
+    <string name="chat_empty_private_with">Aucun message avec %1$s pour l\'instant.</string>
+    <string name="nav_server">Serveur</string>
+    <string name="nav_add">Ajouter</string>
+    <string name="stream_fullscreen">Plein écran</string>
+    <string name="stream_stop_watching">Arrêter de regarder</string>
+    <string name="stream_tab">Diffusion</string>
+    <string name="channels_list">Liste</string>
 </resources>

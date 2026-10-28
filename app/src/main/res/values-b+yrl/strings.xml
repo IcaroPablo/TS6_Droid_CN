@@ -63,8 +63,6 @@
     <string name="wallpaper_export_all">Remukaturu panhẽ</string>
     <string name="wallpaper_export_done">%1$d sangawa upitá galeria upé</string>
     <string name="wallpaper_export_failed">Ti upitá galeria upé</string>
-    <string name="session_running">Reiku servidor upé</string>
-    <string name="back_to_session">Reyuíri servidor kití</string>
     <string name="back_to_home">Reyuíri uka kití</string>
     <string name="floating_overlay_offline">Ti rewiké</string>
     <string name="floating_overlay_no_channel">Ti reikú canal upé</string>

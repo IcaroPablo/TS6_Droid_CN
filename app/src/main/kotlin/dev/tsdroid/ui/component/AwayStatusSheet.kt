@@ -37,6 +37,7 @@ import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.AlertRed
+import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.OnlineGreen
 import dev.tsdroid.ui.theme.WhisperAmber
 
@@ -76,7 +77,7 @@ fun AwayStatusSheet(
                     AwayStatus.DND -> AppIcons.DoNotDisturb
                 },
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(IconSize),
                 tint = awayStatusColor(status),
             )
             Spacer(Modifier.width(8.dp))
@@ -142,7 +143,7 @@ private fun StatusRow(entry: AwayStatus, selected: Boolean, onClick: () -> Unit)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(entry.titleRes()),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
             Text(

@@ -7,6 +7,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Download
@@ -32,18 +32,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.ImageBitmap
-import dev.tsdroid.viewmodel.DownloadState
-import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -56,14 +53,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import android.webkit.MimeTypeMap
 import androidx.compose.ui.unit.dp
-import dev.tsdroid.han.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import dev.tslib.BBCode
+import dev.tsdroid.han.R
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.viewmodel.ChatMessage
+import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
+import dev.tslib.BBCode
 import java.util.Date
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Wallpaper currently painted behind the screen. Glass surfaces that live inside a container which
@@ -157,7 +158,7 @@ fun MessageBubble(
             // chat: reading the decoded wallpaper directly would frost a bubble even while the anime
             // background is switched off.
             wallpaper = LocalGlassWallpaper.current,
-            shape = RoundedCornerShape(12.dp),
+            shape = Shapes.Medium,
             elevation = 3.dp,
         ) {
             Column(
@@ -170,7 +171,7 @@ fun MessageBubble(
                 if (!isMe) {
                     Text(
                         text = message.sender,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -182,7 +183,7 @@ fun MessageBubble(
                     if (parsed.text.isNotBlank()) {
                         Text(
                             text = parsed.text,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                     }
 
@@ -194,7 +195,7 @@ fun MessageBubble(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(Shapes.Small)
                                 .clickable { runCatching { uriHandler.openUri(videoUrl) } },
                             contentScale = ContentScale.FillWidth,
                         )
@@ -214,7 +215,7 @@ fun MessageBubble(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(top = 4.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
+                                        .clip(Shapes.Small),
                                     contentScale = ContentScale.FillWidth,
                                 )
                             }
@@ -222,7 +223,7 @@ fun MessageBubble(
                             Row(
                                 modifier = Modifier
                                     .padding(top = 4.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(Shapes.Small)
                                     .clickable { loadInlineImages = true }
                                     .padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -231,7 +232,7 @@ fun MessageBubble(
                                     Icons.Default.Image,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(IconSize),
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 // Names the sites, so the tap is an informed choice: they
@@ -309,7 +310,7 @@ private fun FileAttachmentCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(Shapes.Small)
                 .then(
                     if (uri != null) Modifier.clickable { openFile(context, uri, attachment.fileName) }
                     else Modifier
@@ -349,7 +350,7 @@ private fun FileAttachmentCard(
                 Icon(
                     imageVector = if (attachment.isImage) Icons.Default.Image else Icons.AutoMirrored.Filled.InsertDriveFile,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(IconSize),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -358,7 +359,7 @@ private fun FileAttachmentCard(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = attachment.fileName.substringAfterLast('/'),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
             )
             Text(
                 text = if (attachment.channelId > 0 && attachment.fileId.isEmpty())
@@ -411,7 +412,7 @@ private fun FileAttachmentCard(
             Icon(
                 imageVector = if (attachment.isImage) Icons.Default.Image else Icons.Default.Download,
                 contentDescription = stringResource(R.string.download),
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(IconSize),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }

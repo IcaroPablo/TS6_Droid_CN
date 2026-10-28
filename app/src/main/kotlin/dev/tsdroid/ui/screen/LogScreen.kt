@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -45,6 +45,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.tsdroid.data.AppLog
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Shapes
 import kotlinx.coroutines.launch
 
 /**
@@ -94,6 +96,7 @@ fun LogViewerDialog(onDismiss: () -> Unit) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back),
+                            modifier = Modifier.size(IconSize),
                         )
                     }
                     Text(
@@ -113,6 +116,7 @@ fun LogViewerDialog(onDismiss: () -> Unit) {
                         Icon(
                             Icons.Default.Refresh,
                             contentDescription = stringResource(R.string.diag_log_refresh),
+                            modifier = Modifier.size(IconSize),
                         )
                     }
                     IconButton(
@@ -124,12 +128,14 @@ fun LogViewerDialog(onDismiss: () -> Unit) {
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = stringResource(R.string.common_copy),
+                            modifier = Modifier.size(IconSize),
                         )
                     }
                     IconButton(onClick = { AppLog.clear() }) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = stringResource(R.string.diag_log_clear),
+                            modifier = Modifier.size(IconSize),
                         )
                     }
                 }
@@ -149,7 +155,7 @@ fun LogViewerDialog(onDismiss: () -> Unit) {
                             text = stringResource(
                                 if (loading) R.string.diag_log_loading else R.string.diag_log_empty
                             ),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.align(Alignment.Center),
                         )
@@ -168,7 +174,7 @@ fun LogViewerDialog(onDismiss: () -> Unit) {
                                     fontFamily = FontFamily.Monospace,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(4.dp))
+                                        .clip(Shapes.Small)
                                         .background(MaterialTheme.colorScheme.surfaceVariant)
                                         .padding(horizontal = 6.dp, vertical = 3.dp),
                                 )

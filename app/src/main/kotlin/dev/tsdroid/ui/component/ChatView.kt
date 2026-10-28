@@ -80,18 +80,21 @@ fun ChatView(
             reverseLayout = true,
         ) {
             items(displayMessages, key = { it.id }) { message ->
-                MessageBubble(
-                    message = message,
-                    showLinkThumbnails = showLinkThumbnails,
-                    autoLoadImages = autoLoadImages,
-                    onDownload = onDownload,
-                )
+                // A new message slides in instead of popping up
+                Box(modifier = Modifier.animateItem()) {
+                    MessageBubble(
+                        message = message,
+                        showLinkThumbnails = showLinkThumbnails,
+                        autoLoadImages = autoLoadImages,
+                        onDownload = onDownload,
+                    )
+                }
             }
         }
         if (messages.isEmpty() && emptyText != null) {
             Text(
                 text = emptyText,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = LocalContentColor.current.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import dev.tsdroid.ui.theme.IconSize
 
 /**
  * One row of a frosted menu.
@@ -39,8 +40,8 @@ fun GlassMenuItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(IconSize))
         Spacer(Modifier.width(12.dp))
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = tint)
+        Text(text = label, style = MaterialTheme.typography.bodyLarge, color = tint)
     }
 }

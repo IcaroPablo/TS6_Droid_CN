@@ -1,9 +1,10 @@
 package dev.tsdroid.ui.component
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -13,11 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,16 +35,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.absoluteValue
 import dev.tsdroid.han.R
-import dev.tslib.User
 import dev.tsdroid.ui.icon.AppIcons
-import androidx.compose.foundation.clickable
-import androidx.compose.material3.IconButton
 import dev.tsdroid.ui.theme.AlertRed
+import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.MutedOrange
+import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.TalkingBlue
 import dev.tsdroid.ui.theme.WhisperAmber
+import dev.tslib.User
+import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -99,7 +100,7 @@ fun UserItem(
             ) {
                 Text(
                     text = user.nickname,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -112,7 +113,7 @@ fun UserItem(
                 if (isSelf) {
                     Text(
                         text = " " + stringResource(R.string.self_marker),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -131,7 +132,7 @@ fun UserItem(
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(Shapes.Small)
                         .background(AlertRed)
                         .clickable(enabled = onWatchStream != null) { onWatchStream?.invoke() }
                         .padding(horizontal = 5.dp, vertical = 1.dp),
@@ -144,7 +145,7 @@ fun UserItem(
                 Icon(
                     Icons.Default.RadioButtonChecked,
                     contentDescription = stringResource(R.string.status_recording),
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(IconSize),
                     tint = AlertRed,
                 )
                 Spacer(Modifier.width(2.dp))
@@ -153,7 +154,7 @@ fun UserItem(
                 Icon(
                     Icons.Default.NightsStay,
                     contentDescription = stringResource(R.string.status_away),
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(IconSize),
                     // The colour of the away dot in the status sheet
                     tint = WhisperAmber,
                 )
@@ -172,7 +173,7 @@ fun UserItem(
                         contentDescription = stringResource(
                             if (isWhisperTarget) R.string.whisper_remove_target else R.string.whisper_add_target,
                         ),
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize),
                         tint = if (isWhisperTarget) WhisperAmber
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
@@ -188,7 +189,7 @@ fun UserItem(
                     Icon(
                         AppIcons.SpeakerOff,
                         contentDescription = stringResource(if (isLocallyMuted) R.string.unmute_user else R.string.mute_user),
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize),
                         tint = if (isLocallyMuted) MutedOrange else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
                 }
@@ -196,7 +197,7 @@ fun UserItem(
                 Icon(
                     AppIcons.SpeakerOff,
                     contentDescription = stringResource(R.string.user_muted),
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(IconSize),
                     tint = MutedOrange,
                 )
                 Spacer(Modifier.width(2.dp))
@@ -227,7 +228,7 @@ private fun StatusIcon(icon: ImageVector, description: String) {
         contentDescription = description,
         modifier = Modifier
             .padding(start = 6.dp)
-            .size(14.dp),
+            .size(IconSize),
         tint = AlertRed,
     )
 }
