@@ -2,6 +2,7 @@ package dev.tsdroid.ui.component
 
 import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -11,7 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,7 +33,11 @@ import androidx.compose.ui.unit.dp
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.Corners
+import dev.tsdroid.ui.theme.InsetFill
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tslib.Channel
 import dev.tslib.ChannelTree as JChannelTree
@@ -77,15 +84,29 @@ fun ChannelTree(
     }
     val selfChannelId = safeUsers.firstOrNull { it.id == selfId }?.channelId
 
+    // Each channel and its members share an area of their own: where each item sits in it decides
+    // which of its corners are rounded. Spacer channels are decoration and get no area.
+    val sections = remember(treeItems) { sectionPositions(treeItems) }
+
     LazyColumn(modifier = modifier) {
-        items(treeItems, key = { item ->
+        itemsIndexed(treeItems, key = { _, item ->
             when (item) {
                 is TreeItem.ChannelNode -> "ch_${item.channel.id}"
                 is TreeItem.UserNode -> "usr_${item.user.id}"
             }
-        }) { item ->
+        }) { index, item ->
+            val position = sections[index]
             // Members joining, leaving and moving between channels slide into place
-            Box(modifier = Modifier.animateItem()) {
+            Box(
+                modifier = Modifier
+                    .animateItem()
+                    // The island's gap between one channel's area and the next
+                    .padding(top = if (position.first && index > 0) Spacing.Gap else 0.dp)
+                    .then(
+                        if (position.boxed) Modifier.background(InsetFill, position.shape()) else Modifier,
+                    )
+                    .padding(horizontal = InsetPadding),
+            ) {
             when (item) {
                 is TreeItem.ChannelNode -> ChannelRow(
                     channel = item.channel,
@@ -247,6 +268,27 @@ private fun ChannelRow(
             }
         }
     }
+}
+
+/** Where an item sits in its channel's area. */
+private data class SectionPosition(val boxed: Boolean, val first: Boolean, val last: Boolean) {
+    fun shape(): Shape {
+        val top = if (first) Corners.Small else 0.dp
+        val bottom = if (last) Corners.Small else 0.dp
+        return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
+    }
+}
+
+/** A channel row opens an area; its members follow it in the same area. */
+private fun sectionPositions(items: List<TreeItem>): List<SectionPosition> = items.mapIndexed { index, item ->
+    val first = item is TreeItem.ChannelNode
+    val last = items.getOrNull(index + 1).let { it == null || it is TreeItem.ChannelNode }
+    val sectionChannel = items.subList(0, index + 1).last { it is TreeItem.ChannelNode } as TreeItem.ChannelNode
+    SectionPosition(
+        boxed = parseSpacer(sectionChannel.channel.name) == null,
+        first = first,
+        last = last,
+    )
 }
 
 private fun buildTreeItems(channels: List<Channel>, users: List<User>): List<TreeItem> {

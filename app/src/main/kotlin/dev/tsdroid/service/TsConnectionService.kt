@@ -865,6 +865,12 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
+    /**
+     * Whether the user has been told that the server renamed them this session. Kept here rather
+     * than in the screen, which is rebuilt every time the user comes back to it.
+     */
+    @Volatile var nicknameNoticeShown = false
+
     /** The nickname this session asked for; the server picks another one when it is taken. */
     val requestedNickname: String?
         get() = sessionParams?.nickname
@@ -890,6 +896,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         val failure = connectInternal(address, identity, nickname, password, isReconnect = false)
         if (failure == null) {
             sessionParams = SessionParams(address, identity, nickname, password)
+            nicknameNoticeShown = false
         }
         return failure
     }

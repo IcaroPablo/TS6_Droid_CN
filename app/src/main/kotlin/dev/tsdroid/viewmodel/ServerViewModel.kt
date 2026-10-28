@@ -23,6 +23,7 @@ import dev.tsdroid.bridge.TsFileEntry
 import dev.tsdroid.bridge.VadGate
 import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.data.BookmarkStore
+import dev.tsdroid.data.IslandLayout
 import dev.tsdroid.data.MessageStore
 import dev.tsdroid.data.NicknameRules
 import dev.tsdroid.data.PrivateConversations
@@ -373,6 +374,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     val autoLoadImages: StateFlow<Boolean> = settingsStore.autoLoadImages
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** How the server screen's islands were left; read once when the screen opens. */
+    suspend fun loadIslandLayout(): IslandLayout = settingsStore.islandLayout.first()
+
+    fun saveIslandLayout(layout: IslandLayout) {
+        viewModelScope.launch { settingsStore.setIslandLayout(layout) }
+    }
 
     val enableFloatingWindow: StateFlow<Boolean> = settingsStore.enableFloatingWindow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -1128,6 +1136,14 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleOutputMute() {
         audioBridge?.toggleOutputMute()
+    }
+
+    /** True the first time it is asked during a connection, false after: the notice is shown once. */
+    fun takeNicknameNotice(): Boolean {
+        val service = connectionService ?: return false
+        if (service.nicknameNoticeShown) return false
+        service.nicknameNoticeShown = true
+        return true
     }
 
     /** The nickname this session asked the server for, which may differ from the one it got. */

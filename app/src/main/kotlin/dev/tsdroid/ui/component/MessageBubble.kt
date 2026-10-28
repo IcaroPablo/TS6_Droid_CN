@@ -158,7 +158,8 @@ fun MessageBubble(
             // chat: reading the decoded wallpaper directly would frost a bubble even while the anime
             // background is switched off.
             wallpaper = LocalGlassWallpaper.current,
-            shape = Shapes.Medium,
+            // The corner of the area the messages sit in, so the two edges match
+            shape = Shapes.Small,
             elevation = 3.dp,
         ) {
             Column(

@@ -1,6 +1,7 @@
 package dev.tsdroid.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
@@ -35,3 +36,11 @@ object Spacing {
 
 /** The size of every icon in the app, in buttons, rows, headers and bars alike. */
 val IconSize = 20.dp
+
+/**
+ * An area set into an island (a channel and its members, the chat's messages): a darker fill, the
+ * island's gap from its edges and a control's corner. Content inside it is padded so it lines up
+ * with the island's own content.
+ */
+val InsetFill = Color.Black.copy(alpha = 0.18f)
+val InsetPadding = Spacing.Inner - Spacing.Gap

@@ -73,6 +73,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,6 +96,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.bridge.AudioBridge
+import dev.tsdroid.data.IslandLayout
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
 import dev.tsdroid.service.WhisperManager
@@ -128,6 +131,7 @@ import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.component.rememberUploadPicker
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetFill
 import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.ui.theme.WhisperAmber
@@ -138,7 +142,9 @@ import dev.tsdroid.viewmodel.ServerViewModel
 import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.User
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -199,6 +205,35 @@ fun ServerScreen(
     var chatFraction by rememberSaveable { mutableFloatStateOf(0.55f) }
     // Whether the channels island shows the streams being watched rather than the channel list
     var showStream by rememberSaveable { mutableStateOf(false) }
+
+    // The server's details, unfolded in the server bar
+    var showServerInfo by remember { mutableStateOf(false) }
+
+    // The screen never ends up with only headers: folding the last open island unfolds the
+    // channels instead
+    fun keepAnIslandOpen() {
+        if (!channelsOpen && !chatOpen) channelsOpen = true
+    }
+
+    // The islands come back the way they were left: restored once when the screen opens, without
+    // animating into place, then saved whenever they change
+    var layoutRestored by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val saved = viewModel.loadIslandLayout()
+        channelsOpen = saved.channelsOpen
+        chatOpen = saved.chatOpen
+        showServerInfo = saved.infoOpen
+        chatFraction = saved.chatFraction
+        keepAnIslandOpen()
+        withFrameNanos {}
+        layoutRestored = true
+        snapshotFlow { IslandLayout(channelsOpen, chatOpen, showServerInfo, chatFraction) }
+            .collectLatest { layout ->
+                // A drag moves the border on every frame; save once it has settled
+                delay(400)
+                viewModel.saveIslandLayout(layout)
+            }
+    }
     var draggingBorder by remember { mutableStateOf(false) }
     var chatTab by remember { mutableIntStateOf(0) }
     // Shared by the chat panel and the stream viewer's chat, and kept across
@@ -208,7 +243,6 @@ fun ServerScreen(
     // client id: a reconnect used to reassign the client id and split one person
     // into several conversation chips.
     var pmTargetUid by remember { mutableStateOf<String?>(null) }
-    var showServerInfo by remember { mutableStateOf(false) }
     var serverMenuOpen by remember { mutableStateOf(false) }
 
     // Resolve pmTarget User from users list
@@ -313,12 +347,10 @@ fun ServerScreen(
     // The server renames a client whose nickname is taken (ushummu → ushummu1). Say so once, when
     // our own name first shows up, or the user cannot tell which row is theirs.
     val selfNickname = users.firstOrNull { it.id == viewModel.myClientId }?.nickname
-    var nicknameChecked by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(selfNickname) {
-        if (selfNickname == null || nicknameChecked) return@LaunchedEffect
-        nicknameChecked = true
+        if (selfNickname == null) return@LaunchedEffect
         val requested = viewModel.requestedNickname
-        if (requested != null && requested != selfNickname) {
+        if (requested != null && requested != selfNickname && viewModel.takeNicknameNotice()) {
             Toast.makeText(
                 context,
                 context.getString(R.string.nickname_taken, requested, selfNickname),
@@ -456,7 +488,7 @@ fun ServerScreen(
                 else -> IslandHeaderHeight
             }
             // Folding animates; dragging follows the finger
-            val heightSpec = if (draggingBorder) snap() else spring<Dp>(stiffness = Spring.StiffnessMediumLow)
+            val heightSpec = if (draggingBorder || !layoutRestored) snap() else spring<Dp>(stiffness = Spring.StiffnessMediumLow)
             val channelsHeight by animateDpAsState(channelsTarget, heightSpec, label = "channelsHeight")
             val chatHeight by animateDpAsState(chatTarget, heightSpec, label = "chatHeight")
             Column(modifier = Modifier.fillMaxSize()) {
@@ -465,7 +497,10 @@ fun ServerScreen(
                 title = stringResource(R.string.server_channels),
                 icon = AppIcons.Channel,
                 expanded = channelsOpen,
-                onToggle = { channelsOpen = !channelsOpen },
+                onToggle = {
+                    channelsOpen = !channelsOpen
+                    keepAnIslandOpen()
+                },
                 // While a stream is watched, it shares this island with the channel list
                 actions = if (watching) {
                     {
@@ -571,14 +606,17 @@ fun ServerScreen(
                 selfId = viewModel.myClientId,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = Spacing.Inner, end = Spacing.Inner, bottom = Spacing.Inner),
+                    .padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
             )
             }
             Spacer(Modifier.height(Spacing.Gap))
             ChatPanel(
                 recipientName = pmTarget?.nickname,
                 expanded = chatOpen,
-                onToggleExpanded = { chatOpen = !chatOpen },
+                onToggleExpanded = {
+                    chatOpen = !chatOpen
+                    keepAnIslandOpen()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(chatHeight),
@@ -1040,6 +1078,9 @@ fun ChatPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
+                        // The messages' own area, set into the island like a channel's
+                        .clip(Shapes.Small)
+                        .background(InsetFill)
                         .draggable(
                             orientation = Orientation.Horizontal,
                             state = rememberDraggableState { delta -> swipeDrag += delta },
@@ -1052,6 +1093,7 @@ fun ChatPanel(
                         ),
                 )
 
+                Spacer(Modifier.height(Spacing.Gap))
                 // While whispering, a banner above the input says who the text goes to
                 ChatInput(
                     text = messageText,

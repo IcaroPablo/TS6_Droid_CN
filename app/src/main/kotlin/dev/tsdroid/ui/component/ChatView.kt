@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.DownloadState
 import dev.tsdroid.viewmodel.FileAttachment
@@ -75,8 +76,9 @@ fun ChatView(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            // Messages sit the standard gap in from the area's edges and from each other
+            contentPadding = PaddingValues(Spacing.Gap),
+            verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
             reverseLayout = true,
         ) {
             items(displayMessages, key = { it.id }) { message ->
