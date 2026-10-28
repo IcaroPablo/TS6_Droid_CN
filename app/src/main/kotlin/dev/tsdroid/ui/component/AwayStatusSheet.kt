@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,10 +69,11 @@ fun AwayStatusSheet(
     GlassBottomSheet(onDismissRequest = onDismiss, wallpaper = wallpaper) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = if (status == AwayStatus.DND) {
-                    AppIcons.DoNotDisturb
-                } else {
-                    AppIcons.Away
+                // The moon is the away icon; online gets the plain dot the bottom bar shows
+                imageVector = when (status) {
+                    AwayStatus.ONLINE -> Icons.Default.Circle
+                    AwayStatus.AWAY -> AppIcons.Away
+                    AwayStatus.DND -> AppIcons.DoNotDisturb
                 },
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),

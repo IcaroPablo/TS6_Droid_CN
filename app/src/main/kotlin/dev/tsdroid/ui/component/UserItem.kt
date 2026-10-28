@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,10 +26,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.absoluteValue
@@ -86,22 +87,42 @@ fun UserItem(
                 // is exactly when the microphone is going somewhere else.
                 isWhisperTalking = isWhisperTalking || (isSelf && isWhisperModeActive),
                 isRecording = user.isRecording,
-                isInputMuted = user.isInputMuted || !user.hasInputHardware,
-                isOutputMuted = user.isOutputMuted,
             )
 
             Spacer(Modifier.width(8.dp))
 
-            Text(
-                text = user.nickname,
-                style = MaterialTheme.typography.bodySmall,
+            // The name, then what the member has switched off: the icons used to sit in the
+            // avatar's corners, too small to read and easy to take for part of the picture.
+            Row(
                 modifier = Modifier.weight(1f),
-                color = when {
-                    user.isTalking -> MaterialTheme.colorScheme.primary
-                    user.isAway -> MaterialTheme.colorScheme.onSurfaceVariant
-                    else -> MaterialTheme.colorScheme.onSurface
-                },
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = user.nickname,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                    color = when {
+                        user.isTalking -> MaterialTheme.colorScheme.primary
+                        user.isAway -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                if (isSelf) {
+                    Text(
+                        text = " " + stringResource(R.string.self_marker),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (user.isInputMuted || !user.hasInputHardware) {
+                    StatusIcon(AppIcons.MicOff, stringResource(R.string.status_mic_off))
+                }
+                if (user.isOutputMuted) {
+                    StatusIcon(AppIcons.SpeakerOff, stringResource(R.string.status_speakers_off))
+                }
+            }
 
             if (isStreaming) {
                 Text(
@@ -200,13 +221,23 @@ internal fun avatarColorFor(nickname: String): Color =
     defaultAvatarColors[nickname.hashCode().absoluteValue % defaultAvatarColors.size]
 
 @Composable
+private fun StatusIcon(icon: ImageVector, description: String) {
+    Icon(
+        icon,
+        contentDescription = description,
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .size(14.dp),
+        tint = AlertRed,
+    )
+}
+
+@Composable
 private fun AvatarWithRing(
     avatar: ImageBitmap?,
     nickname: String,
     isTalking: Boolean,
     isRecording: Boolean,
-    isInputMuted: Boolean = false,
-    isOutputMuted: Boolean = false,
     isWhisperTalking: Boolean = false,
 ) {
     val ringActive = isTalking || isRecording
@@ -258,32 +289,6 @@ private fun AvatarWithRing(
                     textAlign = TextAlign.Center,
                 )
             }
-        }
-        if (isInputMuted) {
-            Icon(
-                AppIcons.MicOff,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(14.dp)
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
-                    .background(MaterialTheme.colorScheme.surface, CircleShape)
-                    .padding(1.dp),
-                tint = AlertRed,
-            )
-        }
-        if (isOutputMuted) {
-            Icon(
-                AppIcons.SpeakerOff,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(14.dp)
-                    .align(Alignment.BottomStart)
-                    .offset(x = (-2).dp, y = 2.dp)
-                    .background(MaterialTheme.colorScheme.surface, CircleShape)
-                    .padding(1.dp),
-                tint = AlertRed,
-            )
         }
     }
 }

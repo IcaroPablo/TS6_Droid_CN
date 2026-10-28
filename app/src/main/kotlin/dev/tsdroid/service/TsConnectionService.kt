@@ -865,6 +865,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
+    /** The nickname this session asked for; the server picks another one when it is taken. */
+    val requestedNickname: String?
+        get() = sessionParams?.nickname
+
     fun hasActiveConnection(address: String? = null): Boolean {
         return !isStopping &&
             tsClient.isConnected &&

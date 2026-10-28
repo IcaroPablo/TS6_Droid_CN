@@ -86,6 +86,8 @@ sealed class ShareTarget {
 @Composable
 fun FileManagerDialog(
     currentPath: String,
+    /** The channel whose files these are: TeamSpeak keeps files per channel. */
+    channelName: String?,
     files: List<TsFileEntry>,
     isLoading: Boolean,
     users: List<User>,
@@ -159,7 +161,12 @@ fun FileManagerDialog(
                 // The same compact bar as the rest of the app, but its title and actions keep taking
                 // their colour from the glass behind them instead of from the theme.
                 CompactTopBar(
-                    title = currentPath,
+                    // "/" alone did not say whose files these are
+                    title = when {
+                        channelName == null -> currentPath
+                        currentPath == "/" -> stringResource(R.string.files_in_channel, channelName)
+                        else -> channelName + currentPath
+                    },
                     titleColor = LocalContentColor.current,
                     iconColor = LocalContentColor.current,
                     navigationIcon = {

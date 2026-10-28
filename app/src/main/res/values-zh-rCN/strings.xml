@@ -42,8 +42,8 @@
     <!-- ServerScreen -->
     <string name="server">服务器</string>
     <string name="disconnect">断开连接</string>
-    <string name="audio_gain">音量增益</string>
-    <string name="mic_gain">麦克风增益</string>
+    <string name="audio_gain">扬声器音量</string>
+    <string name="mic_gain">麦克风音量</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">显示视频链接缩略图</string>
     <string name="auto_load_images">自动加载图片</string>
@@ -57,7 +57,7 @@
     <string name="mute">静音</string>
     <string name="unmute_mic">取消静音</string>
     <string name="tab_channel">频道</string>
-    <string name="tab_private">私信</string>
+    <string name="tab_private">私聊</string>
     <string name="tab_home">主页</string>
     <string name="tab_settings">设置</string>
     <string name="no_connection">暂无连接</string>
@@ -230,20 +230,6 @@
 
     <!-- AboutScreen -->
     <string name="about_software">关于软件</string>
-    <string name="about_back">← 返回</string>
-    <string name="about_credits_title">致谢与开发源流</string>
-    <string name="about_credits_desc">本项目基于 Grégory D 的优秀开源项目进行深度汉化、本地化适配与功能二次开发。由衷感谢原作者对开源语音社区做出的杰出贡献！</string>
-    <string name="about_enhancement_title">汉化与二次开发声明</string>
-    <string name="about_enhancement_desc">本版本由 yuaxi 进行全文本深度汉化，全面重构了系统兼容性代码以修复多项底层挂机闪退问题。同时，针对移动端常驻战术语音挂机场景，独家二次开发新增了【全新极简半透明常驻悬浮窗控制台】等核心功能，大幅度优化了电竞与游戏过程中的开麦/静音交互体验。</string>
-    <string name="about_license_title">开源许可证协议 (License)</string>
-    <string name="about_license_desc">本项目严格遵循 GNU GPLv3 (GNU General Public License v3) 开源许可证协议。这意味着任何个人或团队基于本项目修改、衍生出的任何再分发版本，都必须强制性保持完全开源，且必须无条件沿用 GPLv3 协议，同时必须完整保留原作者 (Grégory D) 与二开汉化作者 (yuaxi) 的版权署名。严禁任何形式的闭源打包、二次加密或暗中牟利！</string>
-    <string name="about_repo_title">官方源码仓库与持续更新</string>
-    <string name="about_repo_desc">本项目的完整源代码、后续的正式版本功能迭代、体验优化以及紧急 Bug 修复补丁，均会第一时间在我的官方 GitHub 仓库中独立发布。欢迎前往点星(Star)关注、反馈 Issues 或提交 PR：</string>
-    <string name="about_repo_link">🔗 点击访问 yuaxi 的 GitHub 开源仓库地址</string>
-    <string name="about_fork_title">TeleSpeak</string>
-    <string name="about_fork_desc">TeleSpeak 是 TS6_Droid_CN 的修改版本，自 2026 年 10 月起由 IcaroPablo 维护，并以相同的 GNU GPLv3 许可证发布。修改内容：默认英文、新名称和图标、从 github.com/IcaroPablo/TS6_Droid_CN 获取更新、加入语音时麦克风和扬声器的设置，以及在设备上加密身份、已保存的服务器、聊天记录和下载的文件。完整列表见仓库的提交历史。</string>
-    <string name="about_warning_title">⚠️ 谨防受骗（郑重免责声明）</string>
-    <string name="about_warning_desc">本程序属于纯公益、非盈利性质的开源技术交流产物，完全免费，完全开源！严禁任何形式的商业兜售、打包买断或捆绑卡密收费行为。如果您是通过付费渠道（如二手机器人、各大交易平台、收费代下等）购买获得本软件，说明您已被骗！请立即向平台发起侵权退款维权，并前往官方开源仓库实名举报倒卖黑商！</string>
 
     <!-- 后台可靠性与自愈提示 / Background reliability -->
     <string name="reconnect_in_progress">正在重连…（第 %1$d 次）</string>
@@ -258,7 +244,7 @@
 
     <!-- 应用内日志查看器 -->
     <string name="diag_log_title">诊断日志</string>
-    <string name="diag_log_hint">仅显示本应用进程的日志（无需 adb）。点右上角刷新可重新读取。</string>
+    <string name="diag_log_hint">应用最近的日志，出问题时可以发送。</string>
     <string name="diag_log_refresh">刷新</string>
     <string name="diag_log_clear">清空</string>
     <string name="diag_log_empty">暂无日志</string>
@@ -321,7 +307,6 @@
     <string name="stream_failed">无法连接到直播。</string>
     <string name="stream_ended">直播已结束。</string>
     <string name="stream_rotate">旋转</string>
-    <string name="section_streams">直播</string>
     <string name="stream_use_teamspeak_stun">直播使用 TeamSpeak 服务器</string>
     <string name="stream_use_teamspeak_stun_hint">观看直播会直接连接到主播，主播能看到你的 IP 地址。开启后，TeamSpeak 的服务器（turn.teamspeak.com）也会协助建立连接，适用于更多网络，但 TeamSpeak 会得知你的地址。</string>
     <string name="stream_volume">直播音量</string>
@@ -333,4 +318,27 @@
     <string name="voice_undeafen">打开声音</string>
     <string name="stream_chat_show">显示频道聊天</string>
     <string name="stream_chat_hide">隐藏频道聊天</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_tagline">一个为小圈子朋友打造的 Android TeamSpeak 客户端。它只连接你添加的服务器。</string>
+    <string name="about_source_title">源代码</string>
+    <string name="about_source_text">TeleSpeak 的源代码、发布版本和完整的更改列表都在 GitHub 上。</string>
+    <string name="about_credits_heading">致谢</string>
+    <string name="about_credits_text">TeleSpeak 是 yuaxi 的 TS6_Droid_CN 的修改版本，而 TS6_Droid_CN 基于 Grégory D 的开源 TeamSpeak 客户端。感谢两位。</string>
+    <string name="about_license_heading">许可证</string>
+    <string name="about_license_text">TeleSpeak 是基于 GNU 通用公共许可证第 3 版的自由软件：你可以使用、研究、分享和修改它。由它衍生的任何作品都必须以相同的许可证、连同源代码一起分享。</string>
+    <string name="gain_label">%1$s：%2$s</string>
+    <string name="section_connection">连接</string>
+    <string name="language_title">语言</string>
+    <string name="bookmark_connected">已连接</string>
+    <string name="open_session">打开</string>
+    <string name="self_marker">（你）</string>
+    <string name="status_mic_off">麦克风已关闭</string>
+    <string name="status_speakers_off">扬声器已关闭</string>
+    <string name="user_details">详细信息</string>
+    <string name="nickname_taken">%1$s 在此服务器上已被占用，你以 %2$s 的身份加入。</string>
+    <string name="chat_empty_channel">此频道还没有消息。</string>
+    <string name="chat_empty_private">还没有私聊消息。要给某人发消息，请在频道列表中点按他们。</string>
+    <string name="message_private_no_recipient">在频道列表中点按某人即可给他们发消息</string>
+    <string name="files_in_channel">%1$s 的文件</string>
+    <string name="stream_screen_share">屏幕共享</string>
 </resources>

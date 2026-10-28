@@ -621,6 +621,9 @@ private fun ExpandedPanel(
             .heightIn(max = PanelMaxHeight),
         shape = RoundedCornerShape(20.dp),
         color = overlaySurface(),
+        // Explicit: a translucent surface colour matches no theme colour, so Surface could not
+        // derive one and the texts without their own colour (the server name) came out black.
+        contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

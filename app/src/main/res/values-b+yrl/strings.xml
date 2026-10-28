@@ -38,8 +38,6 @@
     <string name="cancel">Rexari</string>
     <string name="server">Servidor</string>
     <string name="disconnect">Resemu</string>
-    <string name="audio_gain">Tiapu turususawa</string>
-    <string name="mic_gain">Microfone tiapú</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Vídeo sangawa mirĩ</string>
     <string name="auto_load_images">Repisika sangawa nhaãsupé</string>
@@ -52,7 +50,6 @@
     <string name="mute">Remukirirĩ</string>
     <string name="unmute_mic">Renheẽ yuíri</string>
     <string name="tab_channel">Canal</string>
-    <string name="tab_private">Yepé irũ</string>
     <string name="tab_home">Uka</string>
     <string name="tab_settings">Mukatusawa</string>
     <string name="no_connection">Ti aikwé wikesawa</string>
@@ -197,20 +194,6 @@
     <string name="common_copy">Rekopiari</string>
     <string name="common_copied">Ukopiari ana</string>
     <string name="about_software">Kwá aplicativo resé</string>
-    <string name="about_back">← Reyuíri</string>
-    <string name="about_credits_title">Mamé suí uri</string>
-    <string name="about_credits_desc">Kwá aplicativo usú Grégory D aplicativo suí, código yupirari waá. Yuíri, amú mira umbeú amú nheenga upé asuí umunhã puranga-eté. Tupana upagari Grégory D, puranga-eté umunhã!</string>
-    <string name="about_enhancement_title">Nheenga asuí puranga-eté resé</string>
-    <string name="about_enhancement_desc">Kwá versão upé, yuaxi umbeú panhẽ amú nheenga upé, asuí umukatu siya código, aplicativo ti upawa puxí arama. Yuíri umunhã janela mirĩ uwewé waá, microfone asuí kirirí upurakí puranga arama mairamé yamusarái jogo.</string>
-    <string name="about_license_title">Licença (GPLv3)</string>
-    <string name="about_license_desc">Kwá aplicativo usú GNU GPLv3 licença rupí. Awá umukatu ramé, umeẽ ramé amú-itá supé, tenhẽ uxari código upirari, usú GPLv3 rupí, asuí umbeú Grégory D asuí yuaxi rera. Ti puderi uyumimi código, ti puderi umunhã dinheru yumimi!</string>
-    <string name="about_repo_title">Mamé repisika aplicativo</string>
-    <string name="about_repo_desc">Panhé código asuí aplicativo pisasú-itá usemu kurí yupirungawa upé GitHub upé. Rerúri, remaã, rembeú maã ti upurakí:</string>
-    <string name="about_repo_link">🔗 Repuẽ resú arama yuaxi GitHub kití</string>
-    <string name="about_fork_title">TeleSpeak</string>
-    <string name="about_fork_desc">TeleSpeak TS6_Droid_CN suí uri, IcaroPablo umukatu waá outubro 2026 suí, asuí GNU GPLv3 licença rupí usú yuíri. Maã umudá: English yupirungawa upé, rera asuí sangawa pisasú, aplicativo pisasú usemu github.com/IcaroPablo/TS6_Droid_CN suí, mayé microfone asuí tiapú uikú rewiké ramé, asuí identidade, servidor-itá, nheenga asuí papera-itá upitá yumimi celular upé. Panhé umudá waá uikú repositório commit-itá upé.</string>
-    <string name="about_warning_title">⚠️ Remaã! Ti remeẽ dinheru</string>
-    <string name="about_warning_desc">Kwá aplicativo ti uputari dinheru: panhẽ mira upisika ti upagari. Ti puderi uvenderi. Repagari ramé kwá aplicativo resé, nhaã mira gananiwera! Reyururé ne dinheru yuíri, asuí rembeú repositório upé awá uvenderi.</string>
     <string name="anime_background">Sangawa rupitá</string>
     <string name="noise_suppression">Microfone ti usendú tiapú puxí</string>
     <string name="reconnect_in_progress">Rewiké yuíri… (%1$d)</string>
@@ -223,7 +206,6 @@
     <string name="app_details_settings">Licença-itá</string>
     <string name="app_details_settings_desc">Xiaomi/Huawei/OPPO/vivo celular upé, remeẽ ape licença-itá aplicativo upurakí arama nhaãsupé</string>
     <string name="diag_log_title">Aplicativo mbeusawa</string>
-    <string name="diag_log_hint">Kwá aplicativo mbeusawa anhũ. Repuẽ Remupisasu resé, remaã arama yuíri.</string>
     <string name="diag_log_refresh">Remupisasu</string>
     <string name="diag_log_clear">Remukanhemu</string>
     <string name="diag_log_empty">Ti aikwé mbeusawa</string>

@@ -2,6 +2,7 @@ package dev.tsdroid.ui.component
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +16,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -24,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,16 +87,27 @@ fun UserPanelSheet(
 ) {
     if (user == null) return
 
+    // Friends open this panel to turn someone up or down, so the controls come first and the
+    // technical details (unique ID, groups, versions) fold away underneath. Your own panel exists to
+    // read those details, so it shows them straight away.
+    var detailsOpen by remember(user.id) { mutableStateOf(isSelf) }
+
     GlassBottomSheet(onDismissRequest = onDismiss, wallpaper = wallpaper) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PanelAvatar(user.nickname, avatar)
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = user.nickname,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = user.nickname,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = statusLine(user),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (isSelf) {
                 Text(
                     text = stringResource(R.string.user_panel_self),
@@ -98,109 +116,16 @@ fun UserPanelSheet(
                 )
             }
         }
-
-        Spacer(Modifier.height(10.dp))
-
-        UserInfoRow(stringResource(R.string.user_uid), user.uid ?: "")
-        UserInfoRow(stringResource(R.string.user_platform), user.platform ?: "")
-        UserInfoRow(stringResource(R.string.user_version), user.version ?: "")
-        UserInfoRow(stringResource(R.string.user_country), user.country ?: "")
-        UserInfoRow(stringResource(R.string.user_talkpower), user.talkPower.toString())
-        // 状态: the away flag is the only status the protocol carries, so the row
-        // says online or away and the message (if any) gets its own line.
-        UserInfoRow(
-            stringResource(R.string.away_status_title),
-            stringResource(
-                if (user.isAway) R.string.away_status_away else R.string.away_status_online,
-            ),
-        )
         user.awayMessage?.takeIf { it.isNotBlank() }?.let { away ->
+            Spacer(Modifier.height(6.dp))
             UserInfoRow(stringResource(R.string.away_message_label), away)
         }
 
-        // 服务器组: the groups this member holds. Long-pressing the own row shows
-        // the same list for yourself, which is how a user checks their own rights.
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = stringResource(R.string.user_server_groups) +
-                if (user.serverGroups.isNotEmpty()) " (${user.serverGroups.size})" else "",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(2.dp))
-        val groups = UserGroups.displayOrder(user.serverGroups.toList(), knownServerGroups)
-        if (groups.isEmpty()) {
-            Text(
-                text = stringResource(R.string.user_server_groups_none),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            // A member can hold a lot of groups; the sheet itself does not scroll,
-            // so this list gets its own bounded scroll area instead of pushing the
-            // controls off the screen.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 160.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                groups.forEach { (id, name) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = name ?: stringResource(R.string.user_server_group_unknown, id),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (name != null) {
-                            Text(
-                                text = "#$id",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 频道组: exactly one, and it is the one held in the channel the member is
-        // in right now — which is how the server reports it.
-        UserGroups.channelGroupOf(user.channelGroup, knownChannelGroups)?.let { (id, name) ->
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.user_channel_group),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.height(2.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = name ?: stringResource(R.string.user_channel_group_unknown, id),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                if (name != null) {
-                    Text(
-                        text = "#$id",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
         if (isSelf) {
+            Spacer(Modifier.height(6.dp))
             // Renaming is a self action (clientupdate on our own client), so it
             // belongs here rather than on someone else's panel.
             if (onChangeNickname != null) {
-                Spacer(Modifier.height(6.dp))
                 TextButton(onClick = onChangeNickname) {
                     Text(stringResource(R.string.self_change_nickname))
                 }
@@ -211,66 +136,167 @@ fun UserPanelSheet(
                     Text(stringResource(R.string.away_status_change))
                 }
             }
-            return@GlassBottomSheet
-        }
+        } else {
+            if (onWatchStream != null) {
+                streams.forEach { stream ->
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = { onWatchStream(stream) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (stream.name.isBlank()) stringResource(R.string.stream_watch)
+                            else stringResource(R.string.stream_watch_named, streamDisplayName(stream.name))
+                        )
+                    }
+                }
+            }
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 10.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-        )
-
-        VolumeSlider(
-            initialDb = volumeDb,
-            defaultLabel = stringResource(R.string.volume_default),
-            onVolumeChange = onVolumeChange,
-            onVolumeCommit = onVolumeCommit,
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(if (isMuted) R.string.unmute_user else R.string.mute_user),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 10.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
             )
-            Switch(checked = isMuted, onCheckedChange = { onToggleMute() })
-        }
 
-        // 密聊 switch: the panel doorway next to the inline button on the row,
-        // with a label that spells out what whispering does to the microphone.
-        if (onToggleWhisper != null) {
+            VolumeSlider(
+                initialDb = volumeDb,
+                defaultLabel = stringResource(R.string.volume_default),
+                onVolumeChange = onVolumeChange,
+                onVolumeCommit = onVolumeCommit,
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = stringResource(R.string.whisper_switch_label),
+                    text = stringResource(if (isMuted) R.string.unmute_user else R.string.mute_user),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(checked = isWhisperTarget, onCheckedChange = { onToggleWhisper() })
+                Switch(checked = isMuted, onCheckedChange = { onToggleMute() })
+            }
+
+            // 密聊 switch: the panel doorway next to the inline button on the row,
+            // with a label that spells out what whispering does to the microphone.
+            if (onToggleWhisper != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.whisper_switch_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = isWhisperTarget, onCheckedChange = { onToggleWhisper() })
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(onClick = onPrivateMessage, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.private_message))
             }
         }
 
-        TextButton(onClick = onPrivateMessage) {
-            Text(stringResource(R.string.private_message))
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 10.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { detailsOpen = !detailsOpen }
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.user_details),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (detailsOpen) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+            )
         }
+        if (detailsOpen) UserDetails(user, knownServerGroups, knownChannelGroups)
+    }
+}
 
-        if (onWatchStream != null) {
-            streams.forEach { stream ->
-                TextButton(onClick = { onWatchStream(stream) }) {
-                    Text(
-                        if (stream.name.isBlank()) stringResource(R.string.stream_watch)
-                        else stringResource(R.string.stream_watch_named, stream.name)
-                    )
-                }
+/** "Online · Microphone off · Speakers off": the status the member list shows as icons, in words. */
+@Composable
+private fun statusLine(user: User): String = buildList {
+    add(stringResource(if (user.isAway) R.string.away_status_away else R.string.away_status_online))
+    if (user.isInputMuted || !user.hasInputHardware) add(stringResource(R.string.status_mic_off))
+    if (user.isOutputMuted) add(stringResource(R.string.status_speakers_off))
+}.joinToString(" · ")
+
+@Composable
+private fun UserDetails(
+    user: User,
+    knownServerGroups: List<ServerGroup>,
+    knownChannelGroups: List<ChannelGroup>,
+) {
+    UserInfoRow(stringResource(R.string.user_uid), user.uid ?: "")
+    UserInfoRow(stringResource(R.string.user_platform), user.platform ?: "")
+    UserInfoRow(stringResource(R.string.user_version), user.version ?: "")
+    UserInfoRow(stringResource(R.string.user_country), user.country ?: "")
+    UserInfoRow(stringResource(R.string.user_talkpower), user.talkPower.toString())
+
+    // 服务器组: the groups this member holds. Long-pressing the own row shows
+    // the same list for yourself, which is how a user checks their own rights.
+    Spacer(Modifier.height(10.dp))
+    Text(
+        text = stringResource(R.string.user_server_groups) +
+            if (user.serverGroups.isNotEmpty()) " (${user.serverGroups.size})" else "",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(Modifier.height(2.dp))
+    val groups = UserGroups.displayOrder(user.serverGroups.toList(), knownServerGroups)
+    if (groups.isEmpty()) {
+        Text(
+            text = stringResource(R.string.user_server_groups_none),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        // A member can hold a lot of groups; the sheet itself does not scroll,
+        // so this list gets its own bounded scroll area instead of pushing the
+        // controls off the screen.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 160.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            groups.forEach { (id, name) ->
+                Text(
+                    text = name ?: stringResource(R.string.user_server_group_unknown, id),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 1.dp),
+                )
             }
         }
     }
+
+    // 频道组: exactly one, and it is the one held in the channel the member is
+    // in right now — which is how the server reports it.
+    UserGroups.channelGroupOf(user.channelGroup, knownChannelGroups)?.let { (id, name) ->
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.user_channel_group),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = name ?: stringResource(R.string.user_channel_group_unknown, id),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(vertical = 1.dp),
+        )
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
@@ -347,12 +373,14 @@ private fun VolumeSlider(
             valueRange = -30f..15f,
             steps = 44,
         )
-        TextButton(onClick = {
-            db = 0f
-            onVolumeChange(0f)
-            onVolumeCommit(0f)
-        }) {
-            Text(stringResource(R.string.volume_reset))
+        if (db.roundToInt() != 0) {
+            TextButton(onClick = {
+                db = 0f
+                onVolumeChange(0f)
+                onVolumeCommit(0f)
+            }) {
+                Text(stringResource(R.string.volume_reset))
+            }
         }
     }
 }

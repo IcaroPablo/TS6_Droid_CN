@@ -1134,6 +1134,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         audioBridge?.toggleOutputMute()
     }
 
+    /** The nickname this session asked the server for, which may differ from the one it got. */
+    val requestedNickname: String?
+        get() = connectionService?.requestedNickname
+
     /** Local user id, or null before the connection is established. */
     val myClientId: Int?
         get() = tsClient?.clientId

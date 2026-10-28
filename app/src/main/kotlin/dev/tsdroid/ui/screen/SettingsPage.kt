@@ -14,7 +14,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -69,6 +68,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsPage(
     onNavigateToAbout: () -> Unit,
@@ -267,7 +267,11 @@ fun SettingsPage(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     var gainValue by remember(audioGain) { mutableFloatStateOf(audioGain) }
                     Text(
-                        text = "${stringResource(R.string.audio_gain)} : ${stringResource(R.string.gain_percent, (gainValue * 100).roundToInt())}",
+                        text = stringResource(
+                            R.string.gain_label,
+                            stringResource(R.string.audio_gain),
+                            stringResource(R.string.gain_percent, (gainValue * 100).roundToInt()),
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -284,7 +288,11 @@ fun SettingsPage(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     var micGainValue by remember(micGain) { mutableFloatStateOf(micGain) }
                     Text(
-                        text = "${stringResource(R.string.mic_gain)} : ${stringResource(R.string.gain_percent, (micGainValue * 100).roundToInt())}",
+                        text = stringResource(
+                            R.string.gain_label,
+                            stringResource(R.string.mic_gain),
+                            stringResource(R.string.gain_percent, (micGainValue * 100).roundToInt()),
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -311,10 +319,8 @@ fun SettingsPage(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         FilterChip(
@@ -364,10 +370,8 @@ fun SettingsPage(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         for ((state, label) in listOf(
@@ -397,10 +401,8 @@ fun SettingsPage(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         for ((level, label) in listOf(
@@ -477,11 +479,6 @@ fun SettingsPage(
                 SettingsSectionTitle(stringResource(R.string.section_chat))
 
                 SettingsSwitchRow(
-                    label = stringResource(R.string.auto_reconnect),
-                    checked = autoReconnect,
-                    onCheckedChange = onAutoReconnectChange,
-                )
-                SettingsSwitchRow(
                     label = stringResource(R.string.show_link_thumbnails),
                     checked = showLinkThumbnails,
                     onCheckedChange = { scope.launch { settingsStore.setShowLinkThumbnails(it) } },
@@ -518,8 +515,13 @@ fun SettingsPage(
             wallpaper = rememberGlassBackdrop(animeBackground),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                SettingsSectionTitle(stringResource(R.string.section_streams))
+                SettingsSectionTitle(stringResource(R.string.section_connection))
 
+                SettingsSwitchRow(
+                    label = stringResource(R.string.auto_reconnect),
+                    checked = autoReconnect,
+                    onCheckedChange = onAutoReconnectChange,
+                )
                 SettingsSwitchRow(
                     label = stringResource(R.string.stream_use_teamspeak_stun),
                     checked = streamUseTeamSpeakStun,
@@ -547,7 +549,7 @@ fun SettingsPage(
                 // 语言切换：就地展开选项，而不是弹 DropdownMenu —— 下拉菜单是独立窗口，背后没有
                 // 壁纸可模糊；三个固定选项铺开在卡片上也更好点。
                 SettingsClickableRow(
-                    label = stringResource(R.string.language_change_title),
+                    label = stringResource(R.string.language_title),
                     onClick = { languageMenuExpanded = !languageMenuExpanded },
                     trailing = {
                         Text(
@@ -655,13 +657,7 @@ private fun SettingsClickableRow(
     label: String,
     subtitle: String? = null,
     onClick: () -> Unit = {},
-    trailing: @Composable RowScope.() -> Unit = {
-        Icon(
-            Icons.AutoMirrored.Filled.NavigateNext,
-            null,
-            tint = LocalContentColor.current.copy(alpha = 0.6f),
-        )
-    },
+    trailing: @Composable RowScope.() -> Unit = { RowChevron() },
 ) {
     Row(
         modifier = Modifier
@@ -684,8 +680,17 @@ private fun SettingsClickableRow(
     }
 }
 
+@Composable
+private fun RowChevron() {
+    Icon(
+        Icons.AutoMirrored.Filled.NavigateNext,
+        null,
+        tint = LocalContentColor.current.copy(alpha = 0.6f),
+    )
+}
+
 /**
- * One language choice, unfolded under the "语言切换" row.
+ * One language choice, unfolded under the language row.
  *
  * Drawn as part of the card so it is frosted like everything else on it — a `DropdownMenu` would be
  * a window of its own, with no wallpaper behind it to blur.
@@ -1198,7 +1203,7 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                 updateInfo != null -> Text(stringResource(R.string.update_found), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 updateError != null -> Text(updateError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 isLatestVersion -> Text(stringResource(R.string.update_already_latest), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                else -> {}
+                else -> RowChevron()
             }
         },
     )

@@ -42,8 +42,8 @@
     <!-- ServerScreen -->
     <string name="server">Serveur</string>
     <string name="disconnect">Déconnexion</string>
-    <string name="audio_gain">Gain audio</string>
-    <string name="mic_gain">Gain micro</string>
+    <string name="audio_gain">Volume des haut-parleurs</string>
+    <string name="mic_gain">Volume du micro</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Miniatures des liens vidéo</string>
     <string name="auto_load_images">Charger les images automatiquement</string>
@@ -57,7 +57,7 @@
     <string name="mute">Couper</string>
     <string name="unmute_mic">Activer le micro</string>
     <string name="tab_channel">Channel</string>
-    <string name="tab_private">MP</string>
+    <string name="tab_private">Privé</string>
     <string name="tab_home">Accueil</string>
     <string name="tab_settings">Paramètres</string>
     <string name="no_connection">Aucune connexion</string>
@@ -230,20 +230,6 @@
 
     <!-- AboutScreen -->
     <string name="about_software">À propos</string>
-    <string name="about_back">← Retour</string>
-    <string name="about_credits_title">Crédits &amp; Origines</string>
-    <string name="about_credits_desc">Ce projet est basé sur l\'excellent projet open-source de Grégory D, avec une localisation approfondie et des améliorations de fonctionnalités. Un grand merci à l\'auteur original pour ses contributions exceptionnelles à la communauté vocale open-source !</string>
-    <string name="about_enhancement_title">Déclaration de Localisation &amp; Amélioration</string>
-    <string name="about_enhancement_desc">Cette version propose une localisation en texte intégral par yuaxi, ainsi qu\'une refonte complète du code de compatibilité système pour résoudre plusieurs problèmes de plantage en arrière-plan. De plus, pour le cas d\'utilisation des communications vocales tactiques sur mobile, un développement secondaire exclusif a ajouté des fonctionnalités de base telles que la [Console Flottante Translucide Minimaliste], optimisant considérablement l\'expérience d\'interaction micro/muet pendant l\'e-sport et les jeux.</string>
-    <string name="about_license_title">Licence Open Source (GPLv3)</string>
-    <string name="about_license_desc">Ce projet suit strictement la licence open-source GNU GPLv3 (GNU General Public License v3). Cela signifie que tout individu ou équipe modifiant ou dérivant des redistributions de ce projet DOIT le garder entièrement open-source, adopter inconditionnellement la licence GPLv3, et conserver l\'attribution des droits d\'auteur de l\'auteur original (Grégory D) et du développeur secondaire (yuaxi). Toute forme de redistribution en source fermée, de chiffrement secondaire ou de profit secret est strictement interdite !</string>
-    <string name="about_repo_title">Dépôt Source Officiel &amp; Mises à jour</string>
-    <string name="about_repo_desc">Le code source complet de ce projet, les itérations officielles des fonctionnalités, les optimisations de l\'expérience et les correctifs d\'urgence seront publiés en priorité et de manière indépendante sur mon dépôt GitHub officiel. N\'hésitez pas à mettre une étoile (Star), à suivre, à signaler des problèmes (Issues) ou à soumettre des PR :</string>
-    <string name="about_repo_link">🔗 Cliquez pour visiter le dépôt GitHub open-source de yuaxi</string>
-    <string name="about_fork_title">TeleSpeak</string>
-    <string name="about_fork_desc">TeleSpeak est une version modifiée de TS6_Droid_CN, maintenue par IcaroPablo depuis octobre 2026 et distribuée sous la même licence GNU GPLv3. Modifications : anglais par défaut, nouveaux nom et icône, mises à jour depuis github.com/IcaroPablo/TS6_Droid_CN, un réglage du micro et des haut-parleurs en rejoignant le vocal, et le chiffrement sur l\'appareil de l\'identité, des serveurs enregistrés, de l\'historique du chat et des fichiers téléchargés. La liste complète se trouve dans l\'historique des commits du dépôt.</string>
-    <string name="about_warning_title">⚠️ Avertissement de Fraude</string>
-    <string name="about_warning_desc">Ce programme est un produit purement bénévole et à but non lucratif destiné à l\'échange technique open-source. Il est entièrement GRATUIT et entièrement OPEN-SOURCE ! Toute forme de vente commerciale, d\'achat groupé ou de facturation via des codes d\'activation est strictement interdite. Si vous avez obtenu ce logiciel via des canaux payants (tels que des bots de revente, des plateformes de trading, des services de téléchargement payants, etc.), vous avez été victime d\'une arnaque ! Veuillez immédiatement lancer une demande de remboursement pour infraction sur la plateforme, et rendez-vous sur le dépôt open-source officiel pour signaler les revendeurs au marché noir !</string>
 
     <!-- Fiabilité en arrière-plan -->
     <string name="reconnect_in_progress">Reconnexion… (tentative %1$d)</string>
@@ -258,7 +244,7 @@
 
     <!-- 应用内日志查看器 -->
     <string name="diag_log_title">Journal de diagnostic</string>
-    <string name="diag_log_hint">Affiche uniquement le journal de ce processus (sans adb). Appuyez sur actualiser pour recharger.</string>
+    <string name="diag_log_hint">Le journal récent de l\'application, à envoyer en cas de problème.</string>
     <string name="diag_log_refresh">Actualiser</string>
     <string name="diag_log_clear">Effacer</string>
     <string name="diag_log_empty">Aucune entrée de journal</string>
@@ -321,7 +307,6 @@
     <string name="stream_failed">Impossible de se connecter à la diffusion.</string>
     <string name="stream_ended">La diffusion est terminée.</string>
     <string name="stream_rotate">Pivoter</string>
-    <string name="section_streams">Diffusions</string>
     <string name="stream_use_teamspeak_stun">Utiliser le serveur de TeamSpeak pour les diffusions</string>
     <string name="stream_use_teamspeak_stun_hint">Regarder une diffusion vous connecte directement à la personne qui diffuse, qui voit votre adresse IP. Avec cette option, le serveur de TeamSpeak (turn.teamspeak.com) aide aussi à trouver un chemin : cela fonctionne sur plus de réseaux, mais TeamSpeak voit votre adresse.</string>
     <string name="stream_volume">Volume de la diffusion</string>
@@ -333,4 +318,27 @@
     <string name="voice_undeafen">Rétablir le son</string>
     <string name="stream_chat_show">Afficher le chat du salon</string>
     <string name="stream_chat_hide">Masquer le chat du salon</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_tagline">Un client TeamSpeak pour Android, fait pour un petit groupe d\'amis. Il ne se connecte qu\'aux serveurs que vous ajoutez.</string>
+    <string name="about_source_title">Code source</string>
+    <string name="about_source_text">Le code source de TeleSpeak, ses versions et la liste complète des changements sont sur GitHub.</string>
+    <string name="about_credits_heading">Crédits</string>
+    <string name="about_credits_text">TeleSpeak est une version modifiée de TS6_Droid_CN de yuaxi, lui-même basé sur un client TeamSpeak libre de Grégory D. Merci à tous les deux.</string>
+    <string name="about_license_heading">Licence</string>
+    <string name="about_license_text">TeleSpeak est un logiciel libre sous la licence publique générale GNU, version 3 : vous pouvez l\'utiliser, l\'étudier, le partager et le modifier. Tout ce qui en est dérivé doit être partagé sous la même licence, avec son code source.</string>
+    <string name="gain_label">%1$s : %2$s</string>
+    <string name="section_connection">Connexion</string>
+    <string name="language_title">Langue</string>
+    <string name="bookmark_connected">Connecté</string>
+    <string name="open_session">Ouvrir</string>
+    <string name="self_marker">(vous)</string>
+    <string name="status_mic_off">Micro coupé</string>
+    <string name="status_speakers_off">Haut-parleurs coupés</string>
+    <string name="user_details">Détails</string>
+    <string name="nickname_taken">%1$s était déjà pris sur ce serveur, vous êtes donc connecté en tant que %2$s.</string>
+    <string name="chat_empty_channel">Aucun message dans ce salon pour l\'instant.</string>
+    <string name="chat_empty_private">Aucun message privé pour l\'instant. Pour écrire à quelqu\'un, touchez son nom dans la liste des salons.</string>
+    <string name="message_private_no_recipient">Touchez quelqu\'un dans la liste des salons pour lui écrire</string>
+    <string name="files_in_channel">Fichiers de %1$s</string>
+    <string name="stream_screen_share">Partage d\'écran</string>
 </resources>

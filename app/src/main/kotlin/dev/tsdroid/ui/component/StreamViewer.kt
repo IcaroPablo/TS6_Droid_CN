@@ -58,6 +58,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -329,7 +330,9 @@ private fun ViewerTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.4f))
+            // Darker at the top edge: in landscape the bar lies on the video itself, where a flat
+            // 40% black left the title and icons hard to read over a bright picture.
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.35f))))
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .height(TOP_BAR_HEIGHT)
             .padding(horizontal = 8.dp),
@@ -351,7 +354,7 @@ private fun ViewerTopBar(
                         DropdownMenuItem(
                             text = {
                                 val name = nameOf(stream.clientId)
-                                Text(if (stream.name.isBlank()) name else "$name · ${stream.name}")
+                                Text(if (stream.name.isBlank()) name else "$name · ${streamDisplayName(stream.name)}")
                             },
                             onClick = {
                                 onAddOpenChange(false)
@@ -410,6 +413,7 @@ private fun StreamChatPanel(chat: StreamChat, modifier: Modifier) {
                 showLinkThumbnails = chat.showLinkThumbnails,
                 autoLoadImages = chat.autoLoadImages,
                 onDownload = chat.onDownload,
+                emptyText = stringResource(R.string.chat_empty_channel),
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
             ChatInput(
@@ -493,7 +497,7 @@ private fun StreamTitle(streamerName: String, streamName: String) {
     )
     if (streamName.isNotBlank()) {
         Text(
-            text = streamName,
+            text = streamDisplayName(streamName),
             color = Color.White.copy(alpha = 0.7f),
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
@@ -501,6 +505,16 @@ private fun StreamTitle(streamerName: String, streamName: String) {
         )
     }
 }
+
+/**
+ * A stream's name as the viewer shows it. The desktop client names a shared screen "Screen" and a
+ * number of its own, which means nothing here; a shared window keeps its title.
+ */
+@Composable
+fun streamDisplayName(name: String): String =
+    if (DESKTOP_SCREEN_NAME.matches(name)) stringResource(R.string.stream_screen_share) else name
+
+private val DESKTOP_SCREEN_NAME = Regex("""Screen \d+""")
 
 /** One stream: its video, its state, and (beside others) its name and close button. */
 @Composable
@@ -670,7 +684,7 @@ private fun StreamTile(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "${(volume * 100).roundToInt()} %",
+                        text = stringResource(R.string.gain_percent, (volume * 100).roundToInt()),
                         color = Color.White,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 4.dp),

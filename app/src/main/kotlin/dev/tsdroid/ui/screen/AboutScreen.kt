@@ -1,187 +1,170 @@
 package dev.tsdroid.ui.screen
 
-import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.background
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
 import dev.tsdroid.han.R
-import dev.tsdroid.ui.theme.generateColorScheme
 
-/**
- * About page. It is deliberately plain white paper — the wallpaper is never drawn here — so the
- * long license text stays on a neutral, high-contrast background.
- *
- * Two things follow from that white surface and are handled here rather than left to the theme:
- * the app's *light* palette is pinned (a dark system theme would otherwise paint pale text on
- * white), and the system-bar icons are switched to their dark variants (or they would vanish into
- * the white until the user leaves the page).
- */
+private const val REPO_URL = "https://github.com/IcaroPablo/TS6_Droid_CN"
+private const val UPSTREAM_URL = "https://github.com/YUAXI/TS6_Droid_CN"
+
+/** About page: what TeleSpeak is, where its source lives, whom it comes from, and its license. */
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val view = LocalView.current
-    val activity = context as? Activity
-    val systemInDarkTheme = isSystemInDarkTheme()
-    val lightScheme = remember { generateColorScheme(Color(0xFF6750A4), isDark = false) }
-
-    DisposableEffect(view, activity) {
-        val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
-        controller?.isAppearanceLightStatusBars = true
-        controller?.isAppearanceLightNavigationBars = true
-        onDispose {
-            // Hand the bars back to the rest of the app, which lets them follow the system theme.
-            controller?.isAppearanceLightStatusBars = !systemInDarkTheme
-            controller?.isAppearanceLightNavigationBars = !systemInDarkTheme
-        }
+    val versionName = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+    } catch (_: Exception) {
+        ""
     }
 
-    MaterialTheme(colorScheme = lightScheme) {
-        Box(
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
+                .statusBarsPadding()
                 .navigationBarsPadding(),
         ) {
-            AboutContent(onBack = onBack)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.back),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.about_software),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                    )
+                    Column(modifier = Modifier.padding(start = 16.dp)) {
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.headlineSmall,
+                        )
+                        Text(
+                            text = stringResource(R.string.about_version, versionName),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = stringResource(R.string.about_tagline),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+
+                AboutSection(stringResource(R.string.about_source_title)) {
+                    AboutText(stringResource(R.string.about_source_text))
+                    AboutLink(REPO_URL)
+                }
+                AboutSection(stringResource(R.string.about_credits_heading)) {
+                    AboutText(stringResource(R.string.about_credits_text))
+                    AboutLink(UPSTREAM_URL)
+                }
+                AboutSection(stringResource(R.string.about_license_heading)) {
+                    AboutText(stringResource(R.string.about_license_text))
+                }
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun AboutContent(onBack: () -> Unit) {
+private fun AboutSection(title: String, content: @Composable () -> Unit) {
+    Spacer(Modifier.height(20.dp))
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    Spacer(Modifier.height(20.dp))
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(Modifier.height(8.dp))
+    content()
+}
+
+@Composable
+private fun AboutText(text: String) {
+    Text(text = text, style = MaterialTheme.typography.bodyMedium)
+}
+
+/** A link the user opens on purpose; the app itself never contacts these sites. */
+@Composable
+private fun AboutLink(url: String) {
     val context = LocalContext.current
-    val repoUrl = "https://github.com/YUAXI/TS6_Droid_CN"
-    val scrollState = rememberScrollState()
-
-    Column(
+    Text(
+        text = url.removePrefix("https://"),
+        color = MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.bodyMedium,
+        textDecoration = TextDecoration.Underline,
         modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-            .verticalScroll(scrollState)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-        ) {
-            Text(
-                text = stringResource(R.string.about_back),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.clickable { onBack() }.padding(8.dp)
-            )
-            Spacer(modifier = Modifier.width(24.dp))
-            Text(
-                text = stringResource(R.string.about_software),
-                style = MaterialTheme.typography.headlineSmall,
-            )
-        }
+            .padding(top = 8.dp)
+            .clickable { openUrl(context, url) }
+            .padding(vertical = 4.dp),
+    )
+}
 
-        Spacer(modifier = Modifier.height(28.dp))
-
-        Text(text = stringResource(R.string.about_credits_title), style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.about_credits_desc),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(text = stringResource(R.string.about_enhancement_title), style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.about_enhancement_desc),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(text = stringResource(R.string.about_license_title), style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.about_license_desc),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(text = stringResource(R.string.about_repo_title), style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.about_repo_desc),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = stringResource(R.string.about_repo_link),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelLarge,
-            textDecoration = TextDecoration.Underline,
-            modifier = Modifier.clickable {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repoUrl))
-                    context.startActivity(intent)
-                } catch (_: Exception) {
-                }
-            }
-        )
-
-        Spacer(modifier = Modifier.height(28.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(28.dp))
-
-        // Fixed text where a contributor list used to be fetched from GitHub on every visit:
-        // the app talks to no one but the user's own server (see the README).
-        Text(text = stringResource(R.string.about_fork_title), style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.about_fork_desc),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        Spacer(modifier = Modifier.height(28.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(28.dp))
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier = Modifier.padding(bottom = 24.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = stringResource(R.string.about_warning_title),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = stringResource(R.string.about_warning_desc),
-                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
+private fun openUrl(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, R.string.no_app_to_open, Toast.LENGTH_SHORT).show()
     }
 }

@@ -20,9 +20,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,7 @@ fun ChannelTree(
     val userCountByChannel = remember(safeUsers) {
         safeUsers.groupingBy { it.channelId }.eachCount()
     }
+    val selfChannelId = safeUsers.firstOrNull { it.id == selfId }?.channelId
 
     LazyColumn(modifier = modifier) {
         items(treeItems, key = { item ->
@@ -89,6 +92,7 @@ fun ChannelTree(
                     onClick = { onChannelClick(item.channel.id) },
                     onLongClick = onChannelLongPress?.let { { it(item.channel) } },
                     isWhisperTarget = item.channel.id in whisperChannelIds,
+                    isCurrent = item.channel.id == selfChannelId,
                     icon = channelIcons[item.channel.iconId],
                 )
                 is TreeItem.UserNode -> UserItem(
@@ -121,6 +125,8 @@ private fun ChannelRow(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     isWhisperTarget: Boolean = false,
+    /** The channel we are in, which stands out from the rest. */
+    isCurrent: Boolean = false,
     icon: ImageBitmap? = null,
 ) {
     val spacer = remember(channel.name) { parseSpacer(channel.name) }
@@ -190,16 +196,20 @@ private fun ChannelRow(
                     contentScale = ContentScale.Fit,
                 )
             } else {
+                // Empty channels are dimmed, so the ones with people in them stand out
                 Icon(
                     AppIcons.Channel,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = if (isCurrent || userCount > 0) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
             }
             Spacer(Modifier.width(8.dp))
             Text(
                 text = channel.name,
                 style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isCurrent) FontWeight.SemiBold else null,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.Unspecified,
                 modifier = Modifier.weight(1f),
             )
             // Whole-channel whisper target, marked like the member rows

@@ -106,6 +106,7 @@ import dev.tsdroid.ui.component.LiquidGlassNavItem
 import dev.tsdroid.ui.component.LiquidGlassPanel
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.OnlineGreen
 import dev.tsdroid.viewmodel.ConnectionViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -216,6 +217,10 @@ fun ConnectionScreen(
         service.tsClient.state.collect { viewModel.observeServiceState(it) }
     }
     val sessionRunning = connectionState == ConnectionState.CONNECTED
+    // Which bookmark the running session (or the attempt in progress) belongs to, so its card can
+    // say so instead of offering to connect again.
+    val activeAddress = if (sessionRunning) TsConnectionService.instance?.tsClient?.serverAddress else null
+    val connectingAddress = if (isConnecting) address.trim() else null
 
     LaunchedEffect(error) {
         error?.let {
@@ -313,7 +318,7 @@ fun ConnectionScreen(
             ) { page ->
                 if (page == 0) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                    if (bookmarks.isEmpty()) {
+                    if (bookmarks.isEmpty() && connectingAddress == null) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
@@ -332,6 +337,9 @@ fun ConnectionScreen(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            if (connectingAddress != null && bookmarks.none { it.address == connectingAddress }) {
+                                ConnectingCard(wallpaper = rememberGlassBackdrop(animeBackground))
+                            }
                             bookmarks.forEachIndexed { index, bookmark ->
                                     GlassCard(
                                         modifier = Modifier.fillMaxWidth(),
@@ -364,16 +372,50 @@ fun ConnectionScreen(
                                             // screenshot most, and a server's address is exactly what should not
                                             // travel with that screenshot. The name (and the server's own icon
                                             // above) is enough to pick the right entry.
-                                            Text(
-                                                text = bookmark.serverName ?: bookmark.name,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                modifier = Modifier.weight(1f),
-                                            )
+                                            val isActive = bookmark.address == activeAddress
+                                            val isConnectingHere = bookmark.address == connectingAddress
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = bookmark.serverName ?: bookmark.name,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                )
+                                                if (isActive || isConnectingHere) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(6.dp)
+                                                                .clip(CircleShape)
+                                                                .background(
+                                                                    if (isActive) OnlineGreen
+                                                                    else LocalContentColor.current.copy(alpha = 0.5f),
+                                                                ),
+                                                        )
+                                                        Spacer(Modifier.width(6.dp))
+                                                        Text(
+                                                            text = stringResource(
+                                                                if (isActive) R.string.bookmark_connected else R.string.connecting,
+                                                            ),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = LocalContentColor.current.copy(alpha = 0.72f),
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             FilledTonalButton(
-                                                onClick = { viewModel.connectBookmark(bookmark, onConnected) },
-                                                enabled = !isConnecting,
+                                                onClick = {
+                                                    if (isActive) onConnected()
+                                                    else viewModel.connectBookmark(bookmark, onConnected)
+                                                },
+                                                enabled = isActive || !isConnecting,
                                             ) {
-                                                Text(stringResource(R.string.connect))
+                                                if (isConnectingHere) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(18.dp),
+                                                        strokeWidth = 2.dp,
+                                                    )
+                                                } else {
+                                                    Text(stringResource(if (isActive) R.string.open_session else R.string.connect))
+                                                }
                                             }
                                             var anchorRight by remember { mutableFloatStateOf(0f) }
                                             var anchorBottom by remember { mutableFloatStateOf(0f) }
@@ -701,8 +743,10 @@ fun ConnectionScreen(
                                         viewModel.saveBookmark()
                                         showBottomSheet = false
                                     }) {
-                                        Icon(Icons.Default.Star, contentDescription = null)
-                                        Spacer(Modifier.width(4.dp))
+                                        if (!isEditing) {
+                                            Icon(Icons.Default.Star, contentDescription = null)
+                                            Spacer(Modifier.width(4.dp))
+                                        }
                                         Text(stringResource(if (isEditing) R.string.save else R.string.add_bookmark))
                                     }
                                 }
@@ -711,6 +755,23 @@ fun ConnectionScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Stands in for a bookmark card while a connection typed by hand is being made. */
+@Composable
+private fun ConnectingCard(wallpaper: ImageBitmap?) {
+    GlassCard(modifier = Modifier.fillMaxWidth(), wallpaper = wallpaper) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(12.dp))
+            Text(stringResource(R.string.connecting), style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

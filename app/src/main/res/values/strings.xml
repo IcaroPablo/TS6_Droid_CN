@@ -42,8 +42,8 @@
     <!-- ServerScreen -->
     <string name="server">Server</string>
     <string name="disconnect">Disconnect</string>
-    <string name="audio_gain">Audio gain</string>
-    <string name="mic_gain">Mic gain</string>
+    <string name="audio_gain">Speaker volume</string>
+    <string name="mic_gain">Microphone volume</string>
     <string name="gain_percent">%1$d%%</string>
     <string name="show_link_thumbnails">Video link thumbnails</string>
     <string name="auto_load_images">Auto-load images</string>
@@ -56,7 +56,7 @@
     <string name="mute">Mute</string>
     <string name="unmute_mic">Unmute mic</string>
     <string name="tab_channel">Channel</string>
-    <string name="tab_private">PM</string>
+    <string name="tab_private">Private</string>
     <string name="tab_home">Home</string>
     <string name="tab_settings">Settings</string>
     <string name="no_connection">No connections</string>
@@ -228,20 +228,6 @@
 
     <!-- AboutScreen -->
     <string name="about_software">About</string>
-    <string name="about_back">← Back</string>
-    <string name="about_credits_title">Credits &amp; Origins</string>
-    <string name="about_credits_desc">This project is based on the excellent open-source project by Grégory D, with deep localization and feature enhancements. Sincere thanks to the original author for his outstanding contributions to the open-source voice community!</string>
-    <string name="about_enhancement_title">Localization &amp; Enhancement Statement</string>
-    <string name="about_enhancement_desc">This version features full-text deep localization by yuaxi, along with a comprehensive refactoring of system compatibility code to fix multiple underlying background crash issues. Meanwhile, targeting the scenario of always-on tactical voice comms on mobile, exclusive secondary development added core features such as the [Minimalist Translucent Always-on Floating Console], significantly optimizing the mic/mute interaction experience during esports and gaming.</string>
-    <string name="about_license_title">Open Source License (GPLv3)</string>
-    <string name="about_license_desc">This project strictly follows the GNU GPLv3 (GNU General Public License v3) open-source license. This means any individual or team modifying or deriving redistributions from this project MUST keep it completely open-source, unconditionally adopt the GPLv3 license, and fully retain the copyright attribution of the original author (Grégory D) and the secondary localization developer (yuaxi). Any form of closed-source packaging, secondary encryption, or secret profiteering is strictly prohibited!</string>
-    <string name="about_repo_title">Official Source Repository &amp; Updates</string>
-    <string name="about_repo_desc">The complete source code of this project, subsequent official feature iterations, experience optimizations, and emergency bug fix patches will be published first independently in my official GitHub repository. Welcome to Star, follow, report Issues, or submit PRs:</string>
-    <string name="about_repo_link">🔗 Click to visit yuaxi\'s open-source GitHub repository</string>
-    <string name="about_fork_title">TeleSpeak</string>
-    <string name="about_fork_desc">TeleSpeak is a modified version of TS6_Droid_CN, maintained by IcaroPablo since October 2026 and distributed under the same GNU GPLv3 license. Changes: English by default, a new name and icon, updates from github.com/IcaroPablo/TS6_Droid_CN, a setting for the microphone and speakers when joining voice, and on-device encryption of the identity, saved servers, chat history and downloaded files. The full list is in the repository\'s commit history.</string>
-    <string name="about_warning_title">⚠️ Anti-Fraud (Solemn Disclaimer)</string>
-    <string name="about_warning_desc">This program is a purely public-welfare, non-profit product for open-source technical exchange. It is completely FREE and completely OPEN-SOURCE! Any form of commercial peddling, packaging buyout, or bundled key-code charging is strictly prohibited. If you obtained this software through paid channels (such as second-hand bots, trading platforms, paid downloading services, etc.), you have been scammed! Please immediately initiate a refund claim for infringement on the platform, and head to the official open-source repository to report the black-market scalpers with your real name!</string>
     <string name="anime_background">Background image</string>
     <string name="noise_suppression">Microphone noise suppression</string>
 
@@ -258,7 +244,7 @@
 
     <!-- 应用内日志查看器 -->
     <string name="diag_log_title">Diagnostic log</string>
-    <string name="diag_log_hint">Shows this process log only (no adb needed). Tap refresh to reload.</string>
+    <string name="diag_log_hint">The app\'s recent log, to send when something goes wrong.</string>
     <string name="diag_log_refresh">Refresh</string>
     <string name="diag_log_clear">Clear</string>
     <string name="diag_log_empty">No log entries</string>
@@ -321,7 +307,6 @@
     <string name="stream_failed">Could not connect to the stream.</string>
     <string name="stream_ended">The stream ended.</string>
     <string name="stream_rotate">Rotate</string>
-    <string name="section_streams">Streams</string>
     <string name="stream_use_teamspeak_stun">Use TeamSpeak’s server for streams</string>
     <string name="stream_use_teamspeak_stun_hint">Watching a stream connects you directly to the streamer, who sees your IP address. With this on, TeamSpeak’s server (turn.teamspeak.com) also helps find a way through, which works on more networks but tells TeamSpeak your address.</string>
     <string name="stream_volume">Stream volume</string>
@@ -333,4 +318,27 @@
     <string name="voice_undeafen">Undeafen</string>
     <string name="stream_chat_show">Show the channel chat</string>
     <string name="stream_chat_hide">Hide the channel chat</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_tagline">A TeamSpeak client for Android, made for a small group of friends. It connects only to the servers you add.</string>
+    <string name="about_source_title">Source code</string>
+    <string name="about_source_text">TeleSpeak\'s source code, its releases and the full list of changes are on GitHub.</string>
+    <string name="about_credits_heading">Credits</string>
+    <string name="about_credits_text">TeleSpeak is a modified version of TS6_Droid_CN by yuaxi, which is itself based on an open-source TeamSpeak client by Grégory D. Thanks to both.</string>
+    <string name="about_license_heading">License</string>
+    <string name="about_license_text">TeleSpeak is free software under the GNU General Public License, version 3: you may use, study, share and change it. Anything made from it must be shared under the same license, together with its source code.</string>
+    <string name="gain_label">%1$s: %2$s</string>
+    <string name="section_connection">Connection</string>
+    <string name="language_title">Language</string>
+    <string name="bookmark_connected">Connected</string>
+    <string name="open_session">Open</string>
+    <string name="self_marker">(you)</string>
+    <string name="status_mic_off">Microphone off</string>
+    <string name="status_speakers_off">Speakers off</string>
+    <string name="user_details">Details</string>
+    <string name="nickname_taken">%1$s was taken on this server, so you joined as %2$s.</string>
+    <string name="chat_empty_channel">No messages in this channel yet.</string>
+    <string name="chat_empty_private">No private messages yet. To write to someone, tap them in the channel list.</string>
+    <string name="message_private_no_recipient">Tap someone in the channel list to write to them</string>
+    <string name="files_in_channel">Files in %1$s</string>
+    <string name="stream_screen_share">Screen share</string>
 </resources>

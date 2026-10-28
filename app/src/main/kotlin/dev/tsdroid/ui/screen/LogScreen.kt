@@ -17,7 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
@@ -122,7 +122,7 @@ fun LogViewerDialog(onDismiss: () -> Unit) {
                         }
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.Send,
+                            Icons.Default.ContentCopy,
                             contentDescription = stringResource(R.string.common_copy),
                         )
                     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -40,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.TouchApp
@@ -101,6 +104,7 @@ import dev.tsdroid.ui.component.ChatView
 import dev.tsdroid.ui.component.CompactTopBar
 import dev.tsdroid.ui.component.FileManagerDialog
 import dev.tsdroid.ui.component.GlassCard
+import dev.tsdroid.ui.component.GlassMenuItem
 import dev.tsdroid.ui.component.LiquidGlassPanel
 import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.ShareTarget
@@ -186,6 +190,7 @@ fun ServerScreen(
     // into several conversation chips.
     var pmTargetUid by remember { mutableStateOf<String?>(null) }
     var showServerInfo by remember { mutableStateOf(false) }
+    var serverMenuOpen by remember { mutableStateOf(false) }
 
     // Resolve pmTarget User from users list
     val pmTarget = pmTargetUid?.let { uid -> users.find { it.uid == uid } }
@@ -256,6 +261,7 @@ fun ServerScreen(
         if (currentFilePath != "/") viewModel.navigateUp() else viewModel.closeFileManager()
     }
     BackHandler(enabled = chatOpen) { chatOpen = false }
+    BackHandler(enabled = serverMenuOpen) { serverMenuOpen = false }
     // A closed chat must not keep the keyboard up for its hidden input
     val focusManager = LocalFocusManager.current
     LaunchedEffect(chatOpen) {
@@ -285,6 +291,23 @@ fun ServerScreen(
     // when the app goes to the background. See TsConnectionService.setAppInForeground.
 
     val totalUnread = unreadChannel + totalUnreadPrivate
+
+    // The server renames a client whose nickname is taken (ushummu → ushummu1). Say so once, when
+    // our own name first shows up, or the user cannot tell which row is theirs.
+    val selfNickname = users.firstOrNull { it.id == viewModel.myClientId }?.nickname
+    var nicknameChecked by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(selfNickname) {
+        if (selfNickname == null || nicknameChecked) return@LaunchedEffect
+        nicknameChecked = true
+        val requested = viewModel.requestedNickname
+        if (requested != null && requested != selfNickname) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.nickname_taken, requested, selfNickname),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
     val serverAddressLabel by viewModel.serverAddressLabel.collectAsStateWithLifecycle()
 
     // Backdrop for the liquid-glass surfaces on this screen: only when the wallpaper is actually
@@ -333,14 +356,11 @@ fun ServerScreen(
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { showServerInfo = true }) {
-                            Icon(AppIcons.Info, contentDescription = stringResource(R.string.server_info))
-                        }
-                        IconButton(onClick = { viewModel.toggleFileManager() }) {
-                            Icon(AppIcons.File, contentDescription = stringResource(R.string.file_manager))
-                        }
-                        IconButton(onClick = { viewModel.disconnect() }) {
-                            Icon(AppIcons.Exit, contentDescription = stringResource(R.string.disconnect))
+                        // Server info, files and disconnect are occasional: they share a menu
+                        // instead of three unlabelled icons, and disconnecting takes a second
+                        // tap like it does in the floating window.
+                        IconButton(onClick = { serverMenuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
                         }
                     },
                 )
@@ -505,12 +525,19 @@ fun ServerScreen(
                         } else {
                             // Hands-free modes: a plain mute switch that keeps the mode, labelled with
                             // what a tap will do. The colour is carried by the icon tint and the rim.
+                            // Deafened (microphone and speakers both off) reads as one state, and a
+                            // tap brings both back, as in the desktop client: two "Unmute" buttons
+                            // side by side left it unclear which one to press.
+                            val deafened = isMicMuted && isOutputMuted
                             val muteTint = if (isMicMuted) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.error
                             GlassCard(
                                 modifier = Modifier
                                     .size(72.dp)
-                                    .clickable { viewModel.toggleMicMute() },
+                                    .clickable {
+                                        if (deafened) viewModel.toggleOutputMute()
+                                        viewModel.toggleMicMute()
+                                    },
                                 wallpaper = glassWallpaper,
                                 shape = CircleShape,
                                 elevation = 4.dp,
@@ -527,15 +554,29 @@ fun ServerScreen(
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(
-                                            if (isMicMuted) AppIcons.MicOn else AppIcons.MicOff,
+                                            when {
+                                                deafened -> AppIcons.SpeakerOff
+                                                isMicMuted -> AppIcons.MicOn
+                                                else -> AppIcons.MicOff
+                                            },
                                             contentDescription = stringResource(
-                                                if (isMicMuted) R.string.unmute_mic else R.string.mute_mic,
+                                                when {
+                                                    deafened -> R.string.voice_undeafen
+                                                    isMicMuted -> R.string.unmute_mic
+                                                    else -> R.string.mute_mic
+                                                },
                                             ),
                                             modifier = Modifier.size(28.dp),
                                             tint = muteTint,
                                         )
                                         Text(
-                                            stringResource(if (isMicMuted) R.string.notif_unmute else R.string.mute),
+                                            stringResource(
+                                                when {
+                                                    deafened -> R.string.voice_undeafen
+                                                    isMicMuted -> R.string.notif_unmute
+                                                    else -> R.string.mute
+                                                },
+                                            ),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = muteTint,
                                         )
@@ -563,7 +604,7 @@ fun ServerScreen(
                         IconButton(onClick = { viewModel.toggleOutputMute() }) {
                             Icon(
                                 if (isOutputMuted) AppIcons.SpeakerOff else AppIcons.SpeakerOn,
-                                contentDescription = stringResource(if (isOutputMuted) R.string.notif_unmute else R.string.notif_mute),
+                                contentDescription = stringResource(if (isOutputMuted) R.string.voice_undeafen else R.string.voice_deafen),
                                 tint = if (isOutputMuted) MaterialTheme.colorScheme.error
                                 else MaterialTheme.colorScheme.primary,
                             )
@@ -597,11 +638,7 @@ fun ServerScreen(
                         viewModel.moveToChannel(channelId)
                     }
                 },
-                onUserClick = { user ->
-                    pmTargetUid = user.uid
-                    chatTab = 1
-                    chatOpen = true
-                },
+                onUserClick = { user -> userPanelUserId = user.id },
                 onUserLongClick = { user -> viewModel.toggleMuteUser(user.id) },
                 onUserLongPress = { user ->
                     // The own row opens the same panel to read your own server
@@ -660,6 +697,8 @@ fun ServerScreen(
                 ) {
                     FileManagerDialog(
                         currentPath = currentFilePath,
+                        channelName = users.firstOrNull { it.id == viewModel.myClientId }
+                            ?.let { self -> channels.find { it.id == self.channelId }?.name },
                         wallpaper = glassWallpaper,
                         files = fileList,
                         isLoading = fileManagerLoading,
@@ -747,6 +786,25 @@ fun ServerScreen(
                     )
                 }
             }
+        }
+
+        if (serverMenuOpen) {
+            ServerMenu(
+                wallpaper = glassWallpaper,
+                onServerInfo = {
+                    serverMenuOpen = false
+                    showServerInfo = true
+                },
+                onFiles = {
+                    serverMenuOpen = false
+                    viewModel.toggleFileManager()
+                },
+                onDisconnect = {
+                    serverMenuOpen = false
+                    viewModel.disconnect()
+                },
+                onDismiss = { serverMenuOpen = false },
+            )
         }
     }
 
@@ -1139,6 +1197,9 @@ fun ChatPanel(
                     showLinkThumbnails = showLinkThumbnails,
                     autoLoadImages = autoLoadImages,
                     onDownload = onDownload,
+                    emptyText = stringResource(
+                        if (chatTab == 0) R.string.chat_empty_channel else R.string.chat_empty_private,
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -1162,7 +1223,8 @@ fun ChatPanel(
                         isWhisperActive && whisperTargetName != null ->
                             stringResource(R.string.whisper_placeholder, whisperTargetName)
                         chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
-                        else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
+                        pmTarget == null -> stringResource(R.string.message_private_no_recipient)
+                        else -> stringResource(R.string.message_private_placeholder, pmTarget.nickname)
                     },
                     onSend = onSend,
                     whisperTargetName = whisperTargetName.takeIf { isWhisperActive },
@@ -1197,6 +1259,54 @@ private fun GlassFilterChip(
         ) { chip() }
     } else {
         chip()
+    }
+}
+
+/**
+ * The top bar's menu, hung under its ⋯ button. Drawn in place like the bookmark menu on the home
+ * screen: a DropdownMenu is a window of its own, with no wallpaper behind it to frost.
+ */
+@Composable
+private fun ServerMenu(
+    wallpaper: ImageBitmap?,
+    onServerInfo: () -> Unit,
+    onFiles: () -> Unit,
+    onDisconnect: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // Swallows the dismissing tap and keeps what is behind it out of reach.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+        )
+        GlassCard(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 48.dp, end = 8.dp)
+                .width(200.dp),
+            wallpaper = wallpaper,
+            shape = RoundedCornerShape(18.dp),
+            elevation = 6.dp,
+            contentPadding = PaddingValues(vertical = 4.dp),
+        ) {
+            Column {
+                GlassMenuItem(AppIcons.Info, stringResource(R.string.server_info), onClick = onServerInfo)
+                GlassMenuItem(AppIcons.File, stringResource(R.string.file_manager), onClick = onFiles)
+                GlassMenuItem(
+                    icon = AppIcons.Exit,
+                    label = stringResource(R.string.disconnect),
+                    destructive = true,
+                    onClick = onDisconnect,
+                )
+            }
+        }
     }
 }
 
