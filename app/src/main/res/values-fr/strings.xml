@@ -353,4 +353,6 @@
     <string name="server_up">Serveur en ligne</string>
     <string name="server_down">Serveur hors ligne</string>
     <string name="server_status_latency">%1$s · %2$d ms</string>
+    <string name="recorder_mode">Mode enregistreur</string>
+    <string name="recorder_mode_hint">Pour un téléphone laissé connecté, en Wi-Fi et sur le chargeur : il garde le chat des salons pour que le TeleSpeak de vos amis le récupère. Il se reconnecte toujours, garde le micro et le son coupés, et n\'affiche aucune fenêtre.</string>
 </resources>

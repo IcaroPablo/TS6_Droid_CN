@@ -353,4 +353,6 @@
     <string name="server_up">服务器在线</string>
     <string name="server_down">服务器离线</string>
     <string name="server_status_latency">%1$s · %2$d 毫秒</string>
+    <string name="recorder_mode">记录模式</string>
+    <string name="recorder_mode_hint">适用于一直连接、接着 Wi-Fi 和充电器的手机：它保存频道聊天记录，供朋友的 TeleSpeak 同步。它会始终自动重连，保持麦克风和扬声器关闭，并且不弹出提示。</string>
 </resources>

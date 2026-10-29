@@ -7,7 +7,9 @@ import dev.tsdroid.viewmodel.FileAttachment
 import java.io.File
 
 /**
- * Chat history per server, kept on the device encrypted (see [DeviceCipher]).
+ * Chat history per server, kept on the device encrypted (see [DeviceCipher]): the private
+ * conversations in one file, written by the screens, and the channel history in another, written
+ * by the connection itself (see [dev.tsdroid.service.ChannelHistory]). Both files used to be one.
  */
 class MessageStore(private val context: Context) {
 
@@ -15,20 +17,83 @@ class MessageStore(private val context: Context) {
         private const val TAG = "MessageStore"
         /** Private conversations are capped; channel history is kept whole, since friends sync it */
         private const val MAX_PRIVATE_MESSAGES = 500
-        private val EMPTY = Stored(emptyList(), emptyMap(), emptyMap())
+        private val EMPTY = Parsed(emptyList(), emptyMap(), emptyMap())
     }
 
     private val messagesDir = File(context.filesDir, "messages")
     private val cipher = DeviceCipher()
 
-    /** Everything persisted for one server. */
+    /** The private conversations persisted for one server. */
     data class Stored(
+        val privateMessages: Map<String, List<ChatMessage>>,
+        val unreadPrivate: Map<String, Int>,
+    )
+
+    /** What the private conversations' file holds; older ones also hold the channel history. */
+    private data class Parsed(
         val channel: List<ChatMessage>,
         val privateMessages: Map<String, List<ChatMessage>>,
         val unreadPrivate: Map<String, Int>,
     )
 
     fun load(serverAddress: String): Stored {
+        val parsed = readParsed(serverAddress)
+        return Stored(parsed.privateMessages, parsed.unreadPrivate)
+    }
+
+    /** Returns whether the history reached the disk. */
+    fun save(
+        serverAddress: String,
+        privateMessages: Map<String, List<ChatMessage>>,
+        unreadPrivate: Map<String, Int> = emptyMap(),
+    ): Boolean {
+        // The file may still hold the channel history, which this write would drop
+        migrateChannelHistory(serverAddress)
+        return try {
+            val json = serializeServerMessages(privateMessages, unreadPrivate)
+            cipher.writeFile(fileFor(serverAddress), json.encodeToByteArray())
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save messages for $serverAddress", e)
+            false
+        }
+    }
+
+    /** Every channel's history on one server, in time order. */
+    fun loadChannel(serverAddress: String): List<ChatMessage> {
+        migrateChannelHistory(serverAddress)
+        val file = channelFileFor(serverAddress)
+        if (!file.exists()) return emptyList()
+        return try {
+            val array = org.json.JSONArray(cipher.readFile(file).decodeToString())
+            (0 until array.length()).mapNotNull { storedMessageFromJson(array.getJSONObject(it), isPrivate = false) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load the channel history for $serverAddress", e)
+            emptyList()
+        }
+    }
+
+    /** Returns whether the history reached the disk. */
+    fun saveChannel(serverAddress: String, messages: List<ChatMessage>): Boolean {
+        return try {
+            val array = org.json.JSONArray()
+            messages.forEach { array.put(it.toStoredJson()) }
+            cipher.writeFile(channelFileFor(serverAddress), array.toString().encodeToByteArray())
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save the channel history for $serverAddress", e)
+            false
+        }
+    }
+
+    /** Moves the channel history out of the shared file it used to live in, once. */
+    private fun migrateChannelHistory(serverAddress: String) {
+        if (channelFileFor(serverAddress).exists()) return
+        val legacy = readParsed(serverAddress).channel
+        if (legacy.isNotEmpty()) saveChannel(serverAddress, legacy)
+    }
+
+    private fun readParsed(serverAddress: String): Parsed {
         val file = fileFor(serverAddress)
         if (!file.exists()) return EMPTY
         return try {
@@ -41,25 +106,12 @@ class MessageStore(private val context: Context) {
         }
     }
 
-    /** Returns whether the history reached the disk. */
-    fun save(
-        serverAddress: String,
-        channelMessages: List<ChatMessage>,
-        privateMessages: Map<String, List<ChatMessage>>,
-        unreadPrivate: Map<String, Int> = emptyMap(),
-    ): Boolean {
-        return try {
-            val json = serializeServerMessages(channelMessages, privateMessages, unreadPrivate)
-            cipher.writeFile(fileFor(serverAddress), json.encodeToByteArray())
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to save messages for $serverAddress", e)
-            false
-        }
-    }
-
     private fun fileFor(serverAddress: String): File {
         return File(messagesDir, sanitizeFilename(serverAddress) + ".enc")
+    }
+
+    private fun channelFileFor(serverAddress: String): File {
+        return File(messagesDir, sanitizeFilename(serverAddress) + ".channel.enc")
     }
 
     private fun sanitizeFilename(address: String): String {
@@ -69,14 +121,10 @@ class MessageStore(private val context: Context) {
     // --- Serialization ---
 
     private fun serializeServerMessages(
-        channel: List<ChatMessage>,
         private_: Map<String, List<ChatMessage>>,
         unreadPrivate: Map<String, Int>,
     ): String {
         val root = org.json.JSONObject()
-        val channelArr = org.json.JSONArray()
-        channel.forEach { channelArr.put(it.toStoredJson()) }
-        root.put("channel", channelArr)
         val privateObj = org.json.JSONObject()
         for ((peerKey, msgs) in private_) {
             val arr = org.json.JSONArray()
@@ -96,8 +144,8 @@ class MessageStore(private val context: Context) {
 
     // --- Parsing ---
 
-    private fun parseServerMessages(json: String): Stored {
-        if (json.isBlank()) return Stored(emptyList(), emptyMap(), emptyMap())
+    private fun parseServerMessages(json: String): Parsed {
+        if (json.isBlank()) return EMPTY
         return try {
             val root = org.json.JSONObject(json)
             val channelMessages = mutableListOf<ChatMessage>()
@@ -129,10 +177,10 @@ class MessageStore(private val context: Context) {
                     if (count > 0) unreadPrivate[peerKey] = (unreadPrivate[peerKey] ?: 0) + count
                 }
             }
-            Stored(channelMessages, privateMessages, unreadPrivate)
+            Parsed(channelMessages, privateMessages, unreadPrivate)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse message history", e)
-            Stored(emptyList(), emptyMap(), emptyMap())
+            EMPTY
         }
     }
 }

@@ -48,6 +48,7 @@ import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.JoinVoiceState
+import dev.tsdroid.data.MessageStore
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
@@ -68,6 +69,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -243,6 +245,14 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     /** Cached preference so the disconnect handler can react without suspending. */
     @Volatile private var autoReconnectEnabled = false
 
+    /** Recorder mode (see [SettingsStore.recorderMode]), cached for the checks that cannot wait */
+    @Volatile var recorderMode = false
+        private set
+
+    /** The connected server's channel chat, recorded and shared here, with or without a screen open */
+    lateinit var channelHistory: ChannelHistory
+        private set
+
     private val _reconnect = MutableStateFlow(ReconnectStatus())
     val reconnectStatus: StateFlow<ReconnectStatus> = _reconnect.asStateFlow()
 
@@ -272,6 +282,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         // first frame — for users who never connect at all, too.
         createNotificationChannel()
         savedStateRegistryController.performRestore(null)
+        channelHistory = ChannelHistory(tsClient, MessageStore(this), serviceScope)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         avatarCache = AvatarCache(applicationContext.cacheDir)
         audioBridge = AudioBridge(applicationContext, tsClient)
@@ -477,6 +488,20 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         BookmarkStore(this).autoReconnect
             .onEach { autoReconnectEnabled = it }
             .launchIn(serviceScope)
+        // Turning recorder mode on mid-session silences the session at once; turning it off gives
+        // the microphone back (muted, as the recorder left it)
+        SettingsStore(this).recorderMode
+            .distinctUntilChanged()
+            .onEach { enabled ->
+                recorderMode = enabled
+                if (!tsClient.isConnected) return@onEach
+                if (enabled) {
+                    silenceForRecording()
+                } else if (!audioBridge.isCapturing.value) {
+                    audioBridge.startCapture(noiseSuppressionSetting())
+                }
+            }
+            .launchIn(serviceScope)
 
         // Surface microphone trouble in the notification while the app is in the background.
         audioBridge.micStatus
@@ -513,7 +538,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         val params = sessionParams ?: return
         if (isStopping || isIntentionalDisconnect) return
         if (reconnectJob?.isActive == true) return
-        if (!autoReconnectEnabled) {
+        if (!autoReconnectEnabled && !recorderMode) {
             Log.i(TAG, "Connection lost; automatic reconnection is disabled in settings")
             return
         }
@@ -533,7 +558,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private fun forceImmediateReconnect() {
         val params = sessionParams ?: return
         if (isStopping || isIntentionalDisconnect) return
-        if (!autoReconnectEnabled) return
+        if (!autoReconnectEnabled && !recorderMode) return
         if (reconnectJob?.isActive == true) return
         // A handover fires several callbacks (one per network); collapse them.
         val now = SystemClock.elapsedRealtime()
@@ -561,6 +586,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
      * the screen; the amber ring carries the continuous state.
      */
     private fun maybeNotifyWhisperTalk(speakerId: Int) {
+        if (recorderMode) return
         val now = System.currentTimeMillis()
         if (now - lastWhisperNotifyAt < WHISPER_NOTIFY_DEBOUNCE_MS) return
         val nickname = tsClient.users.value.find { it.id == speakerId }?.nickname ?: return
@@ -665,7 +691,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                     Log.w(TAG, "Push-to-talk hold outlived its release; closing the microphone")
                     stopOverlayTalk()
                 }
-                if (!audioBridge.isCapturing.value) {
+                if (!audioBridge.isCapturing.value && !recorderMode) {
                     Log.w(TAG, "Capture is not running while connected; restarting it")
                     audioBridge.startCapture(noiseSuppressionSetting())
                 }
@@ -889,10 +915,15 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         return try {
             tsClient.connect(address, identity, nickname, password)
             acquireWakeLock()
-            audioBridge.startCapture(noiseSuppressionSetting())
-            // A reconnect keeps whatever the user had; only a new session starts
-            // from the "when joining voice" setting.
-            if (!isReconnect) applyJoinVoiceState()
+            val recording = runCatching { SettingsStore(this).recorderMode.first() }.getOrDefault(false)
+            if (recording) {
+                silenceForRecording()
+            } else {
+                audioBridge.startCapture(noiseSuppressionSetting())
+                // A reconnect keeps whatever the user had; only a new session starts
+                // from the "when joining voice" setting.
+                if (!isReconnect) applyJoinVoiceState()
+            }
             // Sync initial mute state with server. Forced: a fresh connection
             // starts unmuted server-side even when our local state did not change.
             if (audioBridge.isMuted.value) {
@@ -928,6 +959,13 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
 
     private suspend fun noiseSuppressionSetting(): Boolean =
         runCatching { SettingsStore(this).noiseSuppression.first() }.getOrDefault(true)
+
+    /** A recorder only reads: the microphone is off and closed, and the speakers off. */
+    private fun silenceForRecording() {
+        audioBridge.setMuted(true)
+        audioBridge.setOutputMuted(true)
+        audioBridge.stopCapture()
+    }
 
     /** Set microphone and speakers to the user's "when joining voice" choice. */
     private suspend fun applyJoinVoiceState() {
@@ -1007,6 +1045,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     }
 
     override fun onDestroy() {
+        channelHistory.saveNow()
         unregisterNetworkCallback()
         super.onDestroy()
     }

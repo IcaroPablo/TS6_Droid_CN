@@ -31,6 +31,7 @@ private val KEY_JOIN_VOICE_STATE = stringPreferencesKey("join_voice_state")
 private val KEY_VOICE_ENHANCEMENT = stringPreferencesKey("voice_enhancement")
 private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
 private val KEY_STREAM_TEAMSPEAK_STUN = booleanPreferencesKey("stream_teamspeak_stun")
+private val KEY_RECORDER_MODE = booleanPreferencesKey("recorder_mode")
 private val KEY_STREAM_VOLUME = floatPreferencesKey("stream_volume")
 private val KEY_COLOR_SCHEME = stringPreferencesKey("color_scheme")
 private val KEY_ISLAND_CHANNELS_OPEN = booleanPreferencesKey("island_channels_open")
@@ -169,6 +170,17 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setStreamUseTeamSpeakStun(enabled: Boolean) {
         context.settingsDataStore.edit { it[KEY_STREAM_TEAMSPEAK_STUN] = enabled }
+    }
+
+    /**
+     * The phone stays connected to keep the group's chat history: always reconnecting, with the
+     * microphone and speakers off, and no pop-ups (see TsConnectionService).
+     */
+    val recorderMode: Flow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_RECORDER_MODE] ?: false }
+
+    suspend fun setRecorderMode(enabled: Boolean) {
+        context.settingsDataStore.edit { it[KEY_RECORDER_MODE] = enabled }
     }
 
     /** The volume a newly watched stream's sound starts at, 0 to 1: the last one set. */

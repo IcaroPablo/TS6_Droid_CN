@@ -91,6 +91,7 @@ fun SettingsPage(
     val showLinkThumbnails by settingsStore.showLinkThumbnails.collectAsStateWithLifecycle(initialValue = false)
     val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = false)
     val streamUseTeamSpeakStun by settingsStore.streamUseTeamSpeakStun.collectAsStateWithLifecycle(initialValue = false)
+    val recorderMode by settingsStore.recorderMode.collectAsStateWithLifecycle(initialValue = false)
     val encryptFiles by settingsStore.encryptFiles.collectAsStateWithLifecycle(initialValue = true)
     // Default matches the store default (enabled) so the switch does not
     // flash off→on on first composition.
@@ -535,6 +536,17 @@ fun SettingsPage(
                     label = stringResource(R.string.auto_reconnect),
                     checked = autoReconnect,
                     onCheckedChange = onAutoReconnectChange,
+                )
+                SettingsSwitchRow(
+                    label = stringResource(R.string.recorder_mode),
+                    checked = recorderMode,
+                    onCheckedChange = { scope.launch { settingsStore.setRecorderMode(it) } },
+                )
+                Text(
+                    text = stringResource(R.string.recorder_mode_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = InsetPadding, end = InsetPadding, bottom = 10.dp),
                 )
                 SettingsSwitchRow(
                     label = stringResource(R.string.stream_use_teamspeak_stun),

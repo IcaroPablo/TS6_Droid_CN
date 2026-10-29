@@ -353,4 +353,6 @@
     <string name="server_up">Server is up</string>
     <string name="server_down">Server is down</string>
     <string name="server_status_latency">%1$s · %2$d ms</string>
+    <string name="recorder_mode">Recorder mode</string>
+    <string name="recorder_mode_hint">For a phone left connected on Wi-Fi and a charger: it keeps the channel chat for your friends\' TeleSpeak to catch up from. It always reconnects, keeps the microphone and speakers off, and shows no pop-ups.</string>
 </resources>

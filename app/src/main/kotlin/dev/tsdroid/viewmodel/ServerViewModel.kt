@@ -25,6 +25,7 @@ import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.IslandLayout
 import dev.tsdroid.data.MessageStore
+import dev.tsdroid.service.ChannelHistory
 import dev.tsdroid.data.NicknameRules
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.data.SettingsStore
@@ -52,11 +53,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.Mutex
-import dev.tsdroid.data.HistorySync
 import kotlinx.coroutines.withContext
 
 data class FileAttachment(
@@ -91,6 +88,47 @@ data class ChatMessage(
     }
 }
 
+/** The file a chat message shares, from TeamSpeak's link formats; null for a plain message. */
+internal fun parseFileAttachment(text: String): FileAttachment? {
+    // TS5 MyTeamSpeak JSON format
+    if (text.startsWith("{\"msg_type\":")) {
+        return try {
+            val json = org.json.JSONObject(text)
+            if (json.optString("msg_type") != "ts.file.myts") return null
+            val fileName = json.optString("file_name", "")
+            val fileSize = json.optLong("file_size", 0)
+            val fileId = json.optString("file_id", "")
+            if (fileName.isEmpty() || fileId.isEmpty()) return null
+            val ext = fileName.substringAfterLast('.', "").lowercase()
+            val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
+            FileAttachment(fileName, fileSize, fileId, isImage)
+        } catch (_: Exception) { null }
+    }
+    // TS3 file transfer URL format: ts3file://host?port=...&channel=...&filename=...&size=...
+    val ts3Start = text.indexOf("ts3file://")
+    if (ts3Start >= 0) {
+        return try {
+            // Extract the ts3file:// URL (until whitespace or end of string)
+            val urlStr = text.substring(ts3Start).takeWhile { !it.isWhitespace() }
+            val uri = android.net.Uri.parse(urlStr)
+            val fileName = uri.getQueryParameter("filename") ?: return null
+            val fileSize = uri.getQueryParameter("size")?.toLongOrNull() ?: 0L
+            val channelId = uri.getQueryParameter("channel")?.toLongOrNull() ?: 0L
+            val ext = fileName.substringAfterLast('.', "").lowercase()
+            val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
+            FileAttachment(fileName, fileSize, fileId = "", isImage, channelId = channelId)
+        } catch (_: Exception) { null }
+    }
+    return null
+}
+
+/** Re-parse old saved messages that contain ts3file:// but have no fileAttachment. */
+internal fun migrateMessage(msg: ChatMessage): ChatMessage {
+    if (msg.fileAttachment != null) return msg
+    val attachment = parseFileAttachment(msg.text) ?: return msg
+    return msg.copy(text = attachment.fileName, fileAttachment = attachment)
+}
+
 sealed class DownloadState {
     data object Idle : DownloadState()
     data object Downloading : DownloadState()
@@ -104,8 +142,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         private const val PENDING_ECHO_WINDOW_MS = 5000L
         // Each watched stream is a video decoder and a connection of its own
         const val MAX_WATCHED_STREAMS = 4
-        // After connecting, before asking for the history: the other clients' views of us settle
-        private const val HISTORY_REQUEST_DELAY_MS = 2000L
     }
 
     /**
@@ -215,12 +251,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (idx < 0) return
         val pending = pendingOwnEchoes.removeAt(idx)
         if (pending.target == "channel") {
-            val list = _channelMessages.value.toMutableList()
-            val idx = list.indexOfFirst { it.isMe && it.text == pending.text && it.timestamp >= pending.at }
-            if (idx >= 0) {
-                list.removeAt(idx)
-                _channelMessages.value = list
-            }
+            channelHistory?.removeOwn(pending.text, pending.at)
         } else {
             val peerKey = pending.peerKey ?: return
             val existing = _privateMessages.value[peerKey] ?: return
@@ -313,7 +344,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private val _avatars = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
     val avatars: StateFlow<Map<String, ImageBitmap>> = _avatars.asStateFlow()
 
+    /** Every channel's messages, as the connection keeps them (see ChannelHistory) */
     private val _channelMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+
+    /** Where channel messages are kept: the connection's, so they outlive this screen */
+    private var channelHistory: ChannelHistory? = null
     /** The chat of the channel we are in, plus the history kept before channels were recorded */
     val channelMessages: StateFlow<List<ChatMessage>> = combine(
         _channelMessages,
@@ -618,32 +653,20 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     serverAddress = addr
                     _serverAddressLabel.value = addr
                     val stored = messageStore.load(addr)
-                    if (stored.channel.isNotEmpty()) {
-                        // Anything already received (a message, a history reply) goes after it
-                        _channelMessages.value = stored.channel.map { migrateMessage(it) } + _channelMessages.value
-                    }
                     if (stored.privateMessages.isNotEmpty()) {
                         _privateMessages.value = stored.privateMessages.mapValues { (_, msgs) -> msgs.map { migrateMessage(it) } }
                     }
                     if (stored.unreadPrivate.isNotEmpty()) _unreadPrivate.value = stored.unreadPrivate
                 }
-                historyLoaded.value = true
             }
-            // Each time the connection comes up, catch up on what was said while we were away:
-            // once our history is loaded, and we know our channel and the server's channels
+            // The channel chat is the connection's: it records and syncs it even with no screen open
+            channelHistory = service.channelHistory
             viewModelScope.launch {
-                _connectionState.collectLatest { state ->
-                    if (state != ConnectionState.CONNECTED) return@collectLatest
-                    historyLoaded.first { it }
-                    _rawUsers.first { users -> users.any { it.id == tsClient?.clientId } }
-                    _channels.first { it.isNotEmpty() }
-                    delay(HISTORY_REQUEST_DELAY_MS)
-                    requestHistory()
-                }
+                service.channelHistory.messages.collect { _channelMessages.value = it }
             }
             // Start audio capture if not already running. The bridge owns its own
             // capture scope, so the mic is no longer cancelled with this ViewModel.
-            if (!service.audioBridge.isCapturing.value) {
+            if (!service.audioBridge.isCapturing.value && !service.recorderMode) {
                 service.audioBridge.startCapture(noiseSuppression.value)
             }
             // Apply persisted audio gain
@@ -750,12 +773,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     val userId = (event.data["user_id"] as? Number)?.toInt() ?: return
                     _talkingUserIds.value = _talkingUserIds.value - userId
                     _whisperTalkingUserIds.value = _whisperTalkingUserIds.value - userId
-                }
-                "plugin_command" -> {
-                    if (event.data["name"] != HistorySync.COMMAND) return
-                    val data = event.data["data"] as? String ?: return
-                    val invokerId = (event.data["invoker_id"] as? Number)?.toInt() ?: return
-                    handleHistoryCommand(data, invokerId)
                 }
                 "text_message" -> {
                     try {
@@ -864,20 +881,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                                     scheduleSave()
                                 }
                                 "channel" -> {
-                                    // Channel messages reach only the channel we are in
-                                    val msg = ChatMessage(
-                                        sender = sender,
-                                        text = displayText,
-                                        fileAttachment = attachment,
-                                        channelId = currentChannelId(),
-                                        senderUid = _rawUsers.value.firstOrNull { it.id == senderId }?.uid,
-                                    )
-                                    
-                                    val currentChannelMessages = _channelMessages.value
-                                    _channelMessages.value = currentChannelMessages + msg
-                                    
-                                    scheduleSave()
-                                    
+                                    // Kept by the connection (see ChannelHistory); here only counted
                                     // Only increment if chat is closed or not on channel tab
                                     if (!isChatOpen || activeChatTab != 0) {
                                         val currentUnread = _unreadChannel.value
@@ -901,45 +905,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun parseFileAttachment(text: String): FileAttachment? {
-        // TS5 MyTeamSpeak JSON format
-        if (text.startsWith("{\"msg_type\":")) {
-            return try {
-                val json = org.json.JSONObject(text)
-                if (json.optString("msg_type") != "ts.file.myts") return null
-                val fileName = json.optString("file_name", "")
-                val fileSize = json.optLong("file_size", 0)
-                val fileId = json.optString("file_id", "")
-                if (fileName.isEmpty() || fileId.isEmpty()) return null
-                val ext = fileName.substringAfterLast('.', "").lowercase()
-                val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
-                FileAttachment(fileName, fileSize, fileId, isImage)
-            } catch (_: Exception) { null }
-        }
-        // TS3 file transfer URL format: ts3file://host?port=...&channel=...&filename=...&size=...
-        val ts3Start = text.indexOf("ts3file://")
-        if (ts3Start >= 0) {
-            return try {
-                // Extract the ts3file:// URL (until whitespace or end of string)
-                val urlStr = text.substring(ts3Start).takeWhile { !it.isWhitespace() }
-                val uri = android.net.Uri.parse(urlStr)
-                val fileName = uri.getQueryParameter("filename") ?: return null
-                val fileSize = uri.getQueryParameter("size")?.toLongOrNull() ?: 0L
-                val channelId = uri.getQueryParameter("channel")?.toLongOrNull() ?: 0L
-                val ext = fileName.substringAfterLast('.', "").lowercase()
-                val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
-                FileAttachment(fileName, fileSize, fileId = "", isImage, channelId = channelId)
-            } catch (_: Exception) { null }
-        }
-        return null
-    }
-
-    /** Re-parse old saved messages that contain ts3file:// but have no fileAttachment. */
-    private fun migrateMessage(msg: ChatMessage): ChatMessage {
-        if (msg.fileAttachment != null) return msg
-        val attachment = parseFileAttachment(msg.text) ?: return msg
-        return msg.copy(text = attachment.fileName, fileAttachment = attachment)
-    }
 
     fun setChatState(open: Boolean, tab: Int, pmPeerKey: String? = null) {
         isChatOpen = open
@@ -964,12 +929,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     fun sendChannelMessage(text: String) {
         if (text.isBlank()) return
         tsClient?.sendChannelMessage(text)
-        _channelMessages.value = _channelMessages.value + ChatMessage(
-            sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true,
-            channelId = currentChannelId(), senderUid = myUid(),
-        )
+        channelHistory?.addOwn(getApplication<Application>().getString(R.string.me_sender), text)
         pendingOwnEchoes.addLast(PendingEcho("channel", null, text, System.currentTimeMillis()))
-        scheduleSave()
     }
 
     /**
@@ -1319,81 +1280,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         return true
     }
 
-    private fun myUid(): String? = _rawUsers.value.firstOrNull { it.id == tsClient?.clientId }?.uid
-
-    // --- History sync (see HistorySync) ---
-
-    /** Whether the stored history is in: asking before it would ask for everything again */
-    private val historyLoaded = MutableStateFlow(false)
-
-    /** One history command at a time, a second apart, so the server's flood protection never trips */
-    private val historySends = Mutex()
-
-    /**
-     * Sends everyone our summary of each channel we may read (those without a password, and the
-     * one we are in), so they can send what we lack. One channel at a time, like the replies.
-     */
-    private fun requestHistory() {
-        val myChannel = currentChannelId()
-        val channelIds = _channels.value.filter { !it.hasPassword || it.id == myChannel }.map { it.id }
-        Log.i(TAG, "Asking for the history of ${channelIds.size} channels")
-        viewModelScope.launch {
-            historySends.withLock {
-                for (channelId in channelIds) {
-                    sendHistoryRequest(channelId, target = -1, back = false)
-                    delay(HistorySync.CHUNK_INTERVAL_MS)
-                }
-            }
-        }
-    }
-
-    private fun sendHistoryRequest(channelId: Long, target: Int, back: Boolean) {
-        val now = System.currentTimeMillis()
-        val summary = HistorySync.summary(_channelMessages.value.filter { it.channelId == channelId }, now, myUid())
-        tsClient?.sendPluginCommand(HistorySync.COMMAND, HistorySync.request(channelId, now, summary, back), target)
-    }
-
-    /**
-     * Answers [requesterId]'s summary of a channel: the messages of every period where it differs
-     * from ours, then, when its summary shows it has something we lack, a request back.
-     */
-    private fun answerHistoryRequest(requesterId: Int, request: HistorySync.Command.Request) {
-        if (requesterId == tsClient?.clientId) return
-        viewModelScope.launch {
-            historySends.withLock {
-                val me = _rawUsers.value.firstOrNull { it.id == tsClient?.clientId } ?: return@withLock
-                // A password-protected channel's history only goes to someone already in it
-                val channel = _channels.value.firstOrNull { it.id == request.channelId } ?: return@withLock
-                val requesterChannel = _rawUsers.value.firstOrNull { it.id == requesterId }?.channelId
-                if (channel.hasPassword && channel.id != requesterChannel) return@withLock
-                val mine = _channelMessages.value.filter { it.channelId == channel.id }
-                val missing = HistorySync.missing(mine, request.summary, request.now, me.uid)
-                for (reply in HistorySync.replies(channel.id, missing, me.nickname, me.uid)) {
-                    val client = tsClient ?: return@withLock
-                    client.sendPluginCommand(HistorySync.COMMAND, reply, requesterId)
-                    delay(HistorySync.CHUNK_INTERVAL_MS)
-                }
-                if (!request.back && HistorySync.hasMore(mine, request.summary, request.now, me.uid)) {
-                    sendHistoryRequest(channel.id, target = requesterId, back = true)
-                    delay(HistorySync.CHUNK_INTERVAL_MS)
-                }
-            }
-        }
-    }
-
-    private fun handleHistoryCommand(data: String, invokerId: Int) {
-        when (val command = HistorySync.parse(data)) {
-            is HistorySync.Command.Request -> answerHistoryRequest(invokerId, command)
-            is HistorySync.Command.Messages -> {
-                val merged = HistorySync.merge(_channelMessages.value, command.messages, myUid()) ?: return
-                Log.i(TAG, "History sync added ${merged.size - _channelMessages.value.size} messages")
-                _channelMessages.value = merged
-                scheduleSave()
-            }
-            null -> {}
-        }
-    }
-
     private fun currentChannelId(): Long {
         val myId = tsClient?.clientId ?: return 0
         return _rawUsers.value.find { it.id == myId }?.channelId ?: 0
@@ -1445,11 +1331,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     _privateMessages.value = current
                 } else {
                     tsClient?.sendChannelMessage(ts3Url)
-                    val msg = ChatMessage(
-                        sender = meSender, text = fileName, isMe = true, fileAttachment = attachment,
-                        channelId = currentChannelId(), senderUid = myUid(),
-                    )
-                    _channelMessages.value = _channelMessages.value + msg
+                    channelHistory?.addOwn(meSender, fileName, attachment)
                 }
                 scheduleSave()
             }
@@ -1671,10 +1553,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             _privateMessages.value = current
         } else {
             tsClient?.sendChannelMessage(ts3Url)
-            _channelMessages.value = _channelMessages.value + ChatMessage(
-                sender = meSender, text = fileName, isMe = true, fileAttachment = attachment,
-                channelId = currentChannelId(), senderUid = myUid(),
-            )
+            channelHistory?.addOwn(meSender, fileName, attachment)
         }
         scheduleSave()
     }
@@ -1862,7 +1741,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private fun saveNow() {
         saveJob?.cancel()
         val addr = serverAddress ?: return
-        messageStore.save(addr, _channelMessages.value, _privateMessages.value, _unreadPrivate.value)
+        messageStore.save(addr, _privateMessages.value, _unreadPrivate.value)
     }
 }
 
