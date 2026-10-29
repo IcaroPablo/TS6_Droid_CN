@@ -1,5 +1,6 @@
 package dev.tsdroid.bridge
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
 import android.util.Log
@@ -90,7 +91,7 @@ class AvatarCache(private val cacheDir: File) {
                 if (fromDisk && bytes != null) {
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     if (bitmap != null) {
-                        memoryCache[uid] = bitmap.asImageBitmap()
+                        memoryCache[uid] = bitmap.forSmallSizes()
                         Log.d(TAG, "Loaded avatar from disk cache for $uid")
                         return@withContext
                     }
@@ -119,7 +120,7 @@ class AvatarCache(private val cacheDir: File) {
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 if (bitmap != null) {
                     cipher.writeFile(diskFile, bytes)
-                    memoryCache[uid] = bitmap.asImageBitmap()
+                    memoryCache[uid] = bitmap.forSmallSizes()
                     retries.succeeded(uid)
                     Log.i(TAG, "Avatar loaded for $uid")
                 } else {
@@ -134,4 +135,13 @@ class AvatarCache(private val cacheDir: File) {
             loading.remove(uid)
         }
     }
+}
+
+/**
+ * Avatars arrive at a few hundred pixels and are drawn at a few dozen: with mipmaps the GPU blends
+ * them down smoothly, where a plain bitmap skips most of its pixels and comes out jagged.
+ */
+private fun Bitmap.forSmallSizes(): ImageBitmap {
+    setHasMipMap(true)
+    return asImageBitmap()
 }

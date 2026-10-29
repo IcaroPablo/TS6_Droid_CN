@@ -193,7 +193,6 @@
     <string name="new_folder">新建文件夹</string>
     <string name="rename">重命名</string>
     <string name="delete_file">删除</string>
-    <string name="confirm_delete">删除 %1$s？</string>
     <string name="enter_folder_name">输入文件夹名称</string>
     <string name="enter_new_name">输入新名称</string>
     <string name="refresh">刷新</string>
@@ -201,7 +200,6 @@
     <string name="folder">文件夹</string>
     <string name="upload">上传</string>
     <string name="share_in_channel">当前频道</string>
-    <string name="share_file_title">共享 %1$s</string>
     <string name="share">分享</string>
     <string name="more_options">更多选项</string>
 
@@ -326,7 +324,6 @@
     <string name="section_connection">连接</string>
     <string name="language_title">语言</string>
     <string name="bookmark_connected">已连接</string>
-    <string name="open_session">打开</string>
     <string name="self_marker">（你）</string>
     <string name="status_mic_off">麦克风已关闭</string>
     <string name="status_speakers_off">扬声器已关闭</string>
@@ -342,10 +339,18 @@
     <string name="chat_unfold">展开聊天</string>
     <string name="people_online">%1$d 人在线</string>
     <string name="chat_empty_private_with">还没有与 %1$s 的消息。</string>
-    <string name="nav_server">服务器</string>
-    <string name="nav_add">添加</string>
     <string name="stream_fullscreen">全屏</string>
     <string name="stream_stop_watching">停止观看</string>
     <string name="stream_tab">直播</string>
     <string name="channels_list">列表</string>
+    <string name="color_scheme">配色方案</string>
+    <string name="color_scheme_default">默认</string>
+    <string name="tab_servers">服务器</string>
+    <string name="add_server">添加服务器</string>
+    <string name="files_tab">文件</string>
+    <string name="tap_again">再点一次</string>
+    <string name="server_checking">检查中…</string>
+    <string name="server_up">服务器在线</string>
+    <string name="server_down">服务器离线</string>
+    <string name="server_status_latency">%1$s · %2$d 毫秒</string>
 </resources>

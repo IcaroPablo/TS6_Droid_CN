@@ -184,7 +184,7 @@ private fun PreviewBookmarkCard() {
                     Text("yuaxi.cn", fontWeight = FontWeight.Medium)
                     Text("yuaxi.cn:9987", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                FilledTonalButton(shape = Shapes.Small, onClick = {}) {
+                FilledTonalButton(shape = Shapes.Standard, onClick = {}) {
                     Text("连接")
                 }
             }

@@ -294,7 +294,7 @@ fun StreamViewer(
                 ) {
                     VoiceBar(
                         state = voice,
-                        wallpaper = null,
+                        island = true,
                         modifier = Modifier
                             .navigationBarsPadding()
                             .padding(Spacing.Gap)
@@ -353,7 +353,7 @@ fun StreamTiles(
                             .weight(1f)
                             .fillMaxWidth()
                             // Nested in the island by the gap, so its corner is the island's less the gap
-                            .clip(Shapes.Small),
+                            .clip(Shapes.Standard),
                     )
                 }
             }
@@ -627,7 +627,7 @@ private fun StreamTile(
                     modifier = Modifier.padding(top = 16.dp),
                 )
                 if (state == StreamSession.State.FAILED && !session.useTeamSpeakStun) {
-                    Button(shape = Shapes.Small, onClick = onRetryWithTeamSpeakStun, modifier = Modifier.padding(top = 16.dp)) {
+                    Button(shape = Shapes.Standard, onClick = onRetryWithTeamSpeakStun, modifier = Modifier.padding(top = 16.dp)) {
                         Text(stringResource(R.string.stream_retry_with_teamspeak_stun), textAlign = TextAlign.Center)
                     }
                 }

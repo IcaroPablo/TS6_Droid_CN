@@ -52,6 +52,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
+import dev.tsdroid.data.HistorySync
 import kotlinx.coroutines.withContext
 
 data class FileAttachment(
@@ -70,6 +75,10 @@ data class ChatMessage(
     val isPrivate: Boolean = false,
     val senderId: Int = 0,
     val fileAttachment: FileAttachment? = null,
+    /** The channel a channel message was said in; 0 for history kept before channels were recorded */
+    val channelId: Long = 0L,
+    /** The sender's permanent unique id, when known: what history sync matches senders by */
+    val senderUid: String? = null,
     /**
      * Tells this message apart from every other one in this process, even one
      * sent in the same millisecond; a copy keeps it. Not stored: messages
@@ -95,6 +104,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         private const val PENDING_ECHO_WINDOW_MS = 5000L
         // Each watched stream is a video decoder and a connection of its own
         const val MAX_WATCHED_STREAMS = 4
+        // After connecting, before asking for the history: the other clients' views of us settle
+        private const val HISTORY_REQUEST_DELAY_MS = 2000L
     }
 
     /**
@@ -303,7 +314,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val avatars: StateFlow<Map<String, ImageBitmap>> = _avatars.asStateFlow()
 
     private val _channelMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val channelMessages: StateFlow<List<ChatMessage>> = _channelMessages.asStateFlow()
+    /** The chat of the channel we are in, plus the history kept before channels were recorded */
+    val channelMessages: StateFlow<List<ChatMessage>> = combine(
+        _channelMessages,
+        _rawUsers.map { users -> users.firstOrNull { it.id == tsClient?.clientId }?.channelId }.distinctUntilChanged(),
+    ) { messages, channelId ->
+        messages.filter { it.channelId == 0L || it.channelId == channelId }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Private conversations keyed by the peer's permanent uid (see [peerKeyForClientId]). */
     private val _privateMessages = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
@@ -601,11 +618,27 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     serverAddress = addr
                     _serverAddressLabel.value = addr
                     val stored = messageStore.load(addr)
-                    if (stored.channel.isNotEmpty()) _channelMessages.value = stored.channel.map { migrateMessage(it) }
+                    if (stored.channel.isNotEmpty()) {
+                        // Anything already received (a message, a history reply) goes after it
+                        _channelMessages.value = stored.channel.map { migrateMessage(it) } + _channelMessages.value
+                    }
                     if (stored.privateMessages.isNotEmpty()) {
                         _privateMessages.value = stored.privateMessages.mapValues { (_, msgs) -> msgs.map { migrateMessage(it) } }
                     }
                     if (stored.unreadPrivate.isNotEmpty()) _unreadPrivate.value = stored.unreadPrivate
+                }
+                historyLoaded.value = true
+            }
+            // Each time the connection comes up, catch up on what was said while we were away:
+            // once our history is loaded, and we know our channel and the server's channels
+            viewModelScope.launch {
+                _connectionState.collectLatest { state ->
+                    if (state != ConnectionState.CONNECTED) return@collectLatest
+                    historyLoaded.first { it }
+                    _rawUsers.first { users -> users.any { it.id == tsClient?.clientId } }
+                    _channels.first { it.isNotEmpty() }
+                    delay(HISTORY_REQUEST_DELAY_MS)
+                    requestHistory()
                 }
             }
             // Start audio capture if not already running. The bridge owns its own
@@ -718,6 +751,12 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     _talkingUserIds.value = _talkingUserIds.value - userId
                     _whisperTalkingUserIds.value = _whisperTalkingUserIds.value - userId
                 }
+                "plugin_command" -> {
+                    if (event.data["name"] != HistorySync.COMMAND) return
+                    val data = event.data["data"] as? String ?: return
+                    val invokerId = (event.data["invoker_id"] as? Number)?.toInt() ?: return
+                    handleHistoryCommand(data, invokerId)
+                }
                 "text_message" -> {
                     try {
                         // Safely extract message data with null checks
@@ -825,11 +864,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                                     scheduleSave()
                                 }
                                 "channel" -> {
-                                    // Safely create and add channel message
+                                    // Channel messages reach only the channel we are in
                                     val msg = ChatMessage(
-                                        sender = sender, 
-                                        text = displayText, 
-                                        fileAttachment = attachment
+                                        sender = sender,
+                                        text = displayText,
+                                        fileAttachment = attachment,
+                                        channelId = currentChannelId(),
+                                        senderUid = _rawUsers.value.firstOrNull { it.id == senderId }?.uid,
                                     )
                                     
                                     val currentChannelMessages = _channelMessages.value
@@ -925,6 +966,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         tsClient?.sendChannelMessage(text)
         _channelMessages.value = _channelMessages.value + ChatMessage(
             sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true,
+            channelId = currentChannelId(), senderUid = myUid(),
         )
         pendingOwnEchoes.addLast(PendingEcho("channel", null, text, System.currentTimeMillis()))
         scheduleSave()
@@ -1277,6 +1319,81 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         return true
     }
 
+    private fun myUid(): String? = _rawUsers.value.firstOrNull { it.id == tsClient?.clientId }?.uid
+
+    // --- History sync (see HistorySync) ---
+
+    /** Whether the stored history is in: asking before it would ask for everything again */
+    private val historyLoaded = MutableStateFlow(false)
+
+    /** One history command at a time, a second apart, so the server's flood protection never trips */
+    private val historySends = Mutex()
+
+    /**
+     * Sends everyone our summary of each channel we may read (those without a password, and the
+     * one we are in), so they can send what we lack. One channel at a time, like the replies.
+     */
+    private fun requestHistory() {
+        val myChannel = currentChannelId()
+        val channelIds = _channels.value.filter { !it.hasPassword || it.id == myChannel }.map { it.id }
+        Log.i(TAG, "Asking for the history of ${channelIds.size} channels")
+        viewModelScope.launch {
+            historySends.withLock {
+                for (channelId in channelIds) {
+                    sendHistoryRequest(channelId, target = -1, back = false)
+                    delay(HistorySync.CHUNK_INTERVAL_MS)
+                }
+            }
+        }
+    }
+
+    private fun sendHistoryRequest(channelId: Long, target: Int, back: Boolean) {
+        val now = System.currentTimeMillis()
+        val summary = HistorySync.summary(_channelMessages.value.filter { it.channelId == channelId }, now, myUid())
+        tsClient?.sendPluginCommand(HistorySync.COMMAND, HistorySync.request(channelId, now, summary, back), target)
+    }
+
+    /**
+     * Answers [requesterId]'s summary of a channel: the messages of every period where it differs
+     * from ours, then, when its summary shows it has something we lack, a request back.
+     */
+    private fun answerHistoryRequest(requesterId: Int, request: HistorySync.Command.Request) {
+        if (requesterId == tsClient?.clientId) return
+        viewModelScope.launch {
+            historySends.withLock {
+                val me = _rawUsers.value.firstOrNull { it.id == tsClient?.clientId } ?: return@withLock
+                // A password-protected channel's history only goes to someone already in it
+                val channel = _channels.value.firstOrNull { it.id == request.channelId } ?: return@withLock
+                val requesterChannel = _rawUsers.value.firstOrNull { it.id == requesterId }?.channelId
+                if (channel.hasPassword && channel.id != requesterChannel) return@withLock
+                val mine = _channelMessages.value.filter { it.channelId == channel.id }
+                val missing = HistorySync.missing(mine, request.summary, request.now, me.uid)
+                for (reply in HistorySync.replies(channel.id, missing, me.nickname, me.uid)) {
+                    val client = tsClient ?: return@withLock
+                    client.sendPluginCommand(HistorySync.COMMAND, reply, requesterId)
+                    delay(HistorySync.CHUNK_INTERVAL_MS)
+                }
+                if (!request.back && HistorySync.hasMore(mine, request.summary, request.now, me.uid)) {
+                    sendHistoryRequest(channel.id, target = requesterId, back = true)
+                    delay(HistorySync.CHUNK_INTERVAL_MS)
+                }
+            }
+        }
+    }
+
+    private fun handleHistoryCommand(data: String, invokerId: Int) {
+        when (val command = HistorySync.parse(data)) {
+            is HistorySync.Command.Request -> answerHistoryRequest(invokerId, command)
+            is HistorySync.Command.Messages -> {
+                val merged = HistorySync.merge(_channelMessages.value, command.messages, myUid()) ?: return
+                Log.i(TAG, "History sync added ${merged.size - _channelMessages.value.size} messages")
+                _channelMessages.value = merged
+                scheduleSave()
+            }
+            null -> {}
+        }
+    }
+
     private fun currentChannelId(): Long {
         val myId = tsClient?.clientId ?: return 0
         return _rawUsers.value.find { it.id == myId }?.channelId ?: 0
@@ -1328,7 +1445,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     _privateMessages.value = current
                 } else {
                     tsClient?.sendChannelMessage(ts3Url)
-                    val msg = ChatMessage(sender = meSender, text = fileName, isMe = true, fileAttachment = attachment)
+                    val msg = ChatMessage(
+                        sender = meSender, text = fileName, isMe = true, fileAttachment = attachment,
+                        channelId = currentChannelId(), senderUid = myUid(),
+                    )
                     _channelMessages.value = _channelMessages.value + msg
                 }
                 scheduleSave()
@@ -1553,6 +1673,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             tsClient?.sendChannelMessage(ts3Url)
             _channelMessages.value = _channelMessages.value + ChatMessage(
                 sender = meSender, text = fileName, isMe = true, fileAttachment = attachment,
+                channelId = currentChannelId(), senderUid = myUid(),
             )
         }
         scheduleSave()

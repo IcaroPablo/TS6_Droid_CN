@@ -1,10 +1,14 @@
 package dev.tsdroid.ui.component
 
-import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,9 +38,8 @@ import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.Corners
-import dev.tsdroid.ui.theme.InsetFill
-import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetFill
 import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tslib.Channel
@@ -69,16 +72,21 @@ fun ChannelTree(
     /** Members streaming in our channel, and what tapping their badge does. */
     streamingUserIds: Set<Int> = emptySet(),
     onWatchStream: ((User) -> Unit)? = null,
+    /** The member whose panel is unfolded under their row, and the panel */
+    expandedUserId: Int? = null,
+    userPanel: (@Composable (User) -> Unit)? = null,
+    /** The channel whose panel (its password) is unfolded under its row, and the panel */
+    expandedChannelId: Long? = null,
+    channelPanel: (@Composable (Channel) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // Filter nulls early — JNI arrays can contain null elements
     @Suppress("USELESS_CAST")
     val safeUsers = remember(users) { users.filterNotNull() }
-    val treeItems = remember(channels, safeUsers) {
-        val items = buildTreeItems(channels, safeUsers)
-        Log.d("ChannelTree", "Built ${items.size} tree items (${items.count { it is TreeItem.ChannelNode }} channels, ${items.count { it is TreeItem.UserNode }} users) from ${channels.size} channels, ${safeUsers.size} users")
-        items
-    }
+    // The channels' order (a native call) only changes with the channels; members change far more
+    // often (every time someone starts or stops talking) and are only slotted in under them
+    val channelOrder = remember(channels) { orderChannels(channels) }
+    val treeItems = remember(channelOrder, safeUsers) { buildTreeItems(channelOrder, safeUsers) }
     val userCountByChannel = remember(safeUsers) {
         safeUsers.groupingBy { it.channelId }.eachCount()
     }
@@ -97,7 +105,7 @@ fun ChannelTree(
         }) { index, item ->
             val position = sections[index]
             // Members joining, leaving and moving between channels slide into place
-            Box(
+            Column(
                 modifier = Modifier
                     .animateItem()
                     // The island's gap between one channel's area and the next
@@ -105,7 +113,8 @@ fun ChannelTree(
                     .then(
                         if (position.boxed) Modifier.background(InsetFill, position.shape()) else Modifier,
                     )
-                    .padding(horizontal = InsetPadding),
+                    // A channel's icon sits as far from the area's side as from its top
+                    .padding(horizontal = ChannelRowPadding),
             ) {
             when (item) {
                 is TreeItem.ChannelNode -> ChannelRow(
@@ -137,10 +146,28 @@ fun ChannelTree(
                     onWatchStream = onWatchStream?.let { { it(item.user) } },
                 )
             }
+            // A member's panel or a channel's password unfolds under its row, inside its area
+            val panelOpen = when (item) {
+                is TreeItem.ChannelNode -> item.channel.id == expandedChannelId && channelPanel != null
+                is TreeItem.UserNode -> item.user.id == expandedUserId && userPanel != null
+            }
+            AnimatedVisibility(
+                visible = panelOpen,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+            ) {
+                when (item) {
+                    is TreeItem.ChannelNode -> channelPanel?.invoke(item.channel)
+                    is TreeItem.UserNode -> userPanel?.invoke(item.user)
+                }
+            }
             }
         }
     }
 }
+
+/** Above and below a channel's row, and from its area's side to its icon: the standard gap. */
+private val ChannelRowPadding = Spacing.Gap
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -208,8 +235,8 @@ private fun ChannelRow(
                 )
                 .padding(
                     start = (depth * 24).dp,
-                    top = 6.dp,
-                    bottom = 6.dp,
+                    top = ChannelRowPadding,
+                    bottom = ChannelRowPadding,
                     end = 8.dp,
                 ),
             verticalAlignment = Alignment.CenterVertically,
@@ -273,55 +300,49 @@ private fun ChannelRow(
 /** Where an item sits in its channel's area. */
 private data class SectionPosition(val boxed: Boolean, val first: Boolean, val last: Boolean) {
     fun shape(): Shape {
-        val top = if (first) Corners.Small else 0.dp
-        val bottom = if (last) Corners.Small else 0.dp
+        val top = if (first) Corners.Standard else 0.dp
+        val bottom = if (last) Corners.Standard else 0.dp
         return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
     }
 }
 
 /** A channel row opens an area; its members follow it in the same area. */
-private fun sectionPositions(items: List<TreeItem>): List<SectionPosition> = items.mapIndexed { index, item ->
-    val first = item is TreeItem.ChannelNode
-    val last = items.getOrNull(index + 1).let { it == null || it is TreeItem.ChannelNode }
-    val sectionChannel = items.subList(0, index + 1).last { it is TreeItem.ChannelNode } as TreeItem.ChannelNode
-    SectionPosition(
-        boxed = parseSpacer(sectionChannel.channel.name) == null,
-        first = first,
-        last = last,
-    )
+private fun sectionPositions(items: List<TreeItem>): List<SectionPosition> {
+    var boxed = false
+    return items.mapIndexed { index, item ->
+        if (item is TreeItem.ChannelNode) boxed = parseSpacer(item.channel.name) == null
+        SectionPosition(
+            boxed = boxed,
+            first = item is TreeItem.ChannelNode,
+            last = items.getOrNull(index + 1).let { it == null || it is TreeItem.ChannelNode },
+        )
+    }
 }
 
-private fun buildTreeItems(channels: List<Channel>, users: List<User>): List<TreeItem> {
-    if (channels.isEmpty()) return emptyList()
-
-    // Filter out any null elements that may come from JNI
+/** The channels in display order (parents before their children), with each one's depth. */
+private fun orderChannels(channels: List<Channel>): List<Pair<Channel, Int>> {
     @Suppress("USELESS_CAST")
     val safeChannels = channels.filterNotNull()
-    @Suppress("USELESS_CAST")
-    val safeUsers = users.filterNotNull()
-
     if (safeChannels.isEmpty()) return emptyList()
-
     val tree = JChannelTree.fromChannels(safeChannels.toTypedArray())
-    val usersByChannel = safeUsers.groupBy { it.channelId }
-
-    Log.d("ChannelTree", "usersByChannel keys: ${usersByChannel.keys}, channel ids: ${safeChannels.map { it.id }}")
-
-    val items = mutableListOf<TreeItem>()
-
-    fun addChannel(channel: Channel, depth: Int) {
-        items.add(TreeItem.ChannelNode(channel, depth))
-        // Add users in this channel
-        usersByChannel[channel.id]?.forEach { user ->
-            items.add(TreeItem.UserNode(user, depth + 1))
-        }
-        // Add sub-channels (filter nulls from JNI array)
-        tree.getChildren(channel.id)?.filterNotNull()?.forEach { child ->
-            addChannel(child, depth + 1)
-        }
+    val ordered = mutableListOf<Pair<Channel, Int>>()
+    fun add(channel: Channel, depth: Int) {
+        ordered.add(channel to depth)
+        tree.getChildren(channel.id)?.filterNotNull()?.forEach { add(it, depth + 1) }
     }
-
-    tree.roots?.filterNotNull()?.forEach { root -> addChannel(root, 0) }
+    tree.roots?.filterNotNull()?.forEach { add(it, 0) }
     tree.close()
+    return ordered
+}
+
+/** Each channel followed by its members. */
+private fun buildTreeItems(channels: List<Pair<Channel, Int>>, users: List<User>): List<TreeItem> {
+    val usersByChannel = users.groupBy { it.channelId }
+    val items = ArrayList<TreeItem>(channels.size + users.size)
+    for ((channel, depth) in channels) {
+        items.add(TreeItem.ChannelNode(channel, depth))
+        usersByChannel[channel.id]?.forEach { items.add(TreeItem.UserNode(it, depth + 1)) }
+    }
     return items
 }
+

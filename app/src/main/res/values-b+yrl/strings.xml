@@ -169,7 +169,6 @@
     <string name="new_folder">Papera rirú pisasú</string>
     <string name="rename">Remuyeréu rera</string>
     <string name="delete_file">Remukanhemu</string>
-    <string name="confirm_delete">Remukanhemu %1$s taá?</string>
     <string name="enter_folder_name">Papera rirú rera</string>
     <string name="enter_new_name">Rera pisasú</string>
     <string name="refresh">Remupisasu</string>
@@ -177,7 +176,6 @@
     <string name="folder">Papera rirú</string>
     <string name="upload">Remundu</string>
     <string name="share_in_channel">Canal reikú waá</string>
-    <string name="share_file_title">Remeẽ %1$s</string>
     <string name="notif_unmute">Renheẽ yuíri</string>
     <string name="notif_mute">Remukirirĩ</string>
     <string name="me_sender">Ixé</string>

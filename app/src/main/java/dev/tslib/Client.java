@@ -124,6 +124,17 @@ public class Client implements AutoCloseable {
     }
 
     /**
+     * The connection's quality: {@code {rttMs, rttDevMs, packetLoss, packetLossIn,
+     * bytesRecvPerSec, bytesSentPerSec, lossObservedTotal}}.
+     *
+     * @return the figures, or null while not connected
+     */
+    public double[] getNetworkStats() {
+        checkNotClosed();
+        return nativeGetNetworkStats(nativePtr);
+    }
+
+    /**
      * Get our client ID on the server.
      *
      * @return the client ID, or {@code null} if not yet assigned
@@ -215,6 +226,19 @@ public class Client implements AutoCloseable {
     public void sendChannelMessage(String msg) {
         checkNotClosed();
         nativeSendChannelMessage(nativePtr, msg);
+    }
+
+    /**
+     * Send a plugin command: hidden data for clients that know {@code name}; others ignore it.
+     *
+     * @param name what the data is, so a receiver can tell its own commands apart
+     * @param data the payload
+     * @param targetId the client to send it to, or -1 for everyone on the server
+     * @throws TsLibException on error
+     */
+    public void sendPluginCommand(String name, String data, int targetId) {
+        checkNotClosed();
+        nativeSendPluginCommand(nativePtr, name, data, targetId);
     }
 
     /**
@@ -495,6 +519,7 @@ public class Client implements AutoCloseable {
     private static native void nativeDisconnect(long ptr);
     private static native boolean nativeIsConnected(long ptr);
     private static native int nativeGetState(long ptr);
+    private static native double[] nativeGetNetworkStats(long ptr);
     private static native Integer nativeGetClientId(long ptr);
     private static native Long nativeGetChannelId(long ptr);
     private static native Channel[] nativeGetChannels(long ptr);
@@ -504,6 +529,7 @@ public class Client implements AutoCloseable {
     private static native ServerInfo nativeGetServerInfo(long ptr);
     private static native void nativeSendServerMessage(long ptr, String msg);
     private static native void nativeSendChannelMessage(long ptr, String msg);
+    private static native void nativeSendPluginCommand(long ptr, String name, String data, int targetId);
     private static native void nativeSendPrivateMessage(long ptr, int userId, String msg);
     private static native void nativeSetWhisperTargets(long ptr, int[] clients, long[] channels, long[] groups);
     private static native ServerGroup[] nativeGetServerGroups(long ptr);

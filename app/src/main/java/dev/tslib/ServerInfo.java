@@ -1,5 +1,7 @@
 package dev.tslib;
 
+import java.util.Objects;
+
 /**
  * Server information (immutable snapshot).
  */
@@ -52,5 +54,30 @@ public class ServerInfo {
     @Override
     public String toString() {
         return "ServerInfo(name='" + name + "')";
+    }
+
+    /**
+     * Value equality: the client publishes a fresh snapshot several times a second, and an
+     * unchanged one must compare equal so nothing downstream redraws for it.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ServerInfo)) return false;
+        ServerInfo other = (ServerInfo) o;
+        return Objects.equals(name, other.name)
+                && Objects.equals(platform, other.platform)
+                && Objects.equals(version, other.version)
+                && maxClients == other.maxClients
+                && clientsOnline == other.clientsOnline
+                && channelsOnline == other.channelsOnline
+                && uptime == other.uptime
+                && Objects.equals(welcomeMessage, other.welcomeMessage)
+                && iconId == other.iconId;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, platform, version, maxClients, clientsOnline, channelsOnline, uptime, welcomeMessage, iconId);
     }
 }

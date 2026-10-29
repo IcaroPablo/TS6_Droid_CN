@@ -1,45 +1,24 @@
 package dev.tsdroid.ui.component
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
@@ -49,31 +28,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.Shapes
-
-/**
- * One entry of [LiquidGlassNavBar].
- */
-data class LiquidGlassNavItem(
-    val icon: ImageVector,
-    val label: String,
-)
 
 /**
  * The frosted surface every panel and card is built from: the wallpaper actually behind the pane,
@@ -86,11 +51,29 @@ data class LiquidGlassNavItem(
 fun LiquidGlassPanel(
     modifier: Modifier = Modifier,
     wallpaper: ImageBitmap? = null,
-    shape: Shape = Shapes.Large,
+    shape: Shape = Shapes.Standard,
     elevation: Dp = 10.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     content: @Composable BoxScope.(contentColor: Color) -> Unit,
 ) {
+    // Without a wallpaper there is nothing to frost: the pane is a flat surface with a hairline
+    // edge. No shadow, no blurred backdrop and no full-size gradient layers, which a pane the size
+    // of the screen would otherwise redraw on every frame of every animation inside it.
+    if (wallpaper == null) {
+        val contentColor = MaterialTheme.colorScheme.onSurface
+        Box(
+            modifier = modifier
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .border(0.75.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                .padding(contentPadding),
+        ) {
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                content(contentColor)
+            }
+        }
+        return
+    }
     Box(
         modifier = modifier
             .shadow(
@@ -112,195 +95,6 @@ fun LiquidGlassPanel(
         ) { contentColor ->
             Box(modifier = Modifier.padding(contentPadding)) {
                 content(contentColor)
-            }
-        }
-    }
-}
-
-/**
- * A compact frosted surface for list rows and grouped settings: the same material as
- * [LiquidGlassPanel], with a lighter shadow so a long list does not read as a pile of slabs.
- *
- * The backdrop-derived colour is published as `LocalContentColor`, so any inner [Text] or [Icon]
- * that does not set an explicit colour adapts to whatever is actually behind the glass instead of
- * assuming a light background.
- */
-@Composable
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    wallpaper: ImageBitmap? = null,
-    shape: Shape = Shapes.Medium,
-    // Islands barely lift off the page: the gap around them does the separating
-    elevation: Dp = 1.dp,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-    content: @Composable () -> Unit,
-) {
-    LiquidGlassPanel(
-        modifier = modifier,
-        wallpaper = wallpaper,
-        shape = shape,
-        elevation = elevation,
-        contentPadding = contentPadding,
-    ) { contentColor ->
-        CompositionLocalProvider(LocalContentColor provides contentColor) {
-            content()
-        }
-    }
-}
-
-/**
- * Height [LiquidGlassNavBar] covers above the navigation bar with its default sizes: what content
- * scrolling underneath it has to leave free at its end, or its last rows stay hidden behind the bar.
- */
-val LiquidGlassNavBarClearance: Dp = 64.dp + 8.dp + 12.dp
-
-/**
- * iOS 26 style floating navigation bar: a capsule surface with a selection pill that glides
- * between items on a spring.
- */
-@Composable
-fun LiquidGlassNavBar(
-    items: List<LiquidGlassNavItem>,
-    selectedIndex: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    wallpaper: ImageBitmap? = null,
-    barHeight: Dp = 64.dp,
-    /** Width given to each item. The capsule hugs the items instead of filling the window. */
-    itemWidth: Dp = 92.dp,
-    horizontalMargin: Dp = 16.dp,
-    topMargin: Dp = 8.dp,
-    bottomMargin: Dp = 12.dp,
-) {
-    if (items.isEmpty()) return
-    val dark = isSystemInDarkTheme()
-    val capsule = CircleShape
-
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(
-                start = horizontalMargin,
-                end = horizontalMargin,
-                top = topMargin,
-                bottom = bottomMargin,
-            ),
-        // Centred, and only as wide as its items: a two-item bar reads as a compact capsule
-        // rather than a rail spanning the whole window.
-        contentAlignment = Alignment.Center,
-    ) {
-        // Hug the items, but never exceed the available width: as entries are added the slot
-        // shrinks so the capsule stays inside the window instead of being clipped.
-        val capsuleWidth = minOf(itemWidth * items.size, maxWidth)
-        val slotWidth = capsuleWidth / items.size
-        Box(
-            modifier = Modifier
-                .width(capsuleWidth)
-                .height(barHeight)
-                .clip(capsule),
-        ) {
-            val pillInset = 6.dp
-
-            LiquidGlassSurface(
-                wallpaper = wallpaper,
-                shape = capsule,
-                modifier = Modifier.matchParentSize(),
-            ) { contentColor ->
-                // Selection pill — a brighter sliver of the same glass.
-                val halo = if (contentColor.luminance() > 0.5f) {
-                    Color.Black.copy(alpha = 0.45f)
-                } else {
-                    Color.White.copy(alpha = 0.65f)
-                }
-                val pillOffset by animateDpAsState(
-                    targetValue = slotWidth * selectedIndex + pillInset,
-                    animationSpec = spring(
-                        dampingRatio = 0.72f,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    label = "liquidGlassPill",
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .offset(x = pillOffset)
-                        .width(slotWidth - pillInset * 2)
-                        .height(barHeight - 12.dp)
-                        .clip(capsule)
-                        // A brighter sliver of the same frosted material: a translucent white wash
-                        // over the bar's own backdrop, which composites into exactly what a smaller,
-                        // brighter pane of the same glass would look like. An opaque theme fill (the
-                        // previous secondaryContainer) read as a slab of a different material.
-                        .background(Color.White.copy(alpha = if (dark) 0.22f else 0.34f))
-                        .border(
-                            width = 0.75.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            shape = capsule,
-                        ),
-                )
-
-                Row(modifier = Modifier.fillMaxSize()) {
-                    items.forEachIndexed { index, item ->
-                        val selected = index == selectedIndex
-                        val tint by animateColorAsState(
-                            targetValue = if (selected) contentColor
-                            else contentColor.copy(alpha = 0.72f),
-                            animationSpec = tween(durationMillis = 200),
-                            label = "liquidGlassTint$index",
-                        )
-                        val iconScale by animateFloatAsState(
-                            targetValue = if (selected) 1.08f else 1f,
-                            animationSpec = spring(
-                                dampingRatio = 0.6f,
-                                stiffness = Spring.StiffnessMedium,
-                            ),
-                            label = "liquidGlassScale$index",
-                        )
-                        val interaction = remember { MutableInteractionSource() }
-
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .selectable(
-                                    selected = selected,
-                                    interactionSource = interaction,
-                                    indication = null,
-                                    role = Role.Tab,
-                                    onClick = { onSelect(index) },
-                                ),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.label,
-                                tint = tint,
-                                modifier = Modifier
-                                    .size(IconSize)
-                                    .graphicsLayer {
-                                        scaleX = iconScale
-                                        scaleY = iconScale
-                                    },
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                text = item.label,
-                                color = tint,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    shadow = Shadow(
-                                        color = halo,
-                                        offset = Offset.Zero,
-                                        blurRadius = 4f,
-                                    ),
-                                ),
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
             }
         }
     }

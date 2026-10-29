@@ -13,7 +13,8 @@ class MessageStore(private val context: Context) {
 
     companion object {
         private const val TAG = "MessageStore"
-        private const val MAX_MESSAGES = 500
+        /** Private conversations are capped; channel history is kept whole, since friends sync it */
+        private const val MAX_PRIVATE_MESSAGES = 500
         private val EMPTY = Stored(emptyList(), emptyMap(), emptyMap())
     }
 
@@ -74,12 +75,12 @@ class MessageStore(private val context: Context) {
     ): String {
         val root = org.json.JSONObject()
         val channelArr = org.json.JSONArray()
-        channel.takeLast(MAX_MESSAGES).forEach { channelArr.put(toJson(it)) }
+        channel.forEach { channelArr.put(it.toStoredJson()) }
         root.put("channel", channelArr)
         val privateObj = org.json.JSONObject()
         for ((peerKey, msgs) in private_) {
             val arr = org.json.JSONArray()
-            msgs.takeLast(MAX_MESSAGES).forEach { arr.put(toJson(it)) }
+            msgs.takeLast(MAX_PRIVATE_MESSAGES).forEach { arr.put(it.toStoredJson()) }
             privateObj.put(peerKey, arr)
         }
         root.put("private", privateObj)
@@ -93,28 +94,6 @@ class MessageStore(private val context: Context) {
         return root.toString()
     }
 
-    private fun toJson(msg: ChatMessage): org.json.JSONObject {
-        return org.json.JSONObject().apply {
-            put("s", msg.sender)
-            put("t", msg.text)
-            put("ts", msg.timestamp)
-            put("me", msg.isMe)
-            put("sid", msg.senderId)
-            msg.fileAttachment?.let { fa ->
-                put(
-                    "fa",
-                    org.json.JSONObject().apply {
-                        put("fn", fa.fileName)
-                        put("fs", fa.fileSize)
-                        put("fi", fa.fileId)
-                        put("im", fa.isImage)
-                        put("ch", fa.channelId)
-                    }
-                )
-            }
-        }
-    }
-
     // --- Parsing ---
 
     private fun parseServerMessages(json: String): Stored {
@@ -124,7 +103,7 @@ class MessageStore(private val context: Context) {
             val channelMessages = mutableListOf<ChatMessage>()
             root.optJSONArray("channel")?.let { arr ->
                 for (i in 0 until arr.length()) {
-                    fromJson(arr.getJSONObject(i), isPrivate = false)?.let { channelMessages.add(it) }
+                    storedMessageFromJson(arr.getJSONObject(i), isPrivate = false)?.let { channelMessages.add(it) }
                 }
             }
             val privateMessages = mutableMapOf<String, List<ChatMessage>>()
@@ -137,7 +116,7 @@ class MessageStore(private val context: Context) {
                     val arr = obj.optJSONArray(key) ?: continue
                     val msgs = mutableListOf<ChatMessage>()
                     for (i in 0 until arr.length()) {
-                        fromJson(arr.getJSONObject(i), isPrivate = true)?.let { msgs.add(it) }
+                        storedMessageFromJson(arr.getJSONObject(i), isPrivate = true)?.let { msgs.add(it) }
                     }
                     privateMessages[peerKey] = (privateMessages[peerKey] ?: emptyList()) + msgs
                 }
@@ -156,29 +135,57 @@ class MessageStore(private val context: Context) {
             Stored(emptyList(), emptyMap(), emptyMap())
         }
     }
+}
 
-    private fun fromJson(o: org.json.JSONObject, isPrivate: Boolean): ChatMessage? {
-        return try {
-            ChatMessage(
-                sender = o.getString("s"),
-                text = o.getString("t"),
-                timestamp = o.optLong("ts", System.currentTimeMillis()),
-                isMe = o.optBoolean("me", false),
-                isPrivate = isPrivate,
-                senderId = o.optInt("sid", 0),
-                fileAttachment = o.optJSONObject("fa")?.let { fa ->
-                    FileAttachment(
-                        fileName = fa.getString("fn"),
-                        fileSize = fa.optLong("fs", 0),
-                        fileId = fa.optString("fi"),
-                        isImage = fa.optBoolean("im", false),
-                        channelId = fa.optLong("ch", 0),
-                    )
-                },
+/** A message as it is stored, and as history sync sends it. */
+internal fun ChatMessage.toStoredJson(): org.json.JSONObject {
+    return org.json.JSONObject().apply {
+        put("s", sender)
+        put("t", text)
+        put("ts", timestamp)
+        put("me", isMe)
+        put("sid", senderId)
+        if (channelId != 0L) put("c", channelId)
+        senderUid?.let { put("u", it) }
+        fileAttachment?.let { fa ->
+            put(
+                "fa",
+                org.json.JSONObject().apply {
+                    put("fn", fa.fileName)
+                    put("fs", fa.fileSize)
+                    put("fi", fa.fileId)
+                    put("im", fa.isImage)
+                    put("ch", fa.channelId)
+                }
             )
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse message: ${e.message}")
-            null
         }
+    }
+}
+
+/** Reads what [toStoredJson] wrote; null for an entry that cannot be read. */
+internal fun storedMessageFromJson(o: org.json.JSONObject, isPrivate: Boolean): ChatMessage? {
+    return try {
+        ChatMessage(
+            sender = o.getString("s"),
+            text = o.getString("t"),
+            timestamp = o.optLong("ts", System.currentTimeMillis()),
+            isMe = o.optBoolean("me", false),
+            isPrivate = isPrivate,
+            senderId = o.optInt("sid", 0),
+            channelId = o.optLong("c", 0L),
+            senderUid = o.optString("u").takeIf { it.isNotEmpty() },
+            fileAttachment = o.optJSONObject("fa")?.let { fa ->
+                FileAttachment(
+                    fileName = fa.getString("fn"),
+                    fileSize = fa.optLong("fs", 0),
+                    fileId = fa.optString("fi"),
+                    isImage = fa.optBoolean("im", false),
+                    channelId = fa.optLong("ch", 0),
+                )
+            },
+        )
+    } catch (e: Exception) {
+        Log.w("MessageStore", "Failed to parse message: ${e.message}")
+        null
     }
 }

@@ -53,6 +53,7 @@ import dev.tsdroid.bridge.LiveStream
 import dev.tsdroid.han.R
 import dev.tsdroid.service.UserGroups
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.Shapes
 import dev.tslib.ChannelGroup
 import dev.tslib.ServerGroup
@@ -100,7 +101,8 @@ fun UserPanelSheet(
     // read those details, so it shows them straight away.
     var detailsOpen by remember(user.id) { mutableStateOf(isSelf) }
 
-    GlassBottomSheet(onDismissRequest = onDismiss, wallpaper = wallpaper) {
+    // Unfolded in place in the server's tab, under what opened it
+    Column(modifier = Modifier.fillMaxWidth().padding(InsetPadding)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PanelAvatar(user.nickname, avatar)
             Spacer(Modifier.width(12.dp))
@@ -149,7 +151,7 @@ fun UserPanelSheet(
                 streams.forEach { stream ->
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(
-                        shape = Shapes.Small,
+                        shape = Shapes.Standard,
                         onClick = { onWatchStream(stream) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -202,7 +204,7 @@ fun UserPanelSheet(
             }
 
             Spacer(Modifier.height(8.dp))
-            FilledTonalButton(shape = Shapes.Small, onClick = onPrivateMessage, modifier = Modifier.fillMaxWidth()) {
+            FilledTonalButton(shape = Shapes.Standard, onClick = onPrivateMessage, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.private_message))
             }
         }

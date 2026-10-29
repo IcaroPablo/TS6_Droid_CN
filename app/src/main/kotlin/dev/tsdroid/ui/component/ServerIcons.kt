@@ -12,7 +12,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -29,6 +31,12 @@ import dev.tsdroid.ui.theme.Shapes
  * still tells servers and channels apart.
  */
 
+/**
+ * Server and channel icons are at most 32px on the server and drawn two or three times that: scaled
+ * up blocky, each pixel a crisp square, rather than smoothed into a blur.
+ */
+private val IconFilter = FilterQuality.None
+
 /** The server's icon, or its initials on a colour picked from its name, like member avatars. */
 @Composable
 fun ServerIcon(
@@ -36,20 +44,25 @@ fun ServerIcon(
     icon: ImageBitmap?,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
+    shape: Shape = Shapes.Standard,
 ) {
     if (icon != null) {
         Image(
             bitmap = icon,
             contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = modifier.size(size),
+            // Rounded like every other picture and section; cropped so the corners are the image's
+            contentScale = ContentScale.Crop,
+            filterQuality = IconFilter,
+            modifier = modifier
+                .size(size)
+                .clip(shape),
         )
         return
     }
     Box(
         modifier = modifier
             .size(size)
-            .clip(Shapes.Small)
+            .clip(shape)
             .background(avatarColorFor(name)),
         contentAlignment = Alignment.Center,
     ) {
@@ -91,8 +104,11 @@ fun ChannelIcon(
         Image(
             bitmap = icon,
             contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = modifier.size(24.dp),
+            contentScale = ContentScale.Crop,
+            filterQuality = IconFilter,
+            modifier = modifier
+                .size(24.dp)
+                .clip(Shapes.Standard),
         )
         return
     }

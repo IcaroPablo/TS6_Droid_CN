@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +31,9 @@ import kotlinx.coroutines.flow.StateFlow
 
 private const val INITIAL_PAGE = 15
 private const val PAGE_SIZE = 20
+
+/** Messages from one sender this close together share the sender's name. */
+private const val SENDER_RUN_GAP_MS = 5 * 60 * 1000L
 
 @Composable
 fun ChatView(
@@ -81,7 +84,12 @@ fun ChatView(
             verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
             reverseLayout = true,
         ) {
-            items(displayMessages, key = { it.id }) { message ->
+            itemsIndexed(displayMessages, key = { _, message -> message.id }) { index, message ->
+                // The list runs newest first, so the message before this one comes after it
+                val previous = displayMessages.getOrNull(index + 1)
+                val showSender = previous == null || previous.isMe != message.isMe ||
+                    previous.sender != message.sender ||
+                    message.timestamp - previous.timestamp > SENDER_RUN_GAP_MS
                 // A new message slides in instead of popping up
                 Box(modifier = Modifier.animateItem()) {
                     MessageBubble(
@@ -89,6 +97,7 @@ fun ChatView(
                         showLinkThumbnails = showLinkThumbnails,
                         autoLoadImages = autoLoadImages,
                         onDownload = onDownload,
+                        showSender = showSender,
                     )
                 }
             }

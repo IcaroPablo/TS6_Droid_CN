@@ -27,12 +27,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.tsdroid.han.R
@@ -132,7 +134,7 @@ fun UserItem(
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     modifier = Modifier
-                        .clip(Shapes.Small)
+                        .clip(Shapes.Standard)
                         .background(AlertRed)
                         .clickable(enabled = onWatchStream != null) { onWatchStream?.invoke() }
                         .padding(horizontal = 5.dp, vertical = 1.dp),
@@ -261,35 +263,46 @@ private fun AvatarWithRing(
         modifier = Modifier.size(32.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (avatar != null) {
-            Image(
-                bitmap = avatar,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .then(ringModifier),
-                contentScale = ContentScale.Crop,
+        UserAvatar(avatar = avatar, nickname = nickname, modifier = ringModifier)
+    }
+}
+
+/** A member's avatar, or their initial on their colour when they have none. */
+@Composable
+fun UserAvatar(
+    avatar: ImageBitmap?,
+    nickname: String,
+    modifier: Modifier = Modifier,
+    size: Dp = 28.dp,
+    shape: Shape = CircleShape,
+) {
+    if (avatar != null) {
+        Image(
+            bitmap = avatar,
+            contentDescription = null,
+            modifier = Modifier
+                .size(size)
+                .clip(shape)
+                .then(modifier),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(shape)
+                .background(avatarColorFor(nickname))
+                .then(modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = nickname.firstOrNull()?.uppercase() ?: "?",
+                color = Color.White,
+                // Scales with the avatar: 13sp at the member list's 28dp
+                fontSize = (size.value * 0.46f).sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
             )
-        } else {
-            val bgColor = avatarColorFor(nickname)
-            val letter = nickname.firstOrNull()?.uppercase() ?: "?"
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(bgColor)
-                    .then(ringModifier),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = letter,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
-            }
         }
     }
 }

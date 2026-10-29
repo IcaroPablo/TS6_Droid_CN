@@ -30,6 +30,7 @@ import dev.tsdroid.han.R
 import dev.tsdroid.service.WhisperTargets
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.WhisperAmber
 import dev.tslib.Channel
 import dev.tslib.ServerGroup
@@ -55,10 +56,10 @@ fun WhisperListSheet(
     onToggleChannel: (Long) -> Unit,
     onRemoveMember: (String) -> Unit,
     onStop: () -> Unit,
-    onDismiss: () -> Unit,
     wallpaper: ImageBitmap? = null,
 ) {
-    GlassBottomSheet(onDismissRequest = onDismiss, wallpaper = wallpaper) {
+    // Unfolded in place in the server's tab, under what opened it
+    Column(modifier = Modifier.fillMaxWidth().padding(InsetPadding)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 AppIcons.Whisper,
@@ -90,7 +91,7 @@ fun WhisperListSheet(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             // ── 服务器组 ──────────────────────────────────────

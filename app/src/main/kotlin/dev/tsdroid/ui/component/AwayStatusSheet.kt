@@ -38,6 +38,7 @@ import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.AlertRed
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.OnlineGreen
 import dev.tsdroid.ui.theme.WhisperAmber
 
@@ -64,10 +65,12 @@ fun AwayStatusSheet(
     message: String,
     onSelect: (AwayStatus) -> Unit,
     onMessageChange: (String) -> Unit,
+    /** Folds the panel away once the away message is saved */
     onDismiss: () -> Unit,
     wallpaper: ImageBitmap? = null,
 ) {
-    GlassBottomSheet(onDismissRequest = onDismiss, wallpaper = wallpaper) {
+    // Unfolded in place in the server's tab, under what opened it
+    Column(modifier = Modifier.fillMaxWidth().padding(InsetPadding)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 // The moon is the away icon; online gets the plain dot the bottom bar shows

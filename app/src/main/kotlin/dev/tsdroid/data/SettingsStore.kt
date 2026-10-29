@@ -32,6 +32,7 @@ private val KEY_VOICE_ENHANCEMENT = stringPreferencesKey("voice_enhancement")
 private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
 private val KEY_STREAM_TEAMSPEAK_STUN = booleanPreferencesKey("stream_teamspeak_stun")
 private val KEY_STREAM_VOLUME = floatPreferencesKey("stream_volume")
+private val KEY_COLOR_SCHEME = stringPreferencesKey("color_scheme")
 private val KEY_ISLAND_CHANNELS_OPEN = booleanPreferencesKey("island_channels_open")
 private val KEY_ISLAND_CHAT_OPEN = booleanPreferencesKey("island_chat_open")
 private val KEY_ISLAND_INFO_OPEN = booleanPreferencesKey("island_info_open")
@@ -176,6 +177,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setStreamVolume(volume: Float) {
         context.settingsDataStore.edit { it[KEY_STREAM_VOLUME] = volume }
+    }
+
+    /** The built-in colour scheme picked in Settings (see AppColorScheme). */
+    val colorScheme: Flow<String> = context.settingsDataStore.data
+        .map { it[KEY_COLOR_SCHEME] ?: "default" }
+
+    suspend fun setColorScheme(key: String) {
+        context.settingsDataStore.edit { it[KEY_COLOR_SCHEME] = key }
     }
 
     val islandLayout: Flow<IslandLayout> = context.settingsDataStore.data

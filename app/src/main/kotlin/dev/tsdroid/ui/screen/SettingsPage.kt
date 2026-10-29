@@ -3,7 +3,6 @@ package dev.tsdroid.ui.screen
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -12,6 +11,12 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -33,18 +38,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -59,15 +62,15 @@ import dev.tsdroid.data.VoiceEnhancement
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.ChoicePill
-import dev.tsdroid.ui.component.GlassDialog
-import dev.tsdroid.ui.component.Island
-import dev.tsdroid.ui.component.LiquidGlassNavBarClearance
+import dev.tsdroid.ui.component.InsetSection
 import dev.tsdroid.ui.component.SettingsCacheSizeHelper
 import dev.tsdroid.ui.component.WallpaperCacheManager
 import dev.tsdroid.ui.component.WallpaperExporter
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.icon.AppIcons
+import dev.tsdroid.ui.theme.AppColorScheme
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.Spacing
 import java.io.File
@@ -79,7 +82,6 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsPage(
-    onNavigateToAbout: () -> Unit,
     autoReconnect: Boolean,
     onAutoReconnectChange: (Boolean) -> Unit,
 ) {
@@ -102,6 +104,7 @@ fun SettingsPage(
     val vadThreshold by settingsStore.vadThresholdDb.collectAsStateWithLifecycle(initialValue = VadGate.DEFAULT_THRESHOLD_DB)
     val joinVoiceState by settingsStore.joinVoiceState.collectAsStateWithLifecycle(initialValue = JoinVoiceState.DEAFENED)
     val voiceEnhancement by settingsStore.voiceEnhancement.collectAsStateWithLifecycle(initialValue = VoiceEnhancement.OFF)
+    val colorSchemeKey by settingsStore.colorScheme.collectAsStateWithLifecycle(initialValue = AppColorScheme.DEFAULT.key)
 
     val languageOptions = listOf(
         "zh" to stringResource(R.string.language_simplified_chinese),
@@ -114,44 +117,10 @@ fun SettingsPage(
         ?: stringResource(R.string.language_english)
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var pendingLanguageTag by remember { mutableStateOf<String?>(null) }
+    // About and the log unfold in place, at the end of the More section
     var showLogViewer by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     val activity = context as? Activity
-
-    pendingLanguageTag?.let { languageTag ->
-        val label = languageOptions.firstOrNull { it.first == languageTag }?.second ?: languageTag
-        GlassDialog(
-            onDismissRequest = { pendingLanguageTag = null },
-            title = stringResource(R.string.language_change_title),
-            wallpaper = rememberGlassBackdrop(animeBackground),
-            body = {
-                Text(
-                    text = stringResource(R.string.language_change_message, label),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingLanguageTag = null }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        AppLanguage.set(context, languageTag)
-                        activity?.recreate()
-                    }
-                    pendingLanguageTag = null
-                }) {
-                    Text(stringResource(R.string.restart))
-                }
-            },
-        )
-    }
-
-    if (showLogViewer) {
-        LogViewerDialog(onDismiss = { showLogViewer = false })
-    }
 
     // ── 身份导出/导入 ──
     val identityStore = remember { IdentityFileStore(context) }
@@ -209,18 +178,40 @@ fun SettingsPage(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = Spacing.Gap),
+            // The settings are a tab of the home island: its gap all round
+            .padding(Spacing.Gap),
     ) {
         // ── 外观 ──
-        Island(
+        InsetSection(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = rememberGlassBackdrop(animeBackground),
             title = stringResource(R.string.section_appearance),
             icon = Icons.Default.Palette,
             // The rows carry the island's inner padding themselves, so a tap lights up the whole row
             padded = false,
         ) {
             Column(modifier = Modifier.padding(bottom = 6.dp)) {
+
+                // A built-in colour scheme; it applies at once, so the choice can be seen
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
+                    Text(
+                        text = stringResource(R.string.color_scheme),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AppColorScheme.entries.forEach { scheme ->
+                            ChoicePill(
+                                label = scheme.label.ifEmpty { stringResource(R.string.color_scheme_default) },
+                                selected = AppColorScheme.fromKey(colorSchemeKey) == scheme,
+                                onClick = { scope.launch { settingsStore.setColorScheme(scheme.key) } },
+                            )
+                        }
+                    }
+                }
 
                 // 悬浮窗
                 SettingsSwitchRow(
@@ -267,9 +258,8 @@ fun SettingsPage(
         Spacer(Modifier.height(Spacing.Gap))
 
         // ── 音频 ──
-        Island(
+        InsetSection(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = rememberGlassBackdrop(animeBackground),
             title = stringResource(R.string.section_audio),
             icon = AppIcons.MicOn,
             // The rows carry the island's inner padding themselves, so a tap lights up the whole row
@@ -278,7 +268,7 @@ fun SettingsPage(
             Column(modifier = Modifier.padding(bottom = 6.dp)) {
 
                 // 扬声器音量增益（0% = 静音）
-                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
                     var gainValue by remember(audioGain) { mutableFloatStateOf(audioGain) }
                     Text(
                         text = stringResource(
@@ -299,7 +289,7 @@ fun SettingsPage(
                 }
 
                 // 麦克风增益（0% = 关麦；超过 100% 由软限幅防破音）
-                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
                     var micGainValue by remember(micGain) { mutableFloatStateOf(micGain) }
                     Text(
                         text = stringResource(
@@ -327,7 +317,7 @@ fun SettingsPage(
                 )
 
                 // ── 麦克风模式：按住说话 / 语音激活 / 开放麦克风 ──
-                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
                     Text(
                         text = stringResource(R.string.mic_mode),
                         style = MaterialTheme.typography.bodyLarge,
@@ -379,7 +369,7 @@ fun SettingsPage(
                 }
 
                 // ── When joining voice: deafened / muted / ready to talk ──
-                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
                     Text(
                         text = stringResource(R.string.join_voice_state),
                         style = MaterialTheme.typography.bodyLarge,
@@ -411,7 +401,7 @@ fun SettingsPage(
                 }
 
                 // ── Voice enhancement: opus's neural decoding of friends' voices ──
-                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
                     Text(
                         text = stringResource(R.string.voice_enhancement),
                         style = MaterialTheme.typography.bodyLarge,
@@ -451,16 +441,15 @@ fun SettingsPage(
         // Same frosted surface as the other groups: this card arrived with the
         // identity export/import feature and was still a plain Material Card,
         // which is the one place the settings page did not match.
-        Island(
+        InsetSection(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = rememberGlassBackdrop(animeBackground),
             title = stringResource(R.string.identity_section),
             icon = Icons.Default.Person,
             // The rows carry the island's inner padding themselves, so a tap lights up the whole row
             padded = false,
         ) {
             Column(modifier = Modifier.padding(bottom = 6.dp)) {
-                Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 10.dp)) {
                     Text(
                         text = identityUid?.let { stringResource(R.string.identity_uid, it) }
                             ?: stringResource(R.string.identity_uid_none),
@@ -469,13 +458,13 @@ fun SettingsPage(
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         FilledTonalButton(
-                            shape = Shapes.Small,
+                            shape = Shapes.Standard,
                             onClick = { exportIdentityLauncher.launch("telespeak_identity.ini") },
                             enabled = identityUid != null,
                         ) {
                             Text(stringResource(R.string.identity_export))
                         }
-                        FilledTonalButton(shape = Shapes.Small, onClick = { importIdentityLauncher.launch(arrayOf("*/*")) }) {
+                        FilledTonalButton(shape = Shapes.Standard, onClick = { importIdentityLauncher.launch(arrayOf("*/*")) }) {
                             Text(stringResource(R.string.identity_import))
                         }
                     }
@@ -492,9 +481,8 @@ fun SettingsPage(
         Spacer(Modifier.height(Spacing.Gap))
 
         // ── 聊天 ──
-        Island(
+        InsetSection(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = rememberGlassBackdrop(animeBackground),
             title = stringResource(R.string.section_chat),
             icon = AppIcons.Sms,
             // The rows carry the island's inner padding themselves, so a tap lights up the whole row
@@ -516,7 +504,7 @@ fun SettingsPage(
                     text = stringResource(R.string.remote_images_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Spacing.Inner, end = Spacing.Inner, bottom = 10.dp),
+                    modifier = Modifier.padding(start = InsetPadding, end = InsetPadding, bottom = 10.dp),
                 )
                 SettingsSwitchRow(
                     label = stringResource(R.string.encrypt_files),
@@ -527,16 +515,15 @@ fun SettingsPage(
                     text = stringResource(R.string.encrypt_files_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Spacing.Inner, end = Spacing.Inner, bottom = 10.dp),
+                    modifier = Modifier.padding(start = InsetPadding, end = InsetPadding, bottom = 10.dp),
                 )
             }
         }
 
         Spacer(Modifier.height(Spacing.Gap))
 
-        Island(
+        InsetSection(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = rememberGlassBackdrop(animeBackground),
             title = stringResource(R.string.section_connection),
             icon = AppIcons.Server,
             // The rows carry the island's inner padding themselves, so a tap lights up the whole row
@@ -558,7 +545,7 @@ fun SettingsPage(
                     text = stringResource(R.string.stream_use_teamspeak_stun_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Spacing.Inner, end = Spacing.Inner, bottom = 10.dp),
+                    modifier = Modifier.padding(start = InsetPadding, end = InsetPadding, bottom = 10.dp),
                 )
             }
         }
@@ -566,9 +553,8 @@ fun SettingsPage(
         Spacer(Modifier.height(Spacing.Gap))
 
         // ── 更多 ──
-        Island(
+        InsetSection(
             modifier = Modifier.fillMaxWidth(),
-            wallpaper = rememberGlassBackdrop(animeBackground),
             title = stringResource(R.string.section_more),
             icon = Icons.Default.MoreHoriz,
             // The rows carry the island's inner padding themselves, so a tap lights up the whole row
@@ -601,6 +587,37 @@ fun SettingsPage(
                         )
                     }
                 }
+                // Applying a language restarts the app, so it asks here, in place
+                pendingLanguageTag?.let { languageTag ->
+                    val label = languageOptions.firstOrNull { it.first == languageTag }?.second ?: languageTag
+                    Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 6.dp)) {
+                        Text(
+                            text = stringResource(R.string.language_change_message, label),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.Gap, Alignment.End),
+                        ) {
+                            TextButton(onClick = { pendingLanguageTag = null }, shape = Shapes.Standard) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                            Button(
+                                shape = Shapes.Standard,
+                                onClick = {
+                                    scope.launch {
+                                        AppLanguage.set(context, languageTag)
+                                        activity?.recreate()
+                                    }
+                                    pendingLanguageTag = null
+                                },
+                            ) {
+                                Text(stringResource(R.string.restart))
+                            }
+                        }
+                    }
+                }
 
                 // 检查更新
                 UpdateCheckRow(context, rememberGlassBackdrop(animeBackground))
@@ -619,15 +636,30 @@ fun SettingsPage(
                 // the native tslib output; the viewer handles refresh itself.
                 SettingsClickableRow(
                     label = stringResource(R.string.diag_log_title),
-                    subtitle = stringResource(R.string.diag_log_hint),
-                    onClick = { showLogViewer = true },
+                    onClick = { showLogViewer = !showLogViewer },
+                    trailing = { RowChevron(open = showLogViewer) },
                 )
+                AnimatedVisibility(
+                    visible = showLogViewer,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                ) {
+                    LogViewer(modifier = Modifier.padding(start = InsetPadding, end = 4.dp, bottom = InsetPadding))
+                }
 
                 // 关于软件 — last row of the page, where a footer item belongs.
                 SettingsClickableRow(
                     label = stringResource(R.string.about_software),
-                    onClick = onNavigateToAbout,
+                    onClick = { showAbout = !showAbout },
+                    trailing = { RowChevron(open = showAbout) },
                 )
+                AnimatedVisibility(
+                    visible = showAbout,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                ) {
+                    AboutContent(modifier = Modifier.padding(start = InsetPadding, end = InsetPadding, bottom = InsetPadding))
+                }
             }
         }
 
@@ -643,7 +675,6 @@ fun SettingsPage(
             color = LocalContentColor.current.copy(alpha = 0.72f),
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
-        Spacer(Modifier.height(LiquidGlassNavBarClearance))
     }
 }
 
@@ -658,7 +689,7 @@ private fun SettingsSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.Inner, vertical = 10.dp),
+            .padding(horizontal = InsetPadding, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -681,7 +712,7 @@ private fun SettingsClickableRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = Spacing.Inner, vertical = 14.dp),
+            .padding(horizontal = InsetPadding, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -698,13 +729,17 @@ private fun SettingsClickableRow(
     }
 }
 
+/** The end of a row that does something: a chevron, turned down while what it unfolds is open. */
 @Composable
-private fun RowChevron() {
+private fun RowChevron(open: Boolean = false) {
+    val turn by animateFloatAsState(if (open) 90f else 0f, label = "rowChevron")
     Icon(
         Icons.AutoMirrored.Filled.NavigateNext,
         null,
         tint = LocalContentColor.current.copy(alpha = 0.6f),
-        modifier = Modifier.size(IconSize),
+        modifier = Modifier
+            .size(IconSize)
+            .rotate(turn),
     )
 }
 
@@ -726,7 +761,7 @@ private fun LanguageOptionRow(
             .clickable(onClick = onClick)
             // Indented one step further than the row it belongs to, so the choice reads as a
             // sub-item rather than as another setting.
-            .padding(start = 32.dp, end = Spacing.Inner, top = 10.dp, bottom = 10.dp),
+            .padding(start = 32.dp, end = InsetPadding, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -887,67 +922,64 @@ private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
         }
     }
 
-    if (showDeleteConfirm) {
-        GlassDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = stringResource(R.string.custom_bg_delete),
-            wallpaper = wallpaper,
-            body = {
-                Text(
-                    text = stringResource(R.string.custom_bg_delete_confirm),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    dev.tsdroid.background.CustomBackgroundManager.deleteBackground(context)
-                    hasCustom = false
-                    showDeleteConfirm = false
-                    // Drops the deleted image from memory too: it is no longer on disk, so the state
-                    // has to fall back to the online wallpaper instead of painting it until restart.
-                    scope.launch {
-                        dev.tsdroid.ui.component.AnimeWallpaperState.refreshCustomBackground(context)
-                    }
-                }) {
-                    Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
-                }
-            },
-        )
+    // A first tap on delete arms it; a second within a few seconds deletes
+    LaunchedEffect(showDeleteConfirm) {
+        if (showDeleteConfirm) {
+            kotlinx.coroutines.delay(CONFIRM_MS)
+            showDeleteConfirm = false
+        }
     }
 
     Text(
         text = stringResource(R.string.custom_bg_title),
         style = MaterialTheme.typography.bodyLarge,
-        modifier = Modifier.padding(start = Spacing.Inner, top = 4.dp, bottom = 2.dp),
+        modifier = Modifier.padding(start = InsetPadding, top = 4.dp, bottom = 2.dp),
     )
     Text(
         text = if (hasCustom) stringResource(R.string.custom_bg_active) else stringResource(R.string.custom_bg_inactive),
         style = MaterialTheme.typography.bodySmall,
         color = if (hasCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = Spacing.Inner, bottom = 8.dp),
+        modifier = Modifier.padding(start = InsetPadding, bottom = 8.dp),
     )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.Inner, vertical = 4.dp),
+            .padding(horizontal = InsetPadding, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        FilledTonalButton(shape = Shapes.Small, onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+        FilledTonalButton(shape = Shapes.Standard, onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.custom_bg_upload))
         }
         if (hasCustom) {
-            TextButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.custom_bg_delete), color = MaterialTheme.colorScheme.error)
+            TextButton(
+                shape = Shapes.Standard,
+                onClick = {
+                    if (showDeleteConfirm) {
+                        dev.tsdroid.background.CustomBackgroundManager.deleteBackground(context)
+                        hasCustom = false
+                        showDeleteConfirm = false
+                        // Drops the deleted image from memory too: it is no longer on disk, so the
+                        // state has to fall back to the online wallpaper instead of painting it
+                        scope.launch {
+                            dev.tsdroid.ui.component.AnimeWallpaperState.refreshCustomBackground(context)
+                        }
+                    } else {
+                        showDeleteConfirm = true
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    stringResource(if (showDeleteConfirm) R.string.tap_again else R.string.custom_bg_delete),
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
 }
+
+/** How long a first tap on a destructive button waits for the second. */
+private const val CONFIRM_MS = 3_000L
 
 // ── 壁纸缓存区 ──
 
@@ -959,36 +991,60 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
     var showCacheViewer by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
 
-    if (showClearConfirm) {
-        GlassDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = stringResource(R.string.wallpaper_clear_cache),
-            wallpaper = wallpaper,
-            body = {
-                Text(
-                    text = stringResource(R.string.wallpaper_clear_cache_confirm),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
+    LaunchedEffect(showClearConfirm) {
+        if (showClearConfirm) {
+            kotlinx.coroutines.delay(CONFIRM_MS)
+            showClearConfirm = false
+        }
+    }
+
+    Text(
+        text = stringResource(R.string.wallpaper_cache_size, String.format("%.1f", cacheSizeMB.floatValue), cacheCount.intValue),
+        style = MaterialTheme.typography.bodySmall,
+        color = LocalContentColor.current.copy(alpha = 0.72f),
+        modifier = Modifier.padding(start = InsetPadding, top = 8.dp),
+    )
+    Column(modifier = Modifier.padding(horizontal = InsetPadding, vertical = 4.dp)) {
+        Text(
+            text = stringResource(R.string.wallpaper_max_cache, maxSize.longValue),
+            style = MaterialTheme.typography.labelSmall,
+            color = LocalContentColor.current.copy(alpha = 0.72f),
+        )
+        Slider(
+            value = maxSize.longValue.toFloat(),
+            onValueChange = { maxSize.longValue = it.toLong() },
+            onValueChangeFinished = { SettingsCacheSizeHelper.setMaxCacheSize(context, maxSize.longValue) },
+            valueRange = 10f..500f,
+            steps = 48,
+        )
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = InsetPadding, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FilledTonalButton(shape = Shapes.Standard, onClick = { showCacheViewer = !showCacheViewer }, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.wallpaper_view_cache))
+        }
+        TextButton(
+            shape = Shapes.Standard,
+            onClick = {
+                if (showClearConfirm) {
                     WallpaperCacheManager.clearCache()
                     cacheSizeMB.floatValue = 0f
                     cacheCount.intValue = 0
                     showClearConfirm = false
-                }) {
-                    Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
+                } else {
+                    showClearConfirm = true
                 }
             },
-        )
+            modifier = Modifier.weight(1f),
+        ) {
+            Text(
+                stringResource(if (showClearConfirm) R.string.tap_again else R.string.wallpaper_clear_cache),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
-
     if (showCacheViewer) {
         val cachedFiles = remember { mutableStateListOf(*WallpaperCacheManager.getCachedFiles().toTypedArray()) }
         val scope = rememberCoroutineScope()
@@ -1008,11 +1064,12 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
             }
         }
 
-        GlassDialog(
-            onDismissRequest = { showCacheViewer = false },
-            title = "${stringResource(R.string.wallpaper_view_cache)} (${cachedFiles.size})",
-            wallpaper = wallpaper,
-            body = {
+        // The cached images unfold under the buttons
+        Column(modifier = Modifier.padding(horizontal = InsetPadding).padding(bottom = 8.dp)) {
+            Text(
+                text = "${stringResource(R.string.wallpaper_view_cache)} (${cachedFiles.size})",
+                style = MaterialTheme.typography.labelLarge,
+            )
                 if (cachedFiles.isEmpty()) {
                     Text(
                         text = stringResource(R.string.wallpaper_cache_empty),
@@ -1024,7 +1081,7 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
                         columns = GridCells.Fixed(3),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
-                        // A grid needs a bounded height inside the dialog's column.
+                        // A grid needs a bounded height inside the section.
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp)
@@ -1060,49 +1117,19 @@ private fun WallpaperCacheSection(context: Context, wallpaper: ImageBitmap?) {
                         }
                     }
                 }
-            },
-            dismissButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Gap, Alignment.End),
+            ) {
                 if (cachedFiles.isNotEmpty()) {
                     TextButton(onClick = { export(cachedFiles.toList()) }) {
                         Text(stringResource(R.string.wallpaper_export_all))
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCacheViewer = false }) { Text(stringResource(R.string.close)) }
-            },
-        )
-    }
-
-    Text(
-        text = stringResource(R.string.wallpaper_cache_size, String.format("%.1f", cacheSizeMB.floatValue), cacheCount.intValue),
-        style = MaterialTheme.typography.bodySmall,
-        color = LocalContentColor.current.copy(alpha = 0.72f),
-        modifier = Modifier.padding(start = Spacing.Inner, top = 8.dp),
-    )
-    Column(modifier = Modifier.padding(horizontal = Spacing.Inner, vertical = 4.dp)) {
-        Text(
-            text = stringResource(R.string.wallpaper_max_cache, maxSize.longValue),
-            style = MaterialTheme.typography.labelSmall,
-            color = LocalContentColor.current.copy(alpha = 0.72f),
-        )
-        Slider(
-            value = maxSize.longValue.toFloat(),
-            onValueChange = { maxSize.longValue = it.toLong() },
-            onValueChangeFinished = { SettingsCacheSizeHelper.setMaxCacheSize(context, maxSize.longValue) },
-            valueRange = 10f..500f,
-            steps = 48,
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.Inner, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        FilledTonalButton(shape = Shapes.Small, onClick = { showCacheViewer = true }, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.wallpaper_view_cache))
-        }
-        TextButton(onClick = { showClearConfirm = true }, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.wallpaper_clear_cache), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { showCacheViewer = false }, shape = Shapes.Standard) {
+                    Text(stringResource(R.string.close))
+                }
+            }
         }
     }
 }
@@ -1124,12 +1151,43 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
     var downloadProgress by remember { mutableFloatStateOf(0f) }
     var downloadError by remember { mutableStateOf<String?>(null) }
 
-    if (showUpdateDialog && updateInfo != null) {
-        GlassDialog(
-            onDismissRequest = { if (!isDownloading) { showUpdateDialog = false } },
-            title = stringResource(R.string.update_available, updateInfo!!.versionName),
-            wallpaper = wallpaper,
-            body = {
+    SettingsClickableRow(
+        label = stringResource(R.string.update_check),
+        onClick = {
+            if (!isCheckingUpdate) {
+                isCheckingUpdate = true; isLatestVersion = false; updateInfo = null; updateError = null
+                scope.launch {
+                    val result = dev.tsdroid.update.UpdateChecker.checkForUpdate(versionName)
+                    updateInfo = result.update
+                    updateError = result.error
+                    if (result.update != null) showUpdateDialog = true
+                    else if (result.error == null) isLatestVersion = true
+                    isCheckingUpdate = false
+                }
+            }
+        },
+        trailing = {
+            when {
+                isCheckingUpdate -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                updateInfo != null -> Text(stringResource(R.string.update_found), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                updateError != null -> Text(updateError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                isLatestVersion -> Text(stringResource(R.string.update_already_latest), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> RowChevron()
+            }
+        },
+    )
+    // What the new version brings, and its download, unfold under the row
+    AnimatedVisibility(
+        visible = showUpdateDialog && updateInfo != null,
+        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = InsetPadding).padding(bottom = InsetPadding)) {
+            if (updateInfo != null) {
+                Text(
+                    text = stringResource(R.string.update_available, updateInfo!!.versionName),
+                    style = MaterialTheme.typography.labelLarge,
+                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1169,13 +1227,16 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                         }
                     }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUpdateDialog = false }) { Text(stringResource(R.string.update_later)) }
-            },
-            confirmButton = {
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Gap, Alignment.End),
+            ) {
+                TextButton(onClick = { showUpdateDialog = false }, shape = Shapes.Standard) {
+                    Text(stringResource(R.string.update_later))
+                }
                 if (!isDownloading) {
-                    Button(shape = Shapes.Small, onClick = {
+                    Button(shape = Shapes.Standard, onClick = {
                         isDownloading = true
                         downloadError = null
                         downloadProgress = 0f
@@ -1197,33 +1258,7 @@ private fun UpdateCheckRow(context: Context, wallpaper: ImageBitmap?) {
                         }
                     }) { Text(stringResource(R.string.update_download)) }
                 }
-            },
-        )
+            }
+        }
     }
-
-    SettingsClickableRow(
-        label = stringResource(R.string.update_check),
-        onClick = {
-            if (!isCheckingUpdate) {
-                isCheckingUpdate = true; isLatestVersion = false; updateInfo = null; updateError = null
-                scope.launch {
-                    val result = dev.tsdroid.update.UpdateChecker.checkForUpdate(versionName)
-                    updateInfo = result.update
-                    updateError = result.error
-                    if (result.update != null) showUpdateDialog = true
-                    else if (result.error == null) isLatestVersion = true
-                    isCheckingUpdate = false
-                }
-            }
-        },
-        trailing = {
-            when {
-                isCheckingUpdate -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                updateInfo != null -> Text(stringResource(R.string.update_found), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                updateError != null -> Text(updateError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                isLatestVersion -> Text(stringResource(R.string.update_already_latest), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                else -> RowChevron()
-            }
-        },
-    )
 }

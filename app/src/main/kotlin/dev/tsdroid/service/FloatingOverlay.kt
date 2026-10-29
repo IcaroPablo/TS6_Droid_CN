@@ -706,7 +706,7 @@ private fun OverlayIsland(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = Shapes.Medium,
+        shape = Shapes.Standard,
         color = overlaySurface(),
         // Explicit: a translucent surface colour matches no theme colour, so Surface could not
         // derive one and the texts without their own colour (the server name) came out black.
@@ -823,7 +823,7 @@ private fun WarningStrip(text: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 4.dp)
-            .background(MaterialTheme.colorScheme.errorContainer, Shapes.Small)
+            .background(MaterialTheme.colorScheme.errorContainer, Shapes.Standard)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

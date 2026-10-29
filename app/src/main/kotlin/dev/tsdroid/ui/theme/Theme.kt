@@ -1,14 +1,12 @@
 package dev.tsdroid.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -24,16 +22,13 @@ import kotlin.math.roundToInt
  * - bodySmall: the secondary line under an item, hints and details
  * - labelSmall: captions, badges, chips and timestamps
  */
-/**
- * Material's own components take their corners from here, so they match the app's: text fields and
- * menus get an island's corner, chips are pills like the buttons, dialogs and sheets the large one.
- */
+/** Material's own components take their corners from here, so they match the app's one corner. */
 private val MaterialShapes = androidx.compose.material3.Shapes(
-    extraSmall = RoundedCornerShape(Corners.Medium),
-    small = RoundedCornerShape(percent = 50),
-    medium = RoundedCornerShape(Corners.Medium),
-    large = RoundedCornerShape(Corners.Large),
-    extraLarge = RoundedCornerShape(Corners.Large),
+    extraSmall = Shapes.Standard,
+    small = Shapes.Standard,
+    medium = Shapes.Standard,
+    large = Shapes.Standard,
+    extraLarge = Shapes.Standard,
 )
 
 private val AppTypography = Typography(
@@ -187,7 +182,7 @@ fun generateColorScheme(seed: Color, isDark: Boolean): androidx.compose.material
             surfaceDim = Color(0xFFDED8E1),
             surfaceBright = Color(0xFFFFFFFF),
             surfaceContainerLowest = Color(0xFFFFFFFF),
-            surfaceContainerLow = Color(0xFFFCFBFE),
+            surfaceContainerLow = Color(0xFFF3F1F6),
             surfaceContainer = Color(0xFFFFFFFF),
             surfaceContainerHigh = Color(0xFFF6F4F9),
             surfaceContainerHighest = Color(0xFFECEAF0),
@@ -199,13 +194,12 @@ fun generateColorScheme(seed: Color, isDark: Boolean): androidx.compose.material
 fun TsDroidTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     seedColor: Color? = null,
+    /** A built-in scheme picked in Settings; the default one is derived from [seedColor] */
+    scheme: AppColorScheme = AppColorScheme.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (seedColor != null) {
-        generateColorScheme(seedColor, darkTheme)
-    } else {
-        generateColorScheme(Color(0xFF6750A4), darkTheme)
-    }
+    val colorScheme = paletteColorScheme(scheme, darkTheme)
+        ?: generateColorScheme(seedColor ?: Color(0xFF6750A4), darkTheme)
 
     MaterialTheme(
         colorScheme = colorScheme,

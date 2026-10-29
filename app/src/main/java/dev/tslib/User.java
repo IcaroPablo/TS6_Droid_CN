@@ -1,5 +1,8 @@
 package dev.tslib;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 /**
  * A TeamSpeak user (immutable snapshot).
  */
@@ -98,5 +101,47 @@ public class User {
     @Override
     public String toString() {
         return "User(id=" + id + ", nickname='" + nickname + "')";
+    }
+
+    /**
+     * Value equality: the client publishes a fresh snapshot several times a second, and an
+     * unchanged one must compare equal so nothing downstream redraws for it.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof User)) return false;
+        User other = (User) o;
+        return id == other.id
+                && Objects.equals(uid, other.uid)
+                && databaseId == other.databaseId
+                && channelId == other.channelId
+                && Objects.equals(nickname, other.nickname)
+                && clientType == other.clientType
+                && isTalking == other.isTalking
+                && isInputMuted == other.isInputMuted
+                && isOutputMuted == other.isOutputMuted
+                && hasInputHardware == other.hasInputHardware
+                && hasOutputHardware == other.hasOutputHardware
+                && isAway == other.isAway
+                && isRecording == other.isRecording
+                && isPrioritySpeaker == other.isPrioritySpeaker
+                && isChannelCommander == other.isChannelCommander
+                && isTalker == other.isTalker
+                && talkPower == other.talkPower
+                && Objects.equals(awayMessage, other.awayMessage)
+                && Arrays.equals(serverGroups, other.serverGroups)
+                && channelGroup == other.channelGroup
+                && Objects.equals(platform, other.platform)
+                && Objects.equals(version, other.version)
+                && Objects.equals(country, other.country)
+                && Objects.equals(description, other.description)
+                && Objects.equals(avatarId, other.avatarId)
+                && iconId == other.iconId;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, uid, databaseId, channelId, nickname, clientType, isTalking, isInputMuted, isOutputMuted, hasInputHardware, hasOutputHardware, isAway, isRecording, isPrioritySpeaker, isChannelCommander, isTalker, talkPower, awayMessage, Arrays.hashCode(serverGroups), channelGroup, platform, version, country, description, avatarId, iconId);
     }
 }

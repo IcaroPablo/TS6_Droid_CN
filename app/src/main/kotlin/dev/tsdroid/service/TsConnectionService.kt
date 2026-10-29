@@ -1,5 +1,15 @@
 package dev.tsdroid.service
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.PixelFormat
 import android.net.ConnectivityManager
 import android.net.Network
@@ -11,59 +21,26 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
-import android.view.MotionEvent
-import android.widget.Toast
 import android.view.View
-import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.Context
-import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.content.res.Configuration
-import android.content.res.Resources
-import androidx.compose.foundation.BorderStroke
+import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.border
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.tsdroid.AppLanguage
 import dev.tsdroid.MainActivity
-import dev.tsdroid.han.R
 import dev.tsdroid.TsDroidApp
 import dev.tsdroid.bridge.AudioBridge
 import dev.tsdroid.bridge.AvatarCache
@@ -72,13 +49,14 @@ import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.JoinVoiceState
 import dev.tsdroid.data.SettingsStore
+import dev.tsdroid.han.R
+import dev.tsdroid.ui.component.AnimeWallpaperState
+import dev.tsdroid.ui.theme.AppColorScheme
+import dev.tsdroid.ui.theme.TsDroidTheme
+import dev.tslib.Channel
 import dev.tslib.ConnectionState
 import dev.tslib.Identity
-import dev.tslib.Channel
 import dev.tslib.User
-import dev.tsdroid.ui.component.AnimeWallpaperState
-import dev.tsdroid.ui.icon.AppIcons
-import dev.tsdroid.ui.theme.TsDroidTheme
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1149,7 +1127,13 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                 val inputLevel = audioBridge.inputLevel.collectAsStateWithLifecycle()
 
                 // The app's own theme, so the window does not look like a different product.
-                TsDroidTheme(seedColor = AnimeWallpaperState.dominantColor.value) {
+                val colorSchemeFlow = remember { SettingsStore(this@TsConnectionService).colorScheme }
+                val colorScheme by colorSchemeFlow
+                    .collectAsStateWithLifecycle(initialValue = AppColorScheme.DEFAULT.key)
+                TsDroidTheme(
+                    seedColor = AnimeWallpaperState.dominantColor.value,
+                    scheme = AppColorScheme.fromKey(colorScheme),
+                ) {
                     FloatingOverlay(
                         state = overlayState(
                             channels = channels,

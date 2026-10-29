@@ -310,7 +310,17 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch { bookmarkStore.setAutoReconnect(enabled) }
     }
 
-    fun saveBookmark() {
+    /**
+     * Connects from the form. A bookmark being edited is saved first, so what was typed into it (a
+     * nickname, a password) is kept, as Save would; the fields stay filled, since connecting still
+     * reads them.
+     */
+    fun connectFromForm(onConnected: () -> Unit) {
+        if (_editingIndex.value >= 0) saveBookmark(clear = false)
+        connect(onConnected)
+    }
+
+    fun saveBookmark(clear: Boolean = true) {
         val addr = address.value.trim()
         val nick = nickname.value.trim()
         if (addr.isEmpty()) return
@@ -328,7 +338,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             } else {
                 bookmarkStore.add(bookmark)
             }
-            clearFields()
+            if (clear) clearFields() else _editingIndex.value = -1
         }
     }
 

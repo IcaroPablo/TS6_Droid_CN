@@ -78,7 +78,7 @@ fun CompactTopBar(
                 Row(
                     modifier = Modifier
                         .weight(1f, fill = false)
-                        .clip(Shapes.Small)
+                        .clip(Shapes.Standard)
                         .then(if (onTitleClick != null) Modifier.clickable(onClick = onTitleClick) else Modifier)
                         .padding(vertical = 4.dp, horizontal = if (onTitleClick != null) 4.dp else 0.dp),
                     verticalAlignment = Alignment.CenterVertically,

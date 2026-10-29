@@ -1,5 +1,7 @@
 package dev.tslib;
 
+import java.util.Objects;
+
 /**
  * A TeamSpeak channel (immutable snapshot).
  */
@@ -93,5 +95,38 @@ public class Channel {
     @Override
     public String toString() {
         return "Channel(id=" + id + ", name='" + name + "')";
+    }
+
+    /**
+     * Value equality: the client publishes a fresh snapshot several times a second, and an
+     * unchanged one must compare equal so nothing downstream redraws for it.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Channel)) return false;
+        Channel other = (Channel) o;
+        return id == other.id
+                && parentId == other.parentId
+                && Objects.equals(name, other.name)
+                && Objects.equals(topic, other.topic)
+                && Objects.equals(description, other.description)
+                && order == other.order
+                && isPermanent == other.isPermanent
+                && isSemiPermanent == other.isSemiPermanent
+                && isDefault == other.isDefault
+                && hasPassword == other.hasPassword
+                && codec == other.codec
+                && codecQuality == other.codecQuality
+                && maxClients == other.maxClients
+                && maxFamilyClients == other.maxFamilyClients
+                && neededTalkPower == other.neededTalkPower
+                && iconId == other.iconId
+                && permissionHints == other.permissionHints;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, parentId, name, topic, description, order, isPermanent, isSemiPermanent, isDefault, hasPassword, codec, codecQuality, maxClients, maxFamilyClients, neededTalkPower, iconId, permissionHints);
     }
 }

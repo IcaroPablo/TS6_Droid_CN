@@ -205,6 +205,10 @@ class TsClient {
     // share the server's per-client command budget.
     private var lastClientUpdateAt = 0L
 
+    /** The round trip to the server, in milliseconds, or null while not connected. */
+    val roundTripMs: Double?
+        get() = runCatching { client?.networkStats?.getOrNull(0) }.getOrNull()
+
     val isConnected: Boolean
         get() = _state.value == ConnectionState.CONNECTED
 
@@ -511,19 +515,24 @@ class TsClient {
         }
     }
 
-    private fun refreshState() {
+    /**
+     * [fresh], with each entry that equals its predecessor in [old] (same [key]) replaced by that
+     * predecessor; [old] itself when nothing changed at all.
+     */
+    private inline fun <T : Any> reuseUnchanged(old: List<T>, fresh: List<T>, key: (T) -> Long): List<T> {
+        if (old == fresh) return old
+        val previous = old.associateBy(key)
+        return fresh.map { entry -> previous[key(entry)]?.takeIf { it == entry } ?: entry }
+    }
+
+        private fun refreshState() {
         val c = client ?: return
         try {
-            _channels.value = c.channels?.filterNotNull() ?: emptyList()
-            val rawUsers = c.users
-            val filteredUsers = rawUsers?.filterNotNull() ?: emptyList()
-            Log.d(TAG, "refreshState: rawUsers=${rawUsers?.size}, filtered=${filteredUsers.size}")
-            if (filteredUsers.isNotEmpty()) {
-                for (u in filteredUsers) {
-                    Log.d(TAG, "  user: ${u.nickname} id=${u.id} ch=${u.channelId}")
-                }
-            }
-            _users.value = filteredUsers
+            // A fresh snapshot arrives every half second. Unchanged entries keep the instances
+            // already published, so an unchanged snapshot publishes nothing and a changed one
+            // only redraws what changed (the screen compares rows by instance)
+            _channels.value = reuseUnchanged(_channels.value, c.channels?.filterNotNull() ?: emptyList()) { it.id }
+            _users.value = reuseUnchanged(_users.value, c.users?.filterNotNull() ?: emptyList()) { it.id.toLong() }
             _serverInfo.value = c.serverInfo
             cachedClientId = c.clientId
             val st = c.state
@@ -664,6 +673,13 @@ class TsClient {
     fun sendChannelMessage(msg: String) {
         launchNativeCommand("sendChannelMessage") {
             this.sendChannelMessage(msg)
+        }
+    }
+
+    /** Hidden data for other TeleSpeak clients; [targetId] -1 sends it to everyone. */
+    fun sendPluginCommand(name: String, data: String, targetId: Int) {
+        launchNativeCommand("sendPluginCommand") {
+            this.sendPluginCommand(name, data, targetId)
         }
     }
 

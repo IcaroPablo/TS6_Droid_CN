@@ -71,7 +71,7 @@ fun ChatInput(
         if (whisperTargetName != null) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = Shapes.Small,
+                shape = Shapes.Standard,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
             ) {
                 Row(
@@ -105,7 +105,7 @@ fun ChatInput(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = ControlHeight)
-                .clip(Shapes.Small)
+                .clip(Shapes.Standard)
                 .background(fill),
             verticalAlignment = Alignment.CenterVertically,
         ) {

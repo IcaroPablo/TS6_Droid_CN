@@ -30,6 +30,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -126,6 +127,8 @@ fun MessageBubble(
     showLinkThumbnails: Boolean = false,
     autoLoadImages: Boolean = true,
     onDownload: ((FileAttachment) -> StateFlow<DownloadState>)? = null,
+    /** False when the message before it has the same sender, which then names the whole run */
+    showSender: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.isMe
@@ -139,40 +142,33 @@ fun MessageBubble(
     val parsed = remember(message.text, linkColor, codeBackground, showLinkThumbnails) {
         parseMessage(message.text, linkColor, codeBackground, showLinkThumbnails)
     }
-    val bubbleTint = if (isMe) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant
+    // A plain, flat bubble on the messages' area: the accent's container for one's own messages,
+    // a raised surface for everyone else's. It used to be a frosted glass card with a shadow and a
+    // tint over it, which was heavy to look at and to draw while the list scrolled.
+    val bubbleColor = if (isMe) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = if (isMe) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurface
 
-    // A chat bubble hugs its text and sits on its sender's side.
-    //
-    // It used to be `fillMaxWidth()` with a fixed 48dp indent on one side: a two-character message
-    // then printed a screen-wide band — the glass card *plus* the side tint inside it, the "two
-    // layers" — and the sender's own text still started at the left edge, so it read like the other
-    // party's message. Content that is genuinely wide (attachments, images) still fills the bubble.
+    // A bubble hugs its text and sits on its sender's side; content that is genuinely wide
+    // (attachments, images) fills it up to the cap.
     Box(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        GlassCard(
-            modifier = Modifier.widthIn(max = BubbleMaxWidth),
-            // The wallpaper this screen is actually painting, published by the panel that hosts the
-            // chat: reading the decoded wallpaper directly would frost a bubble even while the anime
-            // background is switched off.
-            wallpaper = LocalGlassWallpaper.current,
-            // The corner of the area the messages sit in, so the two edges match
-            shape = Shapes.Small,
-            elevation = 3.dp,
-        ) {
+        CompositionLocalProvider(LocalContentColor provides textColor) {
             Column(
                 modifier = Modifier
-                    // The side tint still carries the meaning ("mine" vs "theirs"), but as a thin
-                    // translucent wash over the glass instead of an opaque container fill.
-                    .background(bubbleTint.copy(alpha = 0.45f))
-                    .padding(8.dp),
+                    .widthIn(max = BubbleMaxWidth)
+                    .clip(Shapes.Standard)
+                    .background(bubbleColor)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
-                if (!isMe) {
+                // The name only where the sender changes: a run of messages reads as one block
+                if (!isMe && showSender) {
                     Text(
                         text = message.sender,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -196,7 +192,7 @@ fun MessageBubble(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 4.dp)
-                                .clip(Shapes.Small)
+                                .clip(Shapes.Standard)
                                 .clickable { runCatching { uriHandler.openUri(videoUrl) } },
                             contentScale = ContentScale.FillWidth,
                         )
@@ -216,7 +212,7 @@ fun MessageBubble(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(top = 4.dp)
-                                        .clip(Shapes.Small),
+                                        .clip(Shapes.Standard),
                                     contentScale = ContentScale.FillWidth,
                                 )
                             }
@@ -224,7 +220,7 @@ fun MessageBubble(
                             Row(
                                 modifier = Modifier
                                     .padding(top = 4.dp)
-                                    .clip(Shapes.Small)
+                                    .clip(Shapes.Standard)
                                     .clickable { loadInlineImages = true }
                                     .padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -256,7 +252,8 @@ fun MessageBubble(
                 Text(
                     text = remember(message.timestamp) { formatMessageTime(context, message.timestamp) },
                     style = MaterialTheme.typography.labelSmall,
-                    color = LocalContentColor.current.copy(alpha = 0.7f),
+                    color = LocalContentColor.current.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.End),
                 )
             }
         }
@@ -311,7 +308,7 @@ private fun FileAttachmentCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
-                .clip(Shapes.Small)
+                .clip(Shapes.Standard)
                 .then(
                     if (uri != null) Modifier.clickable { openFile(context, uri, attachment.fileName) }
                     else Modifier

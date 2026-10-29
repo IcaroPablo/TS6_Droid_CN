@@ -1,7 +1,7 @@
 package dev.tsdroid
 
-import android.os.Bundle
 import android.content.Context
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,15 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.tsdroid.data.SettingsStore
-import dev.tsdroid.ui.theme.TsDroidTheme
-import dev.tsdroid.ui.component.GlassOverlayHost
-import dev.tsdroid.ui.component.LocalGlassOverlayHost
-import dev.tsdroid.ui.component.rememberGlassOverlayHostState
-import dev.tsdroid.ui.screen.AppNavigation
-import dev.tsdroid.ui.screen.SplashScreen
+import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.ui.component.AnimeWallpaperState
 import dev.tsdroid.ui.component.CrashReportOverlay
-import dev.tsdroid.service.TsConnectionService
+import dev.tsdroid.ui.screen.AppNavigation
+import dev.tsdroid.ui.screen.SplashScreen
+import dev.tsdroid.ui.theme.AppColorScheme
+import dev.tsdroid.ui.theme.TsDroidTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -48,23 +46,20 @@ class MainActivity : ComponentActivity() {
 
             var showSplash by remember { mutableStateOf(true) }
             val seedColor = AnimeWallpaperState.dominantColor.value
+            val colorScheme by settingsStore.colorScheme
+                .collectAsStateWithLifecycle(initialValue = AppColorScheme.DEFAULT.key)
 
-            TsDroidTheme(seedColor = if (showSplash) null else seedColor) {
+            TsDroidTheme(
+                seedColor = if (showSplash) null else seedColor,
+                scheme = AppColorScheme.fromKey(colorScheme),
+            ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val anime = animeBackground
                         if (showSplash || anime == null) {
                             SplashScreen(animeBackground = anime, onReady = { showSplash = false })
                         } else {
-                            // One overlay slot for the whole app: a GlassDialog declared anywhere inside
-                            // the navigation graph lands here, at the root, so it can blur the wallpaper
-                            // and cover the floating bars instead of being clipped by whatever declared
-                            // it. See GlassDialog.kt.
-                            val overlayHost = rememberGlassOverlayHostState()
-                            CompositionLocalProvider(LocalGlassOverlayHost provides overlayHost) {
-                                AppNavigation(initialAnimeBackground = anime)
-                            }
-                            GlassOverlayHost(overlayHost)
+                            AppNavigation(initialAnimeBackground = anime)
                         }
                     }
                     // Sits above everything, including the splash: an uncaught exception

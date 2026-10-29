@@ -1,10 +1,13 @@
 package dev.tsdroid.ui.component
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -12,12 +15,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
+import dev.tsdroid.ui.theme.InsetPadding
+import dev.tsdroid.ui.theme.Shapes
+import dev.tsdroid.ui.theme.Spacing
 
 /**
  * Asks for the password of a protected channel.
@@ -29,46 +35,41 @@ import dev.tsdroid.han.R
  * it to be remembered.
  */
 @Composable
-fun ChannelPasswordDialog(
+fun ChannelPasswordEditor(
     channelName: String,
-    wallpaper: ImageBitmap? = null,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var password by remember { mutableStateOf("") }
 
-    GlassDialog(
-        onDismissRequest = onDismiss,
-        title = stringResource(R.string.channel_password_title, channelName),
-        wallpaper = wallpaper,
-        body = {
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text(stringResource(R.string.channel_password_label)) },
-                singleLine = true,
-                // A channel password is a shared secret typed once, not a field
-                // the user needs to proof-read on screen.
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.26f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.44f),
-                ),
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
+    // Unfolded in place, under what asked for it
+    Column(modifier = Modifier.fillMaxWidth().padding(InsetPadding)) {
+        Text(text = stringResource(R.string.channel_password_title, channelName), style = MaterialTheme.typography.labelLarge)
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text(stringResource(R.string.channel_password_label)) },
+            singleLine = true,
+            // A channel password is a shared secret typed once, not a field
+            // the user needs to proof-read on screen.
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            shape = Shapes.Standard,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = Spacing.Gap),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.Gap, Alignment.End),
+        ) {
+            TextButton(onClick = onDismiss, shape = Shapes.Standard) {
                 Text(stringResource(R.string.cancel))
             }
-        },
-        confirmButton = {
-            TextButton(
+            Button(
+                shape = Shapes.Standard,
                 onClick = { onConfirm(password) },
                 enabled = password.isNotEmpty(),
             ) {
                 Text(stringResource(R.string.channel_join))
             }
-        },
-    )
+        }
+    }
 }

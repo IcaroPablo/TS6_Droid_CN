@@ -193,7 +193,6 @@
     <string name="new_folder">Nouveau dossier</string>
     <string name="rename">Renommer</string>
     <string name="delete_file">Supprimer</string>
-    <string name="confirm_delete">Supprimer %1$s ?</string>
     <string name="enter_folder_name">Nom du dossier</string>
     <string name="enter_new_name">Nouveau nom</string>
     <string name="refresh">Actualiser</string>
@@ -201,7 +200,6 @@
     <string name="folder">Dossier</string>
     <string name="upload">Envoyer</string>
     <string name="share_in_channel">Channel actuel</string>
-    <string name="share_file_title">Partager %1$s</string>
     <string name="share">Partager</string>
     <string name="more_options">Plus d\'options</string>
 
@@ -326,7 +324,6 @@
     <string name="section_connection">Connexion</string>
     <string name="language_title">Langue</string>
     <string name="bookmark_connected">Connecté</string>
-    <string name="open_session">Ouvrir</string>
     <string name="self_marker">(vous)</string>
     <string name="status_mic_off">Micro coupé</string>
     <string name="status_speakers_off">Haut-parleurs coupés</string>
@@ -342,10 +339,18 @@
     <string name="chat_unfold">Déplier le chat</string>
     <string name="people_online">%1$d en ligne</string>
     <string name="chat_empty_private_with">Aucun message avec %1$s pour l\'instant.</string>
-    <string name="nav_server">Serveur</string>
-    <string name="nav_add">Ajouter</string>
     <string name="stream_fullscreen">Plein écran</string>
     <string name="stream_stop_watching">Arrêter de regarder</string>
     <string name="stream_tab">Diffusion</string>
     <string name="channels_list">Liste</string>
+    <string name="color_scheme">Thème de couleurs</string>
+    <string name="color_scheme_default">Par défaut</string>
+    <string name="tab_servers">Serveurs</string>
+    <string name="add_server">Ajouter un serveur</string>
+    <string name="files_tab">Fichiers</string>
+    <string name="tap_again">Toucher encore</string>
+    <string name="server_checking">Vérification…</string>
+    <string name="server_up">Serveur en ligne</string>
+    <string name="server_down">Serveur hors ligne</string>
+    <string name="server_status_latency">%1$s · %2$d ms</string>
 </resources>

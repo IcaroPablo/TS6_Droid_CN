@@ -51,9 +51,9 @@ fun ChoicePill(
     Row(
         modifier = modifier
             .height(ControlHeight)
-            .clip(Shapes.Small)
+            .clip(Shapes.Standard)
             .background(fill)
-            .border(1.dp, outline, Shapes.Small)
+            .border(1.dp, outline, Shapes.Standard)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.Center,

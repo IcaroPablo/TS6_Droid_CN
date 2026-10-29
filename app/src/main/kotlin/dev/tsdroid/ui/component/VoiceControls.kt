@@ -1,10 +1,16 @@
 package dev.tsdroid.ui.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -27,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
@@ -36,7 +41,7 @@ import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
-import dev.tsdroid.ui.theme.Spacing
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.WhisperAmber
 
 /*
@@ -84,6 +89,8 @@ class VoiceBarState(
     val whisperReady: Boolean,
     val onWhisperHold: () -> Unit,
     val onWhisperRelease: () -> Unit,
+    /** Opens the whisper list; left out where it cannot open (over a full-screen stream) */
+    val onWhisperList: (() -> Unit)? = null,
     /** Our status, and the way to change it where its sheet can open */
     val awayStatus: AwayStatus? = null,
     val onOpenStatus: (() -> Unit)? = null,
@@ -100,13 +107,30 @@ private val VoiceButtonSize = 44.dp
 fun VoiceBar(
     state: VoiceBarState,
     modifier: Modifier = Modifier,
-    wallpaper: ImageBitmap? = LocalGlassWallpaper.current,
+    /** As an island of its own (over a full-screen stream) rather than a section of a tab */
+    island: Boolean = false,
+    /** Unfolded above the buttons: the status or the whisper list */
+    panel: (@Composable () -> Unit)? = null,
 ) {
-    Island(modifier = modifier, wallpaper = wallpaper, padded = false) {
+    // The last panel stays drawn while it folds away
+    var shownPanel by remember { mutableStateOf(panel) }
+    if (panel != null) shownPanel = panel
+    val bar: @Composable (@Composable ColumnScope.() -> Unit) -> Unit = { content ->
+        if (island) Island(modifier = modifier, wallpaper = null, padded = false, content = content)
+        else InsetSection(modifier = modifier, padded = false, content = content)
+    }
+    bar {
+        AnimatedVisibility(
+            visible = panel != null,
+            enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+        ) {
+            shownPanel?.invoke()
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Spacing.Inner, vertical = 6.dp),
+                .padding(horizontal = InsetPadding, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -119,6 +143,17 @@ fun VoiceBar(
                         modifier = Modifier
                             .size(14.dp)
                             .background(awayStatusColor(status), CircleShape),
+                    )
+                }
+            }
+            // The whisper list, next to the button that talks to it; amber while it has anyone
+            state.onWhisperList?.let { open ->
+                VoiceButton(onClick = open) {
+                    Icon(
+                        AppIcons.Whisper,
+                        contentDescription = stringResource(R.string.whisper_list_title),
+                        modifier = Modifier.size(IconSize),
+                        tint = if (state.whisperReady) WhisperAmber else LocalContentColor.current,
                     )
                 }
             }
