@@ -24,7 +24,6 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -34,7 +33,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -553,7 +552,8 @@ fun ServerScreen(
             // layout phase from the fold animations and the border's position, and the channels
             // take the rest: a drag or a fold then only measures the two islands again instead of
             // recomposing the whole screen on every frame.
-            val imeVisible = WindowInsets.isImeVisible
+            // The keyboard's height is read in the layout phase, through this, never here
+            val imeInsets = WindowInsets.ime
             val density = LocalDensity.current
             // Driven from the fold states without reading them here: folding then recomposes only
             // the section that folds, and the heights follow in the layout phase
@@ -568,20 +568,36 @@ fun ServerScreen(
                 launch { snapshotFlow { channelsOpen }.collect { foldTo(channelsProgress, it, layoutRestored) } }
                 snapshotFlow { chatOpen }.collect { foldTo(chatProgress, it, layoutRestored) }
             }
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val headerPx = with(density) { IslandHeaderHeight.toPx() }
             val gapPx = with(density) { Spacing.Gap.toPx() }
-            // What the two islands share: everything but the gap between them
-            val sharedPx = (constraints.maxHeight - gapPx).coerceAtLeast(headerPx * 2)
+            val minRowsPx = with(density) { 72.dp.toPx() }
+            // What the two islands share: everything but the gap between them. Measured in the
+            // layout phase into a plain field: the keyboard opening or closing then lays the
+            // islands out again without recomposing them, as BoxWithConstraints did
+            val shared = remember { FloatArray(1) }
+            fun sharedPx(): Float = shared[0]
             // Neither island can be dragged smaller than its header and a few rows
-            val minFraction = ((headerPx + with(density) { 72.dp.toPx() }) / sharedPx).coerceAtMost(0.5f)
-            fun chatFractionNow(): Float =
-                (if (imeVisible) maxOf(chatFraction, 0.75f) else chatFraction).coerceIn(minFraction, 1f - minFraction)
+            fun minFraction(): Float = ((headerPx + minRowsPx) / sharedPx()).coerceAtMost(0.5f)
+            fun chatFractionNow(): Float {
+                val imeVisible = imeInsets.getBottom(density) > 0
+                return (if (imeVisible) maxOf(chatFraction, 0.75f) else chatFraction)
+                    .coerceIn(minFraction(), 1f - minFraction())
+            }
             // Read only while measuring and placing, never while composing
             fun chatHeightPx(): Int {
+                val sharedPx = sharedPx()
                 val open = lerp(sharedPx - headerPx, sharedPx * chatFractionNow(), channelsProgress.value)
                 return lerp(headerPx, open, chatProgress.value).roundToInt()
             }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layout { measurable, constraints ->
+                        shared[0] = (constraints.maxHeight - gapPx).coerceAtLeast(headerPx * 2)
+                        val placeable = measurable.measure(constraints)
+                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                    },
+            ) {
             Column(modifier = Modifier.fillMaxSize()) {
             val watching = streamSessions.isNotEmpty()
             FoldableIsland(
@@ -801,11 +817,11 @@ fun ServerScreen(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .offset {
-                            val y = sharedPx - chatHeightPx() + gapPx / 2 - handleHalfPx
+                            val y = sharedPx() - chatHeightPx() + gapPx / 2 - handleHalfPx
                             IntOffset(0, y.roundToInt())
                         },
                     onDrag = { deltaPx ->
-                        chatFraction = (chatFractionNow() - deltaPx / sharedPx).coerceIn(minFraction, 1f - minFraction)
+                        chatFraction = (chatFractionNow() - deltaPx / sharedPx()).coerceIn(minFraction(), 1f - minFraction())
                     },
                 )
             }

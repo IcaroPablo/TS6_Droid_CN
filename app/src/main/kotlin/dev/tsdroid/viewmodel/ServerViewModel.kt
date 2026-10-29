@@ -473,6 +473,17 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var bound = false
 
+    /** The service [bindToService] listens to, and the job its listeners run in */
+    private var boundService: TsConnectionService? = null
+    private var bindJob: Job? = null
+
+    init {
+        // A disconnect stops the service and the next connection starts a new one: follow it
+        viewModelScope.launch {
+            TsConnectionService.instances.collect { service -> if (service != null && bound) bindToService() }
+        }
+    }
+
     init {
         // Combine raw users + talking set to produce patched user list
         viewModelScope.launch {
@@ -524,13 +535,22 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun bindToService() {
-        if (bound) return
+        // Each connection runs in a service of its own: after a disconnect, the next connect is
+        // a new service with a new client, and listening on to the old one left the islands empty
+        val current = TsConnectionService.instance
+        if (bound && (boundService == null || current == null || current === boundService)) return
         // Claim the bind up front: during the service-instance wait window a
         // second call would otherwise pass the guard and spawn duplicate
         // collectors (duplicated chat messages, double-counted unread)
         bound = true
+        if (boundService != null) {
+            bindJob?.cancel()
+            stopWatching()
+            boundService = null
+        }
 
-        viewModelScope.launch {
+        // Everything that listens to the service runs inside this job, so a rebind ends it all
+        bindJob = viewModelScope.launch {
             var attempts = 0
             while (TsConnectionService.instance == null && attempts < 50) {
                 kotlinx.coroutines.delay(100)
@@ -544,12 +564,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
+            boundService = service
             tsClient = service.tsClient
             audioBridge = service.audioBridge
             audioBridge?.setMutedUserIds(_mutedUserIds.value)
             audioBridge?.setMicMode(micMode.value)
             audioBridge?.setVadThresholdDb(vadThresholdDb.value)
-            viewModelScope.launch {
+            launch {
                 // The first value is the mode we connected with, whose mute state
                 // the join setting already decided; a later change (from Settings)
                 // moves the microphone to that mode's resting state.
@@ -560,27 +581,27 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     current = mode
                 }
             }
-            viewModelScope.launch {
+            launch {
                 settingsStore.vadThresholdDb.collect { audioBridge?.setVadThresholdDb(it) }
             }
             connectionService = service
             queriedPermChannels.clear()
 
-            viewModelScope.launch {
+            launch {
                 service.tsClient.channels.collect { channels ->
                     Log.d(TAG, "Channels updated: ${channels.size}")
                     _channels.value = channels
                     loadChannelIcons(channels)
                 }
             }
-            viewModelScope.launch {
+            launch {
                 service.tsClient.users.collect {
                     _rawUsers.value = it
                     loadAvatars(it)
                     syncUserAudio(it)
                 }
             }
-            viewModelScope.launch {
+            launch {
                 service.tsClient.streams.collect { streams ->
                     _streams.value = streams
                     // A watched stream stopped, or its streamer left our channel
@@ -589,15 +610,15 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
-            viewModelScope.launch {
+            launch {
                 // Server groups (id + name) for the whisper list picker
                 service.tsClient.serverGroups.collect { _serverGroups.value = it }
             }
-            viewModelScope.launch {
+            launch {
                 // Channel groups (id + name) to name a member's channel group
                 service.tsClient.channelGroups.collect { _channelGroups.value = it }
             }
-            viewModelScope.launch {
+            launch {
                 var bookmarkUpdated = false
                 service.tsClient.serverInfo.collect { info ->
                     _serverInfo.value = info
@@ -618,7 +639,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
-            viewModelScope.launch {
+            launch {
                 service.tsClient.state.collect { state ->
                     _connectionState.value = state
                     // The status survives a dropout on purpose: TsClient remembers
@@ -630,15 +651,15 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
-            viewModelScope.launch {
+            launch {
                 service.tsClient.events.collect { handleEvent(it) }
             }
             // Chat messages arrive on a replayed flow: events emitted between
             // connection and this subscription are replayed instead of lost.
-            viewModelScope.launch {
+            launch {
                 service.tsClient.chatEvents.collect { handleEvent(it) }
             }
-            viewModelScope.launch {
+            launch {
                 service.tsClient.commandErrors.collect { message ->
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
@@ -647,7 +668,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             // Load persisted messages
-            viewModelScope.launch {
+            launch {
                 val addr = service.tsClient.serverAddress
                 if (!addr.isNullOrEmpty()) {
                     serverAddress = addr
@@ -661,7 +682,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             }
             // The channel chat is the connection's: it records and syncs it even with no screen open
             channelHistory = service.channelHistory
-            viewModelScope.launch {
+            launch {
                 service.channelHistory.messages.collect { _channelMessages.value = it }
             }
             // Start audio capture if not already running. The bridge owns its own
@@ -672,32 +693,32 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             // Apply persisted audio gain
             service.audioBridge.gainFactor = audioGain.value
             // Observe audio gain changes and apply live
-            viewModelScope.launch {
+            launch {
                 audioGain.collect { gain ->
                     service.audioBridge.gainFactor = gain
                 }
             }
             // Apply persisted mic gain
             service.audioBridge.micGainFactor = micGain.value
-            viewModelScope.launch {
+            launch {
                 micGain.collect { gain ->
                     service.audioBridge.micGainFactor = gain
                 }
             }
             // Observe audio state for local talking status
-            viewModelScope.launch {
+            launch {
                 service.audioBridge.isLocalVoiceActive.collect { _isLocalTalking.value = it }
             }
-            viewModelScope.launch {
+            launch {
                 service.audioBridge.isMuted.collect { _isMicMuted.value = it }
             }
-            viewModelScope.launch {
+            launch {
                 service.audioBridge.isOutputMuted.collect { _isOutputMuted.value = it }
             }
-            viewModelScope.launch {
+            launch {
                 service.reconnectStatus.collect { _reconnectStatus.value = it }
             }
-            viewModelScope.launch {
+            launch {
                 service.audioBridge.micStatus.collect { _micStatus.value = it }
             }
 

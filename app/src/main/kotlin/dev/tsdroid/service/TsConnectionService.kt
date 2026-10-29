@@ -136,8 +136,20 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         /** Reconnect at most once per burst of network-change callbacks. */
         private const val NETWORK_RECONNECT_DEBOUNCE_MS = 5_000L
 
+        private val _instances = MutableStateFlow<TsConnectionService?>(null)
+
+        /**
+         * The running service, as it changes: a disconnect stops it and the next connection
+         * starts a new one, with a client of its own. Whatever follows a session follows this.
+         */
+        val instances: StateFlow<TsConnectionService?> = _instances.asStateFlow()
+
         var instance: TsConnectionService? = null
-            private set
+            private set(value) {
+                field = value
+                // Announced only once set up (see onCreate): a listener goes straight for its parts
+                if (value == null || value.ready) _instances.value = value
+            }
     }
 
     /**
@@ -252,6 +264,9 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     /** The connected server's channel chat, recorded and shared here, with or without a screen open */
     lateinit var channelHistory: ChannelHistory
         private set
+
+    /** Whether onCreate has finished: until then the service's parts may not exist yet */
+    private var ready = false
 
     private val _reconnect = MutableStateFlow(ReconnectStatus())
     val reconnectStatus: StateFlow<ReconnectStatus> = _reconnect.asStateFlow()
@@ -516,6 +531,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                 if (tsClient.isConnected || _reconnect.value.active) updateNotification()
             }
             .launchIn(serviceScope)
+        ready = true
+        _instances.value = this
     }
 
     /**

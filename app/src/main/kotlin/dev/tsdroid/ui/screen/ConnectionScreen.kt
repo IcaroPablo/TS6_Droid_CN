@@ -101,6 +101,7 @@ import dev.tsdroid.viewmodel.ServerViewModel
 import dev.tslib.ConnectionState
 import kotlin.math.roundToLong
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /** How often a connected server's latency is read, and a disconnected one is probed. */
@@ -219,14 +220,17 @@ fun ConnectionScreen(
         if (TsConnectionService.instance?.hasActiveConnection() != true) {
             viewModel.observeServiceState(ConnectionState.DISCONNECTED)
         }
-        var attempts = 0
-        while (TsConnectionService.instance == null && attempts < 50) {
-            delay(100)
-            attempts++
+        // Follows each session's service: a new connection after a disconnect is a new one
+        TsConnectionService.instances.collectLatest { service ->
+            if (service == null) {
+                // Stopping, it lets go of itself before its client reports the end
+                reconnecting = false
+                viewModel.observeServiceState(ConnectionState.DISCONNECTED)
+                return@collectLatest
+            }
+            launch { service.reconnectStatus.collect { reconnecting = it.active } }
+            service.tsClient.state.collect { viewModel.observeServiceState(it) }
         }
-        val service = TsConnectionService.instance ?: return@LaunchedEffect
-        launch { service.reconnectStatus.collect { reconnecting = it.active } }
-        service.tsClient.state.collect { viewModel.observeServiceState(it) }
     }
     val sessionRunning = connectionState == ConnectionState.CONNECTED || reconnecting
     LaunchedEffect(serverTabRequested, sessionRunning) {
@@ -426,9 +430,9 @@ fun ConnectionScreen(
                 // The server tab is full of horizontal gestures (sliders, the chat's tabs, the
                 // stream), so it is left by its tab rather than by a swipe
                 userScrollEnabled = selectedTab != SERVER_TAB,
-                // Only the tab on screen is composed: the server's would otherwise keep recomposing
-                // on every voice event while another tab is shown. What a tab keeps across a visit
-                // is saved state, which the pager restores when it comes back.
+                // Every tab stays composed: building the server's again on each return took about
+                // 300 ms. The price is that it keeps up with voice events while another tab shows.
+                beyondViewportPageCount = 2,
             ) { page ->
                 if (page == 0) {
                     Box(modifier = Modifier.fillMaxSize()) {

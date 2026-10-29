@@ -7,6 +7,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
+import android.util.LruCache
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -140,7 +141,7 @@ fun MessageBubble(
     // light slab behind text the glass has already coloured, so it becomes a neutral wash.
     val codeBackground = LocalContentColor.current.copy(alpha = 0.14f)
     val parsed = remember(message.text, linkColor, codeBackground, showLinkThumbnails) {
-        parseMessage(message.text, linkColor, codeBackground, showLinkThumbnails)
+        parsedMessage(message.text, linkColor, codeBackground, showLinkThumbnails)
     }
     // A plain, flat bubble on the messages' area: the accent's container for one's own messages,
     // a raised surface for everyone else's. It used to be a frosted glass card with a shadow and a
@@ -446,7 +447,28 @@ private fun formatMessageTime(context: android.content.Context, timestamp: Long)
     return "$date $time"
 }
 
+private data class ParseKey(val text: String, val linkColor: Color, val codeBackground: Color, val thumbnails: Boolean)
+
+/**
+ * Parsed messages, kept beyond the bubbles that show them: switching the chat's tab, or scrolling
+ * back, builds new bubbles, and parsing each again (BBCode, then Android's HTML parser) cost
+ * about as long as a frame per message.
+ */
+private val parsedMessages = LruCache<ParseKey, ParsedMessage>(512)
+
+private fun parsedMessage(rawText: String, linkColor: Color, codeBackground: Color, showThumbnails: Boolean): ParsedMessage {
+    val key = ParseKey(rawText, linkColor, codeBackground, showThumbnails)
+    parsedMessages.get(key)?.let { return it }
+    return parseMessage(rawText, linkColor, codeBackground, showThumbnails).also { parsedMessages.put(key, it) }
+}
+
+/** Characters that start markup, an entity or a link: without any, a message is plain text. */
+private val MARKUP_STARTS = charArrayOf('[', '<', '&', ':')
+
 private fun parseMessage(rawText: String, linkColor: Color, codeBackground: Color, showThumbnails: Boolean = false): ParsedMessage {
+    // Most messages are plain words: no markup to convert, no link to find
+    if (rawText.indexOfAny(MARKUP_STARTS) < 0) return ParsedMessage(AnnotatedString(rawText.trim()), emptyList())
+
     val imageUrls = mutableListOf<String>()
 
     // Extract image URLs from all formats
