@@ -231,8 +231,10 @@ fun ConnectionScreen(
     val sessionRunning = connectionState == ConnectionState.CONNECTED || reconnecting
     LaunchedEffect(serverTabRequested, sessionRunning) {
         if (serverTabRequested && sessionRunning) {
-            serverTabRequested = false
             pagerState.animateScrollToPage(SERVER_TAB)
+            // Only once there: clearing the request restarts this effect, which would cancel the
+            // scroll halfway (or before it moved at all, on a slower phone)
+            serverTabRequested = false
         }
     }
     // Back leaves the server or settings tab for the server list before it leaves the app
