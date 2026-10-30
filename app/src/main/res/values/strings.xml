@@ -355,4 +355,6 @@
     <string name="server_status_latency">%1$s · %2$d ms</string>
     <string name="recorder_mode">Recorder mode</string>
     <string name="recorder_mode_hint">For a phone left connected on Wi-Fi and a charger: it keeps the channel chat for your friends\' TeleSpeak to catch up from. It always reconnects, keeps the microphone and speakers off, and shows no pop-ups.</string>
+    <string name="call_audio">Play voice as a call</string>
+    <string name="call_audio_hint">Turn on if friends hear themselves echo when you talk without headphones: your phone\'s echo canceller then works. The volume keys set the call volume, and Bluetooth headsets switch to their call mode, which sounds worse.</string>
 </resources>

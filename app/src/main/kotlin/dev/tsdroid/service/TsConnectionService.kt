@@ -417,6 +417,10 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         SettingsStore(this).voiceEnhancement
             .onEach { audioBridge.setVoiceEnhancement(it) }
             .launchIn(serviceScope)
+        SettingsStore(this).callAudio
+            .distinctUntilChanged()
+            .onEach { audioBridge.setCallAudio(it) }
+            .launchIn(serviceScope)
         
         // Listen to local voice activity and apply delay mechanism
         audioBridge.isLocalVoiceActive.onEach { isSpeaking ->

@@ -29,6 +29,7 @@ private val KEY_MIC_MODE = stringPreferencesKey("mic_mode")
 private val KEY_VAD_THRESHOLD_DB = floatPreferencesKey("vad_threshold_db")
 private val KEY_JOIN_VOICE_STATE = stringPreferencesKey("join_voice_state")
 private val KEY_VOICE_ENHANCEMENT = stringPreferencesKey("voice_enhancement")
+private val KEY_CALL_AUDIO = booleanPreferencesKey("call_audio")
 private val KEY_ENCRYPT_FILES = booleanPreferencesKey("encrypt_files")
 private val KEY_STREAM_TEAMSPEAK_STUN = booleanPreferencesKey("stream_teamspeak_stun")
 private val KEY_RECORDER_MODE = booleanPreferencesKey("recorder_mode")
@@ -231,6 +232,18 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setVoiceEnhancement(level: VoiceEnhancement) {
         context.settingsDataStore.edit { it[KEY_VOICE_ENHANCEMENT] = level.toRaw() }
+    }
+
+    /**
+     * Voice played as a call rather than as game sound: the phone's echo canceller then hears it,
+     * so friends no longer hear themselves through this phone's speaker. The cost is that the
+     * volume keys set the call volume, and Bluetooth headsets switch to their call profile.
+     */
+    val callAudio: Flow<Boolean> = context.settingsDataStore.data
+        .map { it[KEY_CALL_AUDIO] ?: false }
+
+    suspend fun setCallAudio(enabled: Boolean) {
+        context.settingsDataStore.edit { it[KEY_CALL_AUDIO] = enabled }
     }
 
     /** VAD activation threshold in dBFS. */

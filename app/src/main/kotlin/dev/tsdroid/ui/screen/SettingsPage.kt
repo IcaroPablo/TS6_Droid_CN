@@ -105,6 +105,7 @@ fun SettingsPage(
     val vadThreshold by settingsStore.vadThresholdDb.collectAsStateWithLifecycle(initialValue = VadGate.DEFAULT_THRESHOLD_DB)
     val joinVoiceState by settingsStore.joinVoiceState.collectAsStateWithLifecycle(initialValue = JoinVoiceState.DEAFENED)
     val voiceEnhancement by settingsStore.voiceEnhancement.collectAsStateWithLifecycle(initialValue = VoiceEnhancement.OFF)
+    val callAudio by settingsStore.callAudio.collectAsStateWithLifecycle(initialValue = false)
     val colorSchemeKey by settingsStore.colorScheme.collectAsStateWithLifecycle(initialValue = AppColorScheme.DEFAULT.key)
 
     val languageOptions = listOf(
@@ -433,6 +434,17 @@ fun SettingsPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                SettingsSwitchRow(
+                    label = stringResource(R.string.call_audio),
+                    checked = callAudio,
+                    onCheckedChange = { scope.launch { settingsStore.setCallAudio(it) } },
+                )
+                Text(
+                    text = stringResource(R.string.call_audio_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = InsetPadding, end = InsetPadding, bottom = 10.dp),
+                )
             }
         }
 

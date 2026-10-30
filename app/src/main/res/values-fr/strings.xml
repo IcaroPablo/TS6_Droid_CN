@@ -355,4 +355,6 @@
     <string name="server_status_latency">%1$s · %2$d ms</string>
     <string name="recorder_mode">Mode enregistreur</string>
     <string name="recorder_mode_hint">Pour un téléphone laissé connecté, en Wi-Fi et sur le chargeur : il garde le chat des salons pour que le TeleSpeak de vos amis le récupère. Il se reconnecte toujours, garde le micro et le son coupés, et n\'affiche aucune fenêtre.</string>
+    <string name="call_audio">Lire les voix comme un appel</string>
+    <string name="call_audio_hint">Activez-le si vos amis entendent leur propre écho quand vous parlez sans casque : l\'annulation d\'écho du téléphone fonctionne alors. Les touches de volume règlent le volume d\'appel, et les casques Bluetooth passent en mode appel, de moins bonne qualité.</string>
 </resources>

@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -48,6 +49,15 @@ class AudioBridge(
     companion object {
         private const val TAG = "AudioBridge"
         const val SAMPLE_RATE = 48000
+
+        /** Where a call plays when connected, before the loudspeaker */
+        private val HEADSET_TYPES = setOf(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+        )
         const val CODEC_OPUS_VOICE = 4
         const val CODEC_OPUS_MUSIC = 5
 
@@ -145,6 +155,10 @@ class AudioBridge(
     private val playbackWake = java.util.concurrent.ArrayBlockingQueue<Boolean>(1)
 
     private var audioTrack: AudioTrack? = null
+
+    /** Voice played as a call: see [setCallAudio] */
+    @Volatile
+    private var callAudio = false
     private var noiseSuppressor: NoiseSuppressor? = null
     private var acousticEchoCanceler: AcousticEchoCanceler? = null
 
@@ -319,6 +333,7 @@ class AudioBridge(
             audioTrack = null
 
             encoder = OpusCodec(audioConfig)
+            applyAudioRoute()
             initAudioTrack()
             startPlaybackLoop()
             // Push-mode receive: frames are handed to [audioSink] the moment
@@ -909,11 +924,49 @@ class AudioBridge(
         audioTrack?.play()
     }
 
+    /**
+     * Plays voice as a call ([enabled]) or as game sound. As a call, it goes through the path the
+     * echo canceller listens to, so the microphone no longer picks the speaker up and sends it
+     * back; as game sound it follows the media volume and keeps Bluetooth in its music profile.
+     * Applied at once: the playback track is rebuilt with the new kind.
+     */
+    fun setCallAudio(enabled: Boolean) {
+        if (enabled == callAudio) return
+        callAudio = enabled
+        val old = audioTrack ?: return
+        applyAudioRoute()
+        initAudioTrack()
+        runCatching {
+            old.stop()
+            old.release()
+        }
+    }
+
+    /**
+     * The phone's audio mode for [callAudio]. A call plays from the earpiece unless told
+     * otherwise, so it is sent to the loudspeaker, or to a headset when one is connected.
+     */
+    private fun applyAudioRoute() {
+        val manager = audioManager ?: return
+        runCatching {
+            if (callAudio) {
+                manager.mode = AudioManager.MODE_IN_COMMUNICATION
+                val devices = manager.availableCommunicationDevices
+                val headset = devices.firstOrNull { it.type in HEADSET_TYPES }
+                val target = headset ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                target?.let { manager.setCommunicationDevice(it) }
+            } else {
+                manager.clearCommunicationDevice()
+                if (manager.mode == AudioManager.MODE_IN_COMMUNICATION) manager.mode = AudioManager.MODE_NORMAL
+            }
+        }.onFailure { Log.w(TAG, "Could not set the audio route", it) }
+    }
+
     private fun buildAudioTrack(minBuf: Int, lowLatency: Boolean): AudioTrack {
         val builder = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setUsage(if (callAudio) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_GAME)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -1115,6 +1168,12 @@ class AudioBridge(
     }
 
     fun release() {
+        // Leaving call mode behind would keep the phone's audio set up for a call
+        if (callAudio) {
+            callAudio = false
+            applyAudioRoute()
+            callAudio = true
+        }
         stopCapture()
         playbackJob?.cancel()
         playbackJob = null
