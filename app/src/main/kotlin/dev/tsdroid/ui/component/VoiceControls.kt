@@ -8,6 +8,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
@@ -171,35 +173,54 @@ fun VoiceBar(
                     modifier = Modifier.size(IconSize),
                 )
             }
-            VoiceButton(onClick = state.onToggleOutput) {
-                Icon(
-                    speakerIcon(state.isOutputMuted),
-                    contentDescription = speakerAction(state.isOutputMuted),
-                    tint = voiceTint(off = state.isOutputMuted, on = LocalContentColor.current),
-                    modifier = Modifier.size(IconSize),
-                )
-            }
+            SpeakerButton(state)
         }
     }
 }
 
-/** A round voice-bar button; [highlight] fills it, for the microphone. */
+/**
+ * A round voice button; [highlight] fills it, for the microphone. The voice bar and the floating
+ * window build theirs from this. A press shades it instead of a ripple: in the floating window, a
+ * window over other apps, ripples showed as grey squares.
+ */
 @Composable
-private fun VoiceButton(
+fun VoiceButton(
     onClick: (() -> Unit)?,
     highlight: Color = Color.Transparent,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Box(
         modifier = modifier
             .size(VoiceButtonSize)
             .clip(CircleShape)
             .background(highlight)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .background(if (pressed) LocalContentColor.current.copy(alpha = 0.12f) else Color.Transparent)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         content()
+    }
+}
+
+/** The speakers: red and crossed out while deafened. */
+@Composable
+fun SpeakerButton(state: VoiceBarState) {
+    VoiceButton(onClick = state.onToggleOutput) {
+        Icon(
+            speakerIcon(state.isOutputMuted),
+            contentDescription = speakerAction(state.isOutputMuted),
+            tint = voiceTint(off = state.isOutputMuted, on = LocalContentColor.current),
+            modifier = Modifier.size(IconSize),
+        )
     }
 }
 
@@ -208,7 +229,7 @@ private fun VoiceButton(
  * filled button on the bar, red while muted.
  */
 @Composable
-private fun MicButton(state: VoiceBarState) {
+fun MicButton(state: VoiceBarState) {
     var pressed by remember { mutableStateOf(false) }
     val latest by rememberUpdatedState(state)
     val off = state.isMicMuted && !pressed
@@ -257,7 +278,7 @@ private fun MicButton(state: VoiceBarState) {
  * switched on beforehand. Amber, like everything about whispering.
  */
 @Composable
-private fun WhisperHoldButton(state: VoiceBarState) {
+fun WhisperHoldButton(state: VoiceBarState) {
     var pressed by remember { mutableStateOf(false) }
     // `pointerInput(Unit)` keeps the lambda it was created with, so the newest
     // callbacks have to be read through this reference on every press.

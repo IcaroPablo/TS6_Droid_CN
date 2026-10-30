@@ -11,7 +11,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -86,12 +85,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.component.ChoicePill
-import dev.tsdroid.ui.component.micAction
-import dev.tsdroid.ui.component.micIcon
-import dev.tsdroid.ui.component.speakerAction
-import dev.tsdroid.ui.component.speakerIcon
+import dev.tsdroid.ui.component.MicButton
+import dev.tsdroid.ui.component.SpeakerButton
+import dev.tsdroid.ui.component.VoiceBarState
+import dev.tsdroid.ui.component.VoiceButton
+import dev.tsdroid.ui.component.WhisperHoldButton
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
+import dev.tsdroid.ui.theme.InsetPadding
 import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.Spacing
 import dev.tsdroid.ui.theme.TalkingBlue
@@ -1101,7 +1102,8 @@ private fun EmptyHint(text: String) {
 }
 
 /**
- * The panel's actions: microphone, sound, disconnect.
+ * The panel's actions, drawn with the voice bar's own buttons: hold-to-whisper, the microphone,
+ * the speakers, and disconnect.
  *
  * One microphone control only — the push-to-talk duplicate was confusing, and the toggle it sat next
  * to does the same job. Disconnecting takes a second tap: the button sits among the others in a
@@ -1123,131 +1125,50 @@ private fun ActionBar(
             confirmDisconnect = false
         }
     }
+    // The microphone here is always a toggle: holding to talk is the bubble's job
+    val voice = VoiceBarState(
+        isMicMuted = state.micMuted,
+        isOutputMuted = state.outputMuted,
+        isPushToTalk = false,
+        onToggleMic = onToggleMic,
+        onPushToTalk = {},
+        onToggleOutput = onToggleOutput,
+        onToggleMode = {},
+        whisperReady = WhisperManager.canHold,
+        onWhisperHold = onWhisperTalkStart,
+        onWhisperRelease = onWhisperTalkStop,
+    )
+    // A column: the island stacks what it holds, and the warning has to sit above the buttons
+    Column {
     if (confirmDisconnect) {
         WarningStrip(text = stringResource(R.string.floating_overlay_tap_again_to_disconnect))
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+            .padding(horizontal = InsetPadding, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ActionButton(
-            icon = micIcon(state.micMuted),
-            contentDescription = micAction(state.micMuted, state.outputMuted),
-            active = state.micMuted,
-            onClick = onToggleMic,
-        )
         // Hold-to-whisper: the same gesture as the bubble's push-to-talk, but the
         // voice only reaches the whisper list. It stays usable while the normal
         // microphone is muted, because the hold opens the microphone itself.
-        HoldActionButton(
-            icon = AppIcons.Whisper,
-            contentDescription = stringResource(R.string.whisper_hold_mic),
-            holds = state.localWhisperActive,
-            onHold = onWhisperTalkStart,
-            onRelease = onWhisperTalkStop,
-        )
-        ActionButton(
-            icon = speakerIcon(state.outputMuted),
-            contentDescription = speakerAction(state.outputMuted),
-            active = state.outputMuted,
-            onClick = onToggleOutput,
-        )
-        // Red, as a warning, but filled only once a first tap has armed it: a filled
-        // button is what a muted microphone or speaker looks like
-        ActionButton(
-            icon = AppIcons.Exit,
-            contentDescription = stringResource(R.string.disconnect),
-            active = confirmDisconnect,
-            tint = MaterialTheme.colorScheme.error,
-            onClick = {
-                if (confirmDisconnect) onDisconnect() else confirmDisconnect = true
-            },
-        )
-    }
-}
-
-/** A 42dp button that is held rather than tapped; used for hold-to-whisper. */
-@Composable
-private fun HoldActionButton(
-    icon: ImageVector,
-    contentDescription: String,
-    holds: Boolean,
-    onHold: () -> Unit,
-    onRelease: () -> Unit,
-) {
-    var pressed by remember { mutableStateOf(false) }
-    val active = holds || pressed
-    // The gesture handler is created once; read the newest callbacks through
-    // these references so a recomposition with new lambdas still takes effect.
-    val latestHold by rememberUpdatedState(onHold)
-    val latestRelease by rememberUpdatedState(onRelease)
-    Surface(
-        modifier = Modifier
-            .size(42.dp)
-            .clip(CircleShape)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        pressed = true
-                        latestHold()
-                        tryAwaitRelease()
-                        latestRelease()
-                        pressed = false
-                    },
-                )
-            },
-        shape = CircleShape,
-        color = if (active) {
-            WhisperAmber.copy(alpha = if (pressed) 0.34f else 0.22f)
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        },
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        WhisperHoldButton(voice)
+        MicButton(voice)
+        SpeakerButton(voice)
+        // Red, as a warning, and filled once a first tap has armed it
+        VoiceButton(
+            onClick = { if (confirmDisconnect) onDisconnect() else confirmDisconnect = true },
+            highlight = if (confirmDisconnect) MaterialTheme.colorScheme.errorContainer else Color.Transparent,
+        ) {
             Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = if (active) WhisperAmber else MaterialTheme.colorScheme.onSurface,
+                imageVector = AppIcons.Exit,
+                contentDescription = stringResource(R.string.disconnect),
+                tint = if (confirmDisconnect) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(IconSize),
             )
         }
     }
-}
-
-@Composable
-private fun ActionButton(
-    icon: ImageVector,
-    contentDescription: String,
-    active: Boolean,
-    onClick: () -> Unit,
-    /** The icon's colour while not active */
-    tint: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    Surface(
-        modifier = Modifier
-            .size(42.dp)
-            .clip(CircleShape)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        shape = CircleShape,
-        color = when {
-            active -> MaterialTheme.colorScheme.error.copy(alpha = if (pressed) 0.34f else 0.22f)
-            pressed -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
-            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        },
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = if (active) MaterialTheme.colorScheme.error else tint,
-                modifier = Modifier.size(IconSize),
-            )
-        }
     }
 }
 
