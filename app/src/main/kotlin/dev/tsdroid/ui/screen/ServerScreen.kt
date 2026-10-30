@@ -237,8 +237,6 @@ fun ServerScreen(
     // into several conversation chips.
     var pmTargetUid by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Resolve pmTarget User from users list
-    val pmTarget = pmTargetUid?.let { uid -> users.find { it.uid == uid } }
 
     // 密聊 target list lives in the manager singleton; reading its Compose state
     // here is what repaints the indicators when a target is added or dropped.
@@ -276,7 +274,6 @@ fun ServerScreen(
         }
     }
 
-    val totalUnreadPrivate = unreadPrivate.values.sum()
 
     // Worked out only when the messages change, not on every recomposition (one per talk event)
     val allPrivateMessages = remember(privateMessages) {
@@ -307,25 +304,35 @@ fun ServerScreen(
             ?: context.getString(R.string.whisper_target_offline))
     }
 
+    // This screen's own body reads none of the chat's or the panels' state: the effects below
+    // follow it through snapshotFlow, and the sections that show it read it themselves. A tab
+    // switch, a fold or an opened panel then recomposes those, not the whole screen.
+
     // The chat's Files tab: back goes up a folder, and from the top back to the channel's chat
-    BackHandler(enabled = chatTab == FILES_TAB) {
-        if (currentFilePath != "/") viewModel.navigateUp() else chatTab = 0
+    @Composable
+    fun FilesBack() {
+        BackHandler(enabled = chatTab == FILES_TAB) {
+            if (currentFilePath != "/") viewModel.navigateUp() else chatTab = 0
+        }
     }
+    FilesBack()
     // The file list is loaded while its tab is shown, and dropped when it is left
-    LaunchedEffect(chatTab) {
-        val showFiles = chatTab == FILES_TAB
-        if (showFiles && !viewModel.fileManagerOpen.value) viewModel.toggleFileManager()
-        if (!showFiles && viewModel.fileManagerOpen.value) viewModel.closeFileManager()
+    LaunchedEffect(Unit) {
+        snapshotFlow { chatTab == FILES_TAB }.collect { showFiles ->
+            if (showFiles && !viewModel.fileManagerOpen.value) viewModel.toggleFileManager()
+            if (!showFiles && viewModel.fileManagerOpen.value) viewModel.closeFileManager()
+        }
     }
     // A folded chat must not keep the keyboard up for its hidden input
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(chatOpen) {
-        if (!chatOpen) focusManager.clearFocus()
+    LaunchedEffect(Unit) {
+        snapshotFlow { chatOpen }.collect { open -> if (!open) focusManager.clearFocus() }
     }
 
     // Sync chat state to ViewModel for unread tracking
-    LaunchedEffect(chatOpen, chatTab, pmTargetUid) {
-        viewModel.setChatState(chatOpen, chatTab, pmTargetUid)
+    LaunchedEffect(Unit) {
+        snapshotFlow { Triple(chatOpen, chatTab, pmTargetUid) }
+            .collect { (open, tab, peer) -> viewModel.setChatState(open, tab, peer) }
     }
 
     DisposableEffect(Unit) {
@@ -337,8 +344,6 @@ fun ServerScreen(
 
     // The floating window is no longer driven from here: it belongs to the service, which shows it
     // when the app goes to the background. See TsConnectionService.setAppInForeground.
-
-    val totalUnread = unreadChannel + totalUnreadPrivate
 
     // The server renames a client whose nickname is taken (ushummu → ushummu1). Say so once, when
     // our own name first shows up, or the user cannot tell which row is theirs.
@@ -411,8 +416,8 @@ fun ServerScreen(
     }
     // The panel names the member's groups, and the answers to both group list
     // requests may not have arrived yet when it opens.
-    LaunchedEffect(userPanelUserId) {
-        if (userPanelUserId != null) viewModel.refreshGroupLists()
+    LaunchedEffect(Unit) {
+        snapshotFlow { userPanelUserId }.collect { if (it != null) viewModel.refreshGroupLists() }
     }
     val memberPanel: @Composable (User) -> Unit = { panelUser ->
         UserPanelSheet(
@@ -477,7 +482,8 @@ fun ServerScreen(
     }
 
     // The voice controls, the same bar here and in the stream viewer
-    val voiceState = VoiceBarState(
+    // Built where the bar is drawn: a mute or a mode change then recomposes the bar alone
+    fun voiceState() = VoiceBarState(
         isMicMuted = isMicMuted,
         isOutputMuted = isOutputMuted,
         isPushToTalk = isPttMode,
@@ -503,6 +509,106 @@ fun ServerScreen(
             awaySheetOpen = !awaySheetOpen
         },
     )
+
+    // The chat reads its tab, its conversation and its text here, so they recompose it alone
+    @Composable
+    fun ChatSection(modifier: Modifier) {
+        val pmTarget = pmTargetUid?.let { uid -> users.find { it.uid == uid } }
+        ChatPanel(
+            recipientName = pmTarget?.nickname
+                ?: pmConversationUsers.firstOrNull { it.first == pmTargetUid }?.second,
+            recipientAvatar = pmTargetUid?.let { userAvatars[it] },
+            expanded = { chatOpen },
+            onToggleExpanded = {
+                chatOpen = !chatOpen
+                keepAnIslandOpen()
+            },
+            modifier = modifier,
+            chatTab = chatTab,
+            onTabChange = { chatTab = it },
+            files = {
+        FileManager(
+            modifier = Modifier.padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
+            currentPath = currentFilePath,
+            channelName = users.firstOrNull { it.id == viewModel.myClientId }
+                ?.let { self -> channels.find { it.id == self.channelId }?.name },
+            files = fileList,
+            isLoading = fileManagerLoading,
+            users = users,
+            selfId = viewModel.myClientId,
+            permissionHints = channelPermissions,
+            onNavigateToFolder = { viewModel.navigateToFolder(it) },
+            onNavigateUp = { viewModel.navigateUp() },
+            onRefresh = { viewModel.refreshFileList() },
+            onDownload = { viewModel.downloadFileFromManager(it) },
+            onDelete = { viewModel.deleteFileInChannel(it) },
+            onRename = { old, new -> viewModel.renameFileInChannel(old, new) },
+            onCreateDirectory = { viewModel.createDirectoryInChannel(it) },
+            onUploadFile = { name, data -> viewModel.uploadFileToChannel(name, data) },
+            onShareFile = { target, name, size ->
+                when (target) {
+                    is ShareTarget.Channel -> viewModel.shareFile(null, name, size)
+                    is ShareTarget.PrivateMessage -> viewModel.shareFile(target.peerKey, name, size)
+                }
+            },
+            onPreviewImage = { fileName ->
+                viewModel.previewImageFile(fileName)
+            },
+        )
+            },
+            wallpaper = glassWallpaper,
+            channelMessages = channelMessages,
+            privateMessages = pmTargetUid?.let { uid ->
+                privateMessages[uid] ?: emptyList()
+            } ?: allPrivateMessages,
+            latestMessage = latestMessage,
+            messageText = messageText,
+            onMessageChange = { messageText = it },
+            pmTarget = pmTarget,
+            pmConversationUsers = pmConversationUsers,
+            onSelectPmUser = { uid -> pmTargetUid = uid },
+            onClearPmTarget = { pmTargetUid = null },
+            onSend = {
+                when {
+                    // While密聊 is live the microphone is on the target
+                    // set, so the text follows the voice: it goes to
+                    // those same people as private messages.
+                    whisperHasTargets -> viewModel.sendWhisperMessage(messageText)
+                    chatTab == 0 -> viewModel.sendChannelMessage(messageText)
+                    else -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
+                }
+                messageText = ""
+            },
+            unreadChannel = unreadChannel,
+            unreadPrivateTotal = unreadPrivate.values.sum(),
+            unreadPrivatePerUser = unreadPrivate,
+            showLinkThumbnails = showLinkThumbnails,
+            autoLoadImages = autoLoadImages,
+            canUploadFiles = (channelPermissions and dev.tslib.Channel.PERM_FILE_UPLOAD) != 0L,
+            onUploadFile = { fileName, data ->
+                viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
+            },
+            onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
+            isWhisperActive = whisperHasTargets,
+            whisperTargetName = whisperLabel,
+            voiceRecordingSince = voiceRecordingSince,
+            onStartVoiceMessage = { viewModel.startVoiceMessage(chatTab == 1, pmTargetUid) },
+            onFinishVoiceMessage = { send -> viewModel.finishVoiceMessage(send) },
+        )
+    }
+
+    @Composable
+    fun VoiceSection() {
+        VoiceBar(
+            state = voiceState(),
+            modifier = Modifier.fillMaxWidth(),
+            panel = when {
+                awaySheetOpen -> statusPanel
+                whisperSheetOpen -> whisperListPanel
+                else -> null
+            },
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // The server is a tab of the app's one island: its bar, the channels and the chat, and the
@@ -585,11 +691,11 @@ fun ServerScreen(
                     .coerceIn(minFraction(), 1f - minFraction())
             }
             // Read only while measuring and placing, never while composing
-            fun chatHeightPx(): Int {
+            fun chatOpenHeightPx(): Float {
                 val sharedPx = sharedPx()
-                val open = lerp(sharedPx - headerPx, sharedPx * chatFractionNow(), channelsProgress.value)
-                return lerp(headerPx, open, chatProgress.value).roundToInt()
+                return lerp(sharedPx - headerPx, sharedPx * chatFractionNow(), channelsProgress.value)
             }
+            fun chatHeightPx(): Int = lerp(headerPx, chatOpenHeightPx(), chatProgress.value).roundToInt()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -676,9 +782,9 @@ fun ServerScreen(
                 },
                 // A member's panel unfolds under their row; a second tap folds it
                 onUserClick = { user -> userPanelUserId = if (userPanelUserId == user.id) null else user.id },
-                expandedUserId = userPanelUserId,
+                expandedUserId = { userPanelUserId },
                 userPanel = memberPanel,
-                expandedChannelId = channelPasswordTarget?.id,
+                expandedChannelId = { channelPasswordTarget?.id },
                 channelPanel = channelPasswordPanel,
                 onUserLongClick = { user -> viewModel.toggleMuteUser(user.id) },
                 onUserLongPress = { user ->
@@ -724,92 +830,18 @@ fun ServerScreen(
             )
             }
             Spacer(Modifier.height(Spacing.Gap))
-            ChatPanel(
-                recipientName = pmTarget?.nickname
-                    ?: pmConversationUsers.firstOrNull { it.first == pmTargetUid }?.second,
-                recipientAvatar = pmTargetUid?.let { userAvatars[it] },
-                expanded = { chatOpen },
-                onToggleExpanded = {
-                    chatOpen = !chatOpen
-                    keepAnIslandOpen()
-                },
+            ChatSection(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // While the chat folds or unfolds it keeps the open size and is cut to the
+                    // animated one: its messages are then measured once, not on every frame
+                    .clipToBounds()
                     .layout { measurable, constraints ->
                         val height = chatHeightPx()
-                        val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+                        val measured = if (chatProgress.isRunning) chatOpenHeightPx().roundToInt() else height
+                        val placeable = measurable.measure(constraints.copy(minHeight = measured, maxHeight = measured))
                         layout(placeable.width, height) { placeable.place(0, 0) }
                     },
-                chatTab = chatTab,
-                onTabChange = { chatTab = it },
-                files = {
-            FileManager(
-                modifier = Modifier.padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
-                currentPath = currentFilePath,
-                channelName = users.firstOrNull { it.id == viewModel.myClientId }
-                    ?.let { self -> channels.find { it.id == self.channelId }?.name },
-                files = fileList,
-                isLoading = fileManagerLoading,
-                users = users,
-                selfId = viewModel.myClientId,
-                permissionHints = channelPermissions,
-                onNavigateToFolder = { viewModel.navigateToFolder(it) },
-                onNavigateUp = { viewModel.navigateUp() },
-                onRefresh = { viewModel.refreshFileList() },
-                onDownload = { viewModel.downloadFileFromManager(it) },
-                onDelete = { viewModel.deleteFileInChannel(it) },
-                onRename = { old, new -> viewModel.renameFileInChannel(old, new) },
-                onCreateDirectory = { viewModel.createDirectoryInChannel(it) },
-                onUploadFile = { name, data -> viewModel.uploadFileToChannel(name, data) },
-                onShareFile = { target, name, size ->
-                    when (target) {
-                        is ShareTarget.Channel -> viewModel.shareFile(null, name, size)
-                        is ShareTarget.PrivateMessage -> viewModel.shareFile(target.peerKey, name, size)
-                    }
-                },
-                onPreviewImage = { fileName ->
-                    viewModel.previewImageFile(fileName)
-                },
-            )
-                },
-                wallpaper = glassWallpaper,
-                channelMessages = channelMessages,
-                privateMessages = pmTargetUid?.let { uid ->
-                    privateMessages[uid] ?: emptyList()
-                } ?: allPrivateMessages,
-                latestMessage = latestMessage,
-                messageText = messageText,
-                onMessageChange = { messageText = it },
-                pmTarget = pmTarget,
-                pmConversationUsers = pmConversationUsers,
-                onSelectPmUser = { uid -> pmTargetUid = uid },
-                onClearPmTarget = { pmTargetUid = null },
-                onSend = {
-                    when {
-                        // While密聊 is live the microphone is on the target
-                        // set, so the text follows the voice: it goes to
-                        // those same people as private messages.
-                        whisperHasTargets -> viewModel.sendWhisperMessage(messageText)
-                        chatTab == 0 -> viewModel.sendChannelMessage(messageText)
-                        else -> pmTargetUid?.let { viewModel.sendPrivateMessage(it, messageText) }
-                    }
-                    messageText = ""
-                },
-                unreadChannel = unreadChannel,
-                unreadPrivateTotal = totalUnreadPrivate,
-                unreadPrivatePerUser = unreadPrivate,
-                showLinkThumbnails = showLinkThumbnails,
-                autoLoadImages = autoLoadImages,
-                canUploadFiles = (channelPermissions and dev.tslib.Channel.PERM_FILE_UPLOAD) != 0L,
-                onUploadFile = { fileName, data ->
-                    viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
-                },
-                onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
-                isWhisperActive = whisperHasTargets,
-                whisperTargetName = whisperLabel,
-                voiceRecordingSince = voiceRecordingSince,
-                onStartVoiceMessage = { viewModel.startVoiceMessage(chatTab == 1, pmTargetUid) },
-                onFinishVoiceMessage = { send -> viewModel.finishVoiceMessage(send) },
             )
             }
             // Its own scope, so the fold states it reads recompose only the handle
@@ -834,15 +866,7 @@ fun ServerScreen(
 
 
         }
-            VoiceBar(
-                state = voiceState,
-                modifier = Modifier.fillMaxWidth(),
-                panel = when {
-                    awaySheetOpen -> statusPanel
-                    whisperSheetOpen -> whisperListPanel
-                    else -> null
-                },
-            )
+            VoiceSection()
         }
 
 
@@ -863,6 +887,7 @@ fun ServerScreen(
     // lives in the view model: rotating recreates the activity.
     val fullscreen = streamSessions.isNotEmpty() && streamLandscape
     if (fullscreen) {
+        val voiceState = voiceState()
         val watched = streamSessions.map { it.stream.id }.toSet()
         StreamViewer(
             sessions = streamSessions,

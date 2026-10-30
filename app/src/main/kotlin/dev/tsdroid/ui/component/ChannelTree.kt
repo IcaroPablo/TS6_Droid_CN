@@ -24,6 +24,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -72,11 +74,14 @@ fun ChannelTree(
     /** Members streaming in our channel, and what tapping their badge does. */
     streamingUserIds: Set<Int> = emptySet(),
     onWatchStream: ((User) -> Unit)? = null,
-    /** The member whose panel is unfolded under their row, and the panel */
-    expandedUserId: Int? = null,
+    /**
+     * The member whose panel is unfolded under their row, and the panel. Read through a lambda:
+     * opening a panel then recomposes the row it opens under, not every row of the list.
+     */
+    expandedUserId: () -> Int? = { null },
     userPanel: (@Composable (User) -> Unit)? = null,
     /** The channel whose panel (its password) is unfolded under its row, and the panel */
-    expandedChannelId: Long? = null,
+    expandedChannelId: () -> Long? = { null },
     channelPanel: (@Composable (Channel) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -147,9 +152,13 @@ fun ChannelTree(
                 )
             }
             // A member's panel or a channel's password unfolds under its row, inside its area
-            val panelOpen = when (item) {
-                is TreeItem.ChannelNode -> item.channel.id == expandedChannelId && channelPanel != null
-                is TreeItem.UserNode -> item.user.id == expandedUserId && userPanel != null
+            val panelOpen by remember(item, channelPanel != null, userPanel != null) {
+                derivedStateOf {
+                    when (item) {
+                        is TreeItem.ChannelNode -> item.channel.id == expandedChannelId() && channelPanel != null
+                        is TreeItem.UserNode -> item.user.id == expandedUserId() && userPanel != null
+                    }
+                }
             }
             AnimatedVisibility(
                 visible = panelOpen,
