@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -23,7 +26,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +46,7 @@ import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.Shapes
 import dev.tsdroid.ui.theme.WhisperAmber
+import kotlinx.coroutines.delay
 
 /**
  * The box chat messages are written in, shared by the chat panel and the
@@ -65,8 +71,18 @@ fun ChatInput(
     onAttach: (() -> Unit)? = null,
     /** False when there is nobody to send a file to */
     attachEnabled: Boolean = enabled,
+    /** When the voice message being recorded started; null while none is */
+    recordingSince: Long? = null,
+    /** Starts a voice message; no record button without it */
+    onStartRecording: (() -> Unit)? = null,
+    /** Ends the voice message being recorded: sent (true) or thrown away */
+    onFinishRecording: (send: Boolean) -> Unit = {},
 ) {
     val canSend = enabled && text.isNotBlank()
+    if (recordingSince != null) {
+        RecordingRow(recordingSince, onFinishRecording, modifier)
+        return
+    }
     Column(modifier = modifier) {
         if (whisperTargetName != null) {
             Surface(
@@ -148,6 +164,18 @@ fun ChatInput(
                     }
                 },
             )
+            // With nothing typed, the button records a voice message instead
+            if (text.isEmpty() && onStartRecording != null && attachEnabled) {
+                IconButton(onClick = onStartRecording, modifier = Modifier.size(ControlHeight)) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = stringResource(R.string.record_voice_message),
+                        modifier = Modifier.size(IconSize),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                return@Row
+            }
             // Lights up once there is something to send
             IconButton(onClick = onSend, enabled = canSend, modifier = Modifier.size(ControlHeight)) {
                 Icon(
@@ -160,3 +188,59 @@ fun ChatInput(
         }
     }
 }
+
+/**
+ * The input while a voice message records: how long it is so far, and the buttons that throw it
+ * away or send it. Same field, so the chat does not jump.
+ */
+@Composable
+private fun RecordingRow(since: Long, onFinish: (send: Boolean) -> Unit, modifier: Modifier) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(since) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(RECORDING_TICK_MS)
+        }
+    }
+    val seconds = ((now - since) / 1000).coerceAtLeast(0)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ControlHeight)
+            .clip(Shapes.Standard)
+            .background(LocalContentColor.current.copy(alpha = 0.14f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = { onFinish(false) }, modifier = Modifier.size(ControlHeight)) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = stringResource(R.string.discard_voice_message),
+                modifier = Modifier.size(IconSize),
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.error),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.recording_voice_message, seconds / 60, seconds % 60),
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = { onFinish(true) }, modifier = Modifier.size(ControlHeight)) {
+            Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = stringResource(R.string.send_voice_message),
+                modifier = Modifier.size(IconSize),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+/** How often the recording's length moves on screen */
+private const val RECORDING_TICK_MS = 250L

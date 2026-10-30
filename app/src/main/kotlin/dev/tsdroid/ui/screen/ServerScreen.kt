@@ -154,6 +154,7 @@ fun ServerScreen(
     val streamLandscape by viewModel.streamLandscape.collectAsStateWithLifecycle()
     val channelIcons by viewModel.channelIcons.collectAsStateWithLifecycle()
     val userAvatars by viewModel.avatars.collectAsStateWithLifecycle()
+    val voiceRecordingSince by viewModel.voiceRecordingSince.collectAsStateWithLifecycle()
     val serverInfo by viewModel.serverInfo.collectAsStateWithLifecycle()
     val channelMessages by viewModel.channelMessages.collectAsStateWithLifecycle()
     val privateMessages by viewModel.privateMessages.collectAsStateWithLifecycle()
@@ -806,6 +807,9 @@ fun ServerScreen(
                 onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
                 isWhisperActive = whisperHasTargets,
                 whisperTargetName = whisperLabel,
+                voiceRecordingSince = voiceRecordingSince,
+                onStartVoiceMessage = { viewModel.startVoiceMessage(chatTab == 1, pmTargetUid) },
+                onFinishVoiceMessage = { send -> viewModel.finishVoiceMessage(send) },
             )
             }
             // Its own scope, so the fold states it reads recompose only the handle
@@ -958,6 +962,10 @@ fun ChatPanel(
     onDownload: ((FileAttachment) -> StateFlow<DownloadState>)? = null,
     isWhisperActive: Boolean = false,
     whisperTargetName: String? = null,
+    /** When the voice message being recorded started; null while none is */
+    voiceRecordingSince: Long? = null,
+    onStartVoiceMessage: () -> Unit = {},
+    onFinishVoiceMessage: (send: Boolean) -> Unit = {},
 ) {
     val pickUpload = rememberUploadPicker(onUploadFile)
     val unread = unreadChannel + unreadPrivateTotal
@@ -1092,6 +1100,11 @@ fun ChatPanel(
                     onAttach = pickUpload.takeIf { canUploadFiles },
                     // A file goes to the channel or to the chosen person, never to whisper targets
                     attachEnabled = chatTab == 0 || pmTarget != null,
+                    // A voice message is a file: it needs the same right to upload, and goes where
+                    // a file would, never to whisper targets
+                    recordingSince = voiceRecordingSince,
+                    onStartRecording = onStartVoiceMessage.takeIf { canUploadFiles && !isWhisperActive },
+                    onFinishRecording = onFinishVoiceMessage,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

@@ -21,16 +21,18 @@ import dev.tsdroid.bridge.MicMode
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.bridge.TsFileEntry
 import dev.tsdroid.bridge.VadGate
+import dev.tsdroid.bridge.VoiceMessageRecorder
 import dev.tsdroid.data.AwayStatus
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.IslandLayout
 import dev.tsdroid.data.MessageStore
-import dev.tsdroid.service.ChannelHistory
 import dev.tsdroid.data.NicknameRules
 import dev.tsdroid.data.PrivateConversations
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.data.UserAudioStore
+import dev.tsdroid.data.VoiceMessages
 import dev.tsdroid.han.R
+import dev.tsdroid.service.ChannelHistory
 import dev.tsdroid.service.ReconnectStatus
 import dev.tsdroid.service.TsConnectionService
 import dev.tsdroid.service.WhisperManager
@@ -49,11 +51,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 data class FileAttachment(
@@ -132,7 +134,12 @@ internal fun migrateMessage(msg: ChatMessage): ChatMessage {
 sealed class DownloadState {
     data object Idle : DownloadState()
     data object Downloading : DownloadState()
-    data class Done(val image: ImageBitmap?, val fileUri: android.net.Uri? = null) : DownloadState()
+    /** [audio]: the file itself, for audio played in the chat rather than opened elsewhere */
+    data class Done(
+        val image: ImageBitmap?,
+        val fileUri: android.net.Uri? = null,
+        val audio: ByteArray? = null,
+    ) : DownloadState()
     data class Error(val message: String) : DownloadState()
 }
 
@@ -1323,6 +1330,50 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             (fileDateTime?.let { "&fileDateTime=$it" } ?: "")
     }
 
+    // --- Voice messages ---
+
+    private var voiceRecorder: VoiceMessageRecorder? = null
+
+    /** Where the voice message being recorded goes: the private tab, and to whom */
+    private var voiceTarget: Pair<Boolean, String?> = false to null
+    private var voiceLimitJob: Job? = null
+    private val _voiceRecordingSince = MutableStateFlow<Long?>(null)
+
+    /** When the voice message being recorded started; null while none is */
+    val voiceRecordingSince: StateFlow<Long?> = _voiceRecordingSince.asStateFlow()
+
+    /** Records a voice message for the channel, or for [targetPeerKey] on the private tab. */
+    fun startVoiceMessage(isPrivate: Boolean, targetPeerKey: String?) {
+        val bridge = audioBridge ?: return
+        if (voiceRecorder != null) return
+        // The recording comes from the voice connection's microphone, which may be closed
+        if (!bridge.isCapturing.value) bridge.startCapture(noiseSuppression.value)
+        voiceRecorder = VoiceMessageRecorder(bridge).also { it.start() }
+        voiceTarget = isPrivate to targetPeerKey
+        _voiceRecordingSince.value = System.currentTimeMillis()
+        voiceLimitJob = viewModelScope.launch {
+            delay(VoiceMessages.MAX_DURATION_MS)
+            finishVoiceMessage(send = true)
+        }
+    }
+
+    /** Ends the voice message being recorded: sends it, or throws it away. */
+    fun finishVoiceMessage(send: Boolean) {
+        val recorder = voiceRecorder ?: return
+        val startedAt = _voiceRecordingSince.value ?: System.currentTimeMillis()
+        val (isPrivate, target) = voiceTarget
+        voiceRecorder = null
+        voiceLimitJob?.cancel()
+        voiceLimitJob = null
+        _voiceRecordingSince.value = null
+        viewModelScope.launch {
+            val recording = withContext(Dispatchers.Default) {
+                recorder.stop(keep = send, minDurationMs = VoiceMessages.MIN_DURATION_MS)
+            } ?: return@launch
+            uploadAndSendFile(VoiceMessages.fileName(startedAt, recording.durationMs), recording.data, isPrivate, target)
+        }
+    }
+
     fun uploadAndSendFile(fileName: String, data: ByteArray, isPrivate: Boolean, targetPeerKey: String?) {
         val client = tsClient ?: return
         val channelId = currentChannelId()
@@ -1399,7 +1450,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     fileCache.put(host, cachePath, bytes)
                 }
 
-                if (attachment.isImage) {
+                if (VoiceMessages.isAudioFile(attachment.fileName)) {
+                    // Played in place, from memory: no copy lands in Downloads or a share folder
+                    state.value = DownloadState.Done(null, audio = bytes)
+                } else if (attachment.isImage) {
                     val bmp = decodeSampledBitmap(bytes, 1280)
                     val uri = fileCache.getUri(host, cachePath)
                     state.value = DownloadState.Done(bmp?.asImageBitmap(), uri)
@@ -1742,6 +1796,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
+        finishVoiceMessage(send = false)
         stopWatching()
         saveNow()
         bound = false

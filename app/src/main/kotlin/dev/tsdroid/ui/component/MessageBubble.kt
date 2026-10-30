@@ -12,6 +12,7 @@ import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,8 +26,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -55,9 +62,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import dev.tsdroid.data.VoiceMessages
 import dev.tsdroid.han.R
 import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.Shapes
@@ -279,6 +288,11 @@ private fun FileAttachmentCard(
     // file, so offering a download would only ever fail.
     val inCloud = attachment.fileId.isNotEmpty()
     val download = onDownload.takeUnless { inCloud }
+    // Voice messages and other audio play right in the bubble
+    if (download != null && VoiceMessages.isAudioFile(attachment.fileName)) {
+        AudioAttachmentCard(attachment, download)
+        return
+    }
     val context = LocalContext.current
     var downloadStateFlow by remember { mutableStateOf<StateFlow<DownloadState>?>(null) }
     val downloadState = downloadStateFlow?.collectAsStateWithLifecycle()?.value ?: DownloadState.Idle
@@ -416,6 +430,113 @@ private fun FileAttachmentCard(
             )
         }
     }
+}
+
+/**
+ * A voice message, or an audio file anyone sent: play and pause, how far it has played, and its
+ * length. The file is fetched on the first play and kept in memory (see [ChatAudioPlayer]).
+ */
+@Composable
+private fun AudioAttachmentCard(
+    attachment: FileAttachment,
+    download: (FileAttachment) -> StateFlow<DownloadState>,
+) {
+    var downloadStateFlow by remember { mutableStateOf<StateFlow<DownloadState>?>(null) }
+    val downloadState = downloadStateFlow?.collectAsStateWithLifecycle()?.value ?: DownloadState.Idle
+    // Asked to play before the file was here: plays the moment it arrives
+    var playWhenReady by remember { mutableStateOf(false) }
+    LaunchedEffect(downloadState) {
+        val audio = (downloadState as? DownloadState.Done)?.audio
+        if (playWhenReady && audio != null) {
+            playWhenReady = false
+            ChatAudioPlayer.toggle(attachment, audio)
+        }
+    }
+    val playback by ChatAudioPlayer.playback.collectAsStateWithLifecycle()
+    val mine = playback?.takeIf { it.key == attachment }
+    val durationMs = mine?.durationMs?.takeIf { it > 0 }?.toLong() ?: VoiceMessages.durationOf(attachment.fileName)
+    val voice = VoiceMessages.isVoiceMessage(attachment.fileName)
+
+    Row(
+        modifier = Modifier
+            .widthIn(min = 220.dp)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (downloadState is DownloadState.Downloading) {
+            Box(modifier = Modifier.size(ControlHeight), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(IconSize), strokeWidth = 2.dp)
+            }
+        } else {
+            IconButton(
+                onClick = {
+                    val audio = (downloadState as? DownloadState.Done)?.audio
+                    if (audio != null) {
+                        ChatAudioPlayer.toggle(attachment, audio)
+                    } else {
+                        playWhenReady = true
+                        downloadStateFlow = download(attachment)
+                    }
+                },
+                modifier = Modifier.size(ControlHeight),
+            ) {
+                Icon(
+                    if (mine?.playing == true) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = stringResource(if (mine?.playing == true) R.string.pause else R.string.play),
+                    modifier = Modifier.size(IconSize),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (voice) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(IconSize),
+                        tint = LocalContentColor.current.copy(alpha = 0.7f),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    text = if (voice) stringResource(R.string.voice_message) else attachment.fileName.substringAfterLast('/'),
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // Tapping the bar moves the playback there
+            val progress = mine?.let { if (it.durationMs > 0) it.positionMs.toFloat() / it.durationMs else 0f } ?: 0f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .pointerInput(attachment) {
+                        detectTapGestures { offset -> ChatAudioPlayer.seek(attachment, offset.x / size.width) }
+                    },
+            )
+            Text(
+                text = when {
+                    downloadState is DownloadState.Error -> downloadState.message
+                    mine != null -> "${formatPlayTime(mine.positionMs.toLong())} / ${formatPlayTime(durationMs ?: 0)}"
+                    durationMs != null -> formatPlayTime(durationMs)
+                    else -> formatFileSize(LocalContext.current, attachment.fileSize)
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (downloadState is DownloadState.Error) MaterialTheme.colorScheme.error
+                    else LocalContentColor.current.copy(alpha = 0.7f),
+            )
+        }
+    }
+}
+
+/** A length as m:ss */
+private fun formatPlayTime(ms: Long): String {
+    val seconds = ms / 1000
+    return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 private fun openFile(context: android.content.Context, uri: android.net.Uri, fileName: String) {

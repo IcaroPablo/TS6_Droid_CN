@@ -236,6 +236,12 @@ class AudioBridge(
     @Volatile
     var micGainFactor: Float = 1.0f
 
+    /**
+     * While set, the microphone's frames go here, and not to the server: a voice message being
+     * recorded. Called on the capture thread, with a buffer reused for the next frame.
+     */
+    @Volatile var messageTap: ((ShortArray) -> Unit)? = null
+
     @Volatile
     var micMode: MicMode = MicMode.PTT
         private set
@@ -561,6 +567,13 @@ class AudioBridge(
                 recordingConfigDirty = false
                 Log.w(TAG, "Audio recording configuration changed; rebuilding microphone")
                 return CaptureOutcome.RECOVER
+            }
+
+            val tap = messageTap
+            if (tap != null) {
+                _isLocalVoiceActive.value = false
+                tap(buffer)
+                continue
             }
 
             if (!_isMuted.value && !forcedMuted && micGainFactor != 0f) {

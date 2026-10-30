@@ -357,4 +357,11 @@
     <string name="recorder_mode_hint">For a phone left connected on Wi-Fi and a charger: it keeps the channel chat for your friends\' TeleSpeak to catch up from. It always reconnects, keeps the microphone and speakers off, and shows no pop-ups.</string>
     <string name="call_audio">Play voice as a call</string>
     <string name="call_audio_hint">Turn on if friends hear themselves echo when you talk without headphones: your phone\'s echo canceller then works. The volume keys set the call volume, and Bluetooth headsets switch to their call mode, which sounds worse.</string>
+    <string name="voice_message">Voice message</string>
+    <string name="record_voice_message">Record a voice message</string>
+    <string name="discard_voice_message">Discard the voice message</string>
+    <string name="send_voice_message">Send the voice message</string>
+    <string name="recording_voice_message">Recording… %1$d:%2$02d</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
 </resources>

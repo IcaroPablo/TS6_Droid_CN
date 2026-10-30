@@ -357,4 +357,11 @@
     <string name="recorder_mode_hint">适用于一直连接、接着 Wi-Fi 和充电器的手机：它保存频道聊天记录，供朋友的 TeleSpeak 同步。它会始终自动重连，保持麦克风和扬声器关闭，并且不弹出提示。</string>
     <string name="call_audio">以通话方式播放语音</string>
     <string name="call_audio_hint">如果你不戴耳机说话时朋友听到自己的回声，请打开：手机的回声消除会因此生效。音量键将调节通话音量，蓝牙耳机会切换到通话模式，音质较差。</string>
+    <string name="voice_message">语音消息</string>
+    <string name="record_voice_message">录制语音消息</string>
+    <string name="discard_voice_message">放弃语音消息</string>
+    <string name="send_voice_message">发送语音消息</string>
+    <string name="recording_voice_message">正在录音… %1$d:%2$02d</string>
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
 </resources>
