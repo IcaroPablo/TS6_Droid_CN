@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -175,8 +177,11 @@ fun UserPanelSheet(
                 onVolumeCommit = onVolumeCommit,
             )
 
+            // Each switch row flips from anywhere on it, its label included
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(value = isMuted, role = Role.Switch, onValueChange = { onToggleMute() }),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -184,14 +189,16 @@ fun UserPanelSheet(
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(checked = isMuted, onCheckedChange = { onToggleMute() })
+                Switch(checked = isMuted, onCheckedChange = null)
             }
 
             // 密聊 switch: the panel doorway next to the inline button on the row,
             // with a label that spells out what whispering does to the microphone.
             if (onToggleWhisper != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(value = isWhisperTarget, role = Role.Switch, onValueChange = { onToggleWhisper() }),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -199,7 +206,7 @@ fun UserPanelSheet(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f),
                     )
-                    Switch(checked = isWhisperTarget, onCheckedChange = { onToggleWhisper() })
+                    Switch(checked = isWhisperTarget, onCheckedChange = null)
                 }
             }
 
