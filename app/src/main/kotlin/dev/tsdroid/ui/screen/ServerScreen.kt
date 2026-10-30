@@ -53,7 +53,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -242,7 +244,6 @@ fun ServerScreen(
     // here is what repaints the indicators when a target is added or dropped.
     val whisperTargets = WhisperManager.targets
     val whisperHasTargets = whisperTargets.isNotEmpty
-    val whisperLabel = whisperTargetLabel(whisperTargets, users, channels, serverGroups)
     var whisperSheetOpen by rememberSaveable { mutableStateOf(false) }
     // Channel waiting for its password (TS3 refuses the move without it).
     var channelPasswordTarget by remember { mutableStateOf<dev.tslib.Channel?>(null) }
@@ -255,9 +256,10 @@ fun ServerScreen(
 
 
     // Build PM conversation list (uid → display name) from the message map + users list
+    // Derived: the users list changes whenever someone talks, the names hardly ever
     val context = LocalContext.current
-    val pmConversationUsers: List<Pair<String, String>> = remember(privateMessages, users) {
-        privateMessages.keys.map { peerKey ->
+    val pmConversationUsers: List<Pair<String, String>> by remember {
+        derivedStateOf { privateMessages.keys.map { peerKey ->
             val name = users.find { it.uid == peerKey }?.nickname
                 ?: privateMessages[peerKey]?.lastOrNull { !it.isMe }?.sender
                 // A conversation that never resolved to a uid (the peer was not in
@@ -271,7 +273,7 @@ fun ServerScreen(
                     peerKey
                 }
             peerKey to name
-        }
+        } }
     }
 
 
@@ -299,18 +301,14 @@ fun ServerScreen(
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
-    val whisperSelectedMembers = whisperTargets.clients.map { key ->
-        key to (users.firstOrNull { PrivateConversations.keyFor(it.uid, it.id) == key }?.nickname
-            ?: context.getString(R.string.whisper_target_offline))
-    }
-
     // This screen's own body reads none of the chat's or the panels' state: the effects below
-    // follow it through snapshotFlow, and the sections that show it read it themselves. A tab
-    // switch, a fold or an opened panel then recomposes those, not the whole screen.
+    // follow it through snapshotFlow, and the sections that show it read it themselves, each in
+    // its own scope (see OwnScope). A tab switch, a fold, an opened panel or someone talking then
+    // recomposes those, not the whole screen.
 
     // The chat's Files tab: back goes up a folder, and from the top back to the channel's chat
     @Composable
-    fun FilesBack() {
+    fun FilesBack() = OwnScope {
         BackHandler(enabled = chatTab == FILES_TAB) {
             if (currentFilePath != "/") viewModel.navigateUp() else chatTab = 0
         }
@@ -323,10 +321,11 @@ fun ServerScreen(
             if (!showFiles && viewModel.fileManagerOpen.value) viewModel.closeFileManager()
         }
     }
-    // A folded chat must not keep the keyboard up for its hidden input
+    // A folded chat must not keep the keyboard up for its hidden input, nor the Files tab for the
+    // input of the chat kept under it
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) {
-        snapshotFlow { chatOpen }.collect { open -> if (!open) focusManager.clearFocus() }
+        snapshotFlow { chatOpen && chatTab != FILES_TAB }.collect { typing -> if (!typing) focusManager.clearFocus() }
     }
 
     // Sync chat state to ViewModel for unread tracking
@@ -347,16 +346,17 @@ fun ServerScreen(
 
     // The server renames a client whose nickname is taken (ushummu → ushummu1). Say so once, when
     // our own name first shows up, or the user cannot tell which row is theirs.
-    val selfNickname = users.firstOrNull { it.id == viewModel.myClientId }?.nickname
-    LaunchedEffect(selfNickname) {
-        if (selfNickname == null) return@LaunchedEffect
-        val requested = viewModel.requestedNickname
-        if (requested != null && requested != selfNickname && viewModel.takeNicknameNotice()) {
-            Toast.makeText(
-                context,
-                context.getString(R.string.nickname_taken, requested, selfNickname),
-                Toast.LENGTH_LONG,
-            ).show()
+    LaunchedEffect(Unit) {
+        snapshotFlow { users.firstOrNull { it.id == viewModel.myClientId }?.nickname }.collect { selfNickname ->
+            if (selfNickname == null) return@collect
+            val requested = viewModel.requestedNickname
+            if (requested != null && requested != selfNickname && viewModel.takeNicknameNotice()) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.nickname_taken, requested, selfNickname),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
         }
     }
     val serverAddressLabel by viewModel.serverAddressLabel.collectAsStateWithLifecycle()
@@ -377,7 +377,10 @@ fun ServerScreen(
             groups = serverGroups,
             // Spacer channels are decoration, not destinations: nobody sits in them.
             channels = channels.filter { parseSpacer(it.name) == null },
-            selectedMembers = whisperSelectedMembers,
+            selectedMembers = whisperTargets.clients.map { key ->
+                key to (users.firstOrNull { PrivateConversations.keyFor(it.uid, it.id) == key }?.nickname
+                    ?: context.getString(R.string.whisper_target_offline))
+            },
             membersOfGroup = { groupId -> viewModel.onlineMembersOfGroup(groupId) },
             onToggleGroup = { groupId ->
                 // A group is one entry, so the cap only refuses a full list.
@@ -512,8 +515,8 @@ fun ServerScreen(
 
     // The chat reads its tab, its conversation and its text here, so they recompose it alone
     @Composable
-    fun ChatSection(modifier: Modifier) {
-        val pmTarget = pmTargetUid?.let { uid -> users.find { it.uid == uid } }
+    fun ChatSection(modifier: Modifier) = OwnScope {
+        val pmTarget by remember { derivedStateOf { pmTargetUid?.let { uid -> users.find { it.uid == uid } } } }
         ChatPanel(
             recipientName = pmTarget?.nickname
                 ?: pmConversationUsers.firstOrNull { it.first == pmTargetUid }?.second,
@@ -590,7 +593,7 @@ fun ServerScreen(
             },
             onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
             isWhisperActive = whisperHasTargets,
-            whisperTargetName = whisperLabel,
+            whisperTargetName = whisperTargetLabel(whisperTargets, users, channels, serverGroups),
             voiceRecordingSince = voiceRecordingSince,
             onStartVoiceMessage = { viewModel.startVoiceMessage(chatTab == 1, pmTargetUid) },
             onFinishVoiceMessage = { send -> viewModel.finishVoiceMessage(send) },
@@ -598,7 +601,7 @@ fun ServerScreen(
     }
 
     @Composable
-    fun VoiceSection() {
+    fun VoiceSection() = OwnScope {
         VoiceBar(
             state = voiceState(),
             modifier = Modifier.fillMaxWidth(),
@@ -846,8 +849,8 @@ fun ServerScreen(
             }
             // Its own scope, so the fold states it reads recompose only the handle
             @Composable
-            fun Handle() {
-                if (!(channelsOpen && chatOpen)) return
+            fun Handle() = OwnScope {
+                if (!(channelsOpen && chatOpen)) return@OwnScope
                 val handleHalfPx = with(density) { (BorderHandleHeight / 2).toPx() }
                 BorderHandle(
                     modifier = Modifier
@@ -1035,11 +1038,17 @@ fun ChatPanel(
             )
         },
     ) {
-            if (chatTab == FILES_TAB) {
-                files()
-            } else Column(
+            // Each tab stays built once shown, and only the current one is placed: switching back
+            // then shows a tab instead of building all of its messages again in one frame
+            val builtTabs = remember { BooleanArray(3) }
+            builtTabs[chatTab] = true
+            fun built(tab: Int) = builtTabs[tab]
+            Box(Modifier.fillMaxSize()) {
+            if (built(FILES_TAB)) Box(Modifier.fillMaxSize().placedIf(chatTab == FILES_TAB)) { files() }
+            if (built(0) || built(1)) Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .placedIf(chatTab != FILES_TAB)
                     .padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
             ) {
                 // PM conversation selector
@@ -1068,27 +1077,12 @@ fun ChatPanel(
                     }
                 }
 
-                // Messages
-                val messages = when (chatTab) {
-                    0 -> channelMessages
-                    1 -> privateMessages
-                    else -> emptyList()
-                }
                 // Swipe left/right to switch between the channel and the private tabs, like the app's
                 // other tab hosts. Only horizontal drags are claimed, so the list still scrolls
                 // vertically; a swipe of 48dp switches, anything shorter does nothing.
                 var swipeDrag by remember { mutableFloatStateOf(0f) }
                 val swipeThreshold = with(LocalDensity.current) { 48.dp.toPx() }
-                ChatView(
-                    messages = messages,
-                    showLinkThumbnails = showLinkThumbnails,
-                    autoLoadImages = autoLoadImages,
-                    onDownload = onDownload,
-                    emptyText = when {
-                        chatTab == 0 -> stringResource(R.string.chat_empty_channel)
-                        recipientName != null -> stringResource(R.string.chat_empty_private_with, recipientName)
-                        else -> stringResource(R.string.chat_empty_private)
-                    },
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -1105,7 +1099,25 @@ fun ChatPanel(
                                 else if (travelled > swipeThreshold && chatTab == 1) onTabChange(0)
                             },
                         ),
-                )
+                ) {
+                    // The channel's messages and the private ones, each with its own scroll position
+                    for (tab in 0..1) {
+                        if (!built(tab)) continue
+                        key(tab) { ChatView(
+                            messages = if (tab == 0) channelMessages else privateMessages,
+                            showLinkThumbnails = showLinkThumbnails,
+                            autoLoadImages = autoLoadImages,
+                            onDownload = onDownload,
+                            emptyText = when {
+                                tab == 0 -> stringResource(R.string.chat_empty_channel)
+                                recipientName != null -> stringResource(R.string.chat_empty_private_with, recipientName)
+                                else -> stringResource(R.string.chat_empty_private)
+                            },
+                            // Remembered: a new modifier would recompose the hidden list as well
+                            modifier = remember(chatTab == tab) { Modifier.placedIf(chatTab == tab) },
+                        ) }
+                    }
+                }
 
                 Spacer(Modifier.height(Spacing.Gap))
                 // While whispering, a banner above the input says who the text goes to
@@ -1133,6 +1145,7 @@ fun ChatPanel(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            }
     }
 }
 
@@ -1152,6 +1165,19 @@ private enum class ChannelsView { LIST, STREAM }
 
 /** How tall the strip that takes a drag on the border between two islands is. */
 private val BorderHandleHeight = 24.dp
+
+/** Measured, but placed (and so drawn and touchable) only when [placed]: kept ready to show. */
+private fun Modifier.placedIf(placed: Boolean) = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) { if (placed) placeable.place(0, 0) }
+}
+
+/**
+ * Runs [content] in a recompose scope of its own. A local composable function has none: the
+ * state it reads recomposes the function it is declared in.
+ */
+@Composable
+private fun OwnScope(content: @Composable () -> Unit) = content()
 
 /**
  * The border between the channels and the chat: drag it to share the room differently. It reaches
