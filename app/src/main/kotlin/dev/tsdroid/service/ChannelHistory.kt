@@ -2,6 +2,7 @@ package dev.tsdroid.service
 
 import android.util.Log
 import dev.tsdroid.bridge.TsClient
+import dev.tsdroid.data.CommandParts
 import dev.tsdroid.data.HistorySync
 import dev.tsdroid.data.MessageStore
 import dev.tsdroid.viewmodel.ChatMessage
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
 
 /**
  * The channel chat of the server we are connected to, kept by the connection itself: it records
@@ -58,6 +60,9 @@ class ChannelHistory(
     /** One history command at a time, a second apart, so the server's flood protection never trips */
     private val sends = Mutex()
 
+    /** Commands too long for the server arrive in parts (see [CommandParts]) */
+    private val parts = CommandParts.Assembler()
+
     init {
         // Each connection: the server's history, then a request for what others have that we lack
         scope.launch {
@@ -74,7 +79,13 @@ class ChannelHistory(
         scope.launch { client.chatEvents.collect(::onChatEvent) }
         scope.launch {
             client.events.collect { event ->
-                if (event.type == "plugin_command" && event.data["name"] == HistorySync.COMMAND) onSyncCommand(event)
+                if (event.type != "plugin_command") return@collect
+                val data = event.data["data"] as? String ?: return@collect
+                val invokerId = (event.data["invoker_id"] as? Number)?.toInt() ?: return@collect
+                when (event.data["name"]) {
+                    HistorySync.COMMAND -> onSyncCommand(invokerId, data)
+                    HistorySync.PART_COMMAND -> parts.add(invokerId, data)?.let { onSyncCommand(invokerId, it) }
+                }
             }
         }
     }
@@ -149,20 +160,35 @@ class ChannelHistory(
         sends.withLock {
             for (channelId in channelIds) {
                 sendRequest(channelId, target = -1, back = false)
-                delay(HistorySync.CHUNK_INTERVAL_MS)
             }
         }
     }
 
-    private fun sendRequest(channelId: Long, target: Int, back: Boolean) {
+    /** Sends our summary of [channelId], then waits out the gap the next command needs. */
+    private suspend fun sendRequest(channelId: Long, target: Int, back: Boolean) {
         val now = System.currentTimeMillis()
         val summary = HistorySync.summary(_messages.value.filter { it.channelId == channelId }, now, myUid())
-        client.sendPluginCommand(HistorySync.COMMAND, HistorySync.request(channelId, now, summary, back), target)
+        send(HistorySync.request(channelId, now, summary, back), target)
     }
 
-    private fun onSyncCommand(event: Event) {
-        val data = event.data["data"] as? String ?: return
-        val invokerId = (event.data["invoker_id"] as? Number)?.toInt() ?: return
+    /**
+     * Sends one history command to [target] (-1: everyone), in parts when it is too long for the
+     * server, each followed by the gap the server's flood protection needs. Called holding [sends].
+     */
+    private suspend fun send(data: String, target: Int) {
+        if (CommandParts.fits(data)) {
+            client.sendPluginCommand(HistorySync.COMMAND, data, target)
+            delay(HistorySync.CHUNK_INTERVAL_MS)
+            return
+        }
+        for (part in CommandParts.split(data, Random.nextInt(Int.MAX_VALUE))) {
+            if (!client.isConnected) return
+            client.sendPluginCommand(HistorySync.PART_COMMAND, part, target)
+            delay(HistorySync.CHUNK_INTERVAL_MS)
+        }
+    }
+
+    private fun onSyncCommand(invokerId: Int, data: String) {
         when (val command = HistorySync.parse(data)) {
             is HistorySync.Command.Request -> answer(invokerId, command)
             is HistorySync.Command.Messages -> {
@@ -193,12 +219,10 @@ class ChannelHistory(
                 val missing = HistorySync.missing(mine, request.summary, request.now, me.uid)
                 for (reply in HistorySync.replies(channel.id, missing, me.nickname, me.uid)) {
                     if (!client.isConnected) return@withLock
-                    client.sendPluginCommand(HistorySync.COMMAND, reply, requesterId)
-                    delay(HistorySync.CHUNK_INTERVAL_MS)
+                    send(reply, requesterId)
                 }
                 if (!request.back && HistorySync.hasMore(mine, request.summary, request.now, me.uid)) {
                     sendRequest(channel.id, target = requesterId, back = true)
-                    delay(HistorySync.CHUNK_INTERVAL_MS)
                 }
             }
         }

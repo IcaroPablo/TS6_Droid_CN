@@ -20,7 +20,8 @@ import kotlin.math.abs
  * a client that stays connected (a recorder) gets what only the asker had.
  *
  * Everything travels as plugin commands: hidden data the server passes between clients, encrypted
- * like the rest of the connection, which other TeamSpeak clients ignore.
+ * like the rest of the connection, which other TeamSpeak clients ignore. One longer than the
+ * server passes on goes in parts, under [PART_COMMAND] (see [CommandParts]).
  *
  * - Request: `{"v":1,"op":"req","c":<channel id>,"now":<ms>,"d":{"<period>":"<count>:<checksum>",...}}`,
  *   to everyone, or with `"back":true` to the one client whose request showed it lacks something
@@ -36,6 +37,10 @@ object HistorySync {
 
     /** The plugin command's name: what tells these apart from other clients' commands */
     const val COMMAND = "telespeak.history"
+
+    /** A part of a command too long for the server to pass on whole (see [CommandParts]) */
+    const val PART_COMMAND = "telespeak.history.part"
+
     private const val VERSION = 1
 
     /** Days compared one by one; older history is compared 30 days at a time */
@@ -46,7 +51,7 @@ object HistorySync {
     /** Two copies of a message are stamped this close at most, by two phones' clocks. */
     private const val SAME_MESSAGE_WINDOW_MS = 2 * 60 * 1000L
 
-    /** A reply's size: commands this long still go through, a few kB each. */
+    /** A reply's size, before it is cut into the parts the server passes on (see [CommandParts]). */
     private const val CHUNK_CHARS = 4000
 
     /** Between two replies: the server blocks a client that sends commands faster. */
