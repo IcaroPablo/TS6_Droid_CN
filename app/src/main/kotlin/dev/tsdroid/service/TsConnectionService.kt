@@ -520,6 +520,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                     silenceForRecording()
                 } else if (!audioBridge.isCapturing.value) {
                     audioBridge.startCapture(noiseSuppressionSetting())
+                    tsClient.setInputMuted(audioBridge.reportsInputMuted)
                 }
             }
             .launchIn(serviceScope)
@@ -973,7 +974,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
             // Sync initial mute state with server. Forced: a fresh connection
             // starts unmuted server-side even when our local state did not change.
-            if (audioBridge.isMuted.value) {
+            if (recording || audioBridge.reportsInputMuted) {
                 tsClient.setInputMuted(true, force = true)
             }
             if (audioBridge.isOutputMuted.value) {
@@ -1010,6 +1011,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     /** A recorder only reads: the microphone is off and closed, and the speakers off. */
     private fun silenceForRecording() {
         audioBridge.setMuted(true)
+        // Told directly: in push to talk a plain mute is not shown to the others
+        tsClient.setInputMuted(true)
         audioBridge.setOutputMuted(true)
         audioBridge.stopCapture()
     }
@@ -1020,6 +1023,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         val state = runCatching { settings.joinVoiceState.first() }.getOrDefault(JoinVoiceState.DEAFENED)
         val micMode = runCatching { settings.micMode.first() }.getOrDefault(MicMode.PTT)
         audioBridge.setOutputMuted(state == JoinVoiceState.DEAFENED)
+        // The view model sets the mode too, but it may not be bound yet
+        audioBridge.setMicMode(micMode)
         audioBridge.setMuted(state != JoinVoiceState.NORMAL || micMode == MicMode.PTT)
     }
 

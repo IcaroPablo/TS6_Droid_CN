@@ -262,6 +262,7 @@ class AudioBridge(
     fun setMicMode(mode: MicMode) {
         micMode = mode
         vadGate.reset()
+        tsClient.setInputMuted(reportsInputMuted)
     }
 
     fun setVadThresholdDb(db: Float) {
@@ -1128,8 +1129,17 @@ class AudioBridge(
 
     fun setMuted(muted: Boolean) {
         _isMuted.value = muted
-        tsClient.setInputMuted(muted)
+        tsClient.setInputMuted(reportsInputMuted)
     }
+
+    /**
+     * Whether the server is told the microphone is muted. Push to talk's resting state is not a
+     * mute: reporting it showed a muted microphone on our row the whole time, even while the
+     * button was held, as the desktop client never does, and sent a command on every press.
+     * Only a mute the user chose (or do not disturb) is one.
+     */
+    val reportsInputMuted: Boolean
+        get() = forcedMuted || (_isMuted.value && micMode != MicMode.PTT)
 
     fun toggleMute() {
         val newState = !_isMuted.value
@@ -1138,7 +1148,7 @@ class AudioBridge(
         // (bottom bar, stream viewer, floating window, notification) comes through here.
         if (!newState && _isOutputMuted.value) setOutputMuted(false)
         _isMuted.value = newState
-        tsClient.setInputMuted(newState)
+        tsClient.setInputMuted(reportsInputMuted)
     }
 
     /**
@@ -1151,7 +1161,7 @@ class AudioBridge(
      */
     fun setForcedMuted(muted: Boolean) {
         forcedMuted = muted
-        if (muted) setMuted(true)
+        if (muted) setMuted(true) else tsClient.setInputMuted(reportsInputMuted)
     }
 
     // Mute state to restore when a hold-to-whisper press ends; null = no hold is
