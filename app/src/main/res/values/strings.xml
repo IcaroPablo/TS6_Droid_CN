@@ -216,6 +216,7 @@
     <string name="error_not_connected">Not connected to the server</string>
     <string name="download_failed">Download failed</string>
     <string name="private_send_peer_offline">Not sent: this person is no longer on the server</string>
+    <string name="private_sent_offline">They are offline: left in their mailbox on the server</string>
 
 
     <!-- Crash report overlay -->

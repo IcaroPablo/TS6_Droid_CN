@@ -43,6 +43,7 @@ import dev.tslib.ConnectionState
 import dev.tslib.Event
 import dev.tslib.ServerInfo
 import dev.tslib.User
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -157,6 +158,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     companion object {
         private const val TAG = "ServerViewModel"
         private const val PENDING_ECHO_WINDOW_MS = 5000L
+
+        /** An offline message's subject: its first line, at most this long */
+        private const val OFFLINE_SUBJECT_CHARS = 40
         // Each watched stream is a video decoder and a connection of its own
         const val MAX_WATCHED_STREAMS = 4
     }
@@ -660,7 +664,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 service.tsClient.state.collect { state ->
                     _connectionState.value = state
                     // A connect to another server can reuse this client without a rebind
-                    if (state == ConnectionState.CONNECTED) followServerAddress()
+                    if (state == ConnectionState.CONNECTED) {
+                        followServerAddress()
+                        // What was left in our mailbox while we were away (see onOfflineMessage)
+                        service.tsClient.requestOfflineMessages()
+                    }
                     // The status survives a dropout on purpose: TsClient remembers
                     // it and pushes it again on the next connection, which is what
                     // the desktop client does too. Only an explicit disconnect
@@ -806,6 +814,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     _talkingUserIds.value = _talkingUserIds.value - userId
                     _whisperTalkingUserIds.value = _whisperTalkingUserIds.value - userId
                 }
+                "offline_message_listed" -> {
+                    // The list carries no text: each unread one is fetched on its own
+                    if (event.data["read"] == true) return
+                    val id = (event.data["message_id"] as? Number)?.toLong() ?: return
+                    tsClient?.getOfflineMessage(id)
+                }
+                "offline_message" -> onOfflineMessage(event)
                 "text_message" -> {
                     try {
                         // Safely extract message data with null checks
@@ -978,7 +993,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         // Resolves a stale legacy key onto the peer's uid, or refuses the send
         // rather than delivering to whoever now holds that client id.
         val resolvedKey = resolvePeerKey(peerKey) ?: run {
-            Log.w(TAG, "Cannot send private message: peer is not reachable")
+            // Someone known by their uid but not connected: left in their mailbox on the server
+            if (!PrivateConversations.isLegacy(peerKey)) sendOfflineMessage(peerKey, text)
+            else Log.w(TAG, "Cannot send private message: peer is not reachable")
             return
         }
         val clientId = clientIdForPeerKey(resolvedKey) ?: return
@@ -1425,6 +1442,64 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 scheduleSave()
             }
         }
+    }
+
+    /**
+     * Leaves [text] in the offline mailbox of [peerKey] (a uid), which the server keeps until they
+     * read it: TeleSpeak files it into this conversation when they connect, and other clients show
+     * it as an offline message. A server that refuses (no right to send offline messages) answers
+     * with a command error, which takes the message back out like any refused send.
+     */
+    private fun sendOfflineMessage(peerKey: String, text: String) {
+        val client = tsClient ?: return
+        // Mailboxes list messages by subject: the first line, cut short
+        val subject = text.lineSequence().first().take(OFFLINE_SUBJECT_CHARS)
+        client.sendOfflineMessage(peerKey, subject, text)
+        val msg = ChatMessage(
+            sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true, isPrivate = true,
+        )
+        val current = _privateMessages.value.toMutableMap()
+        current[peerKey] = (current[peerKey] ?: emptyList()) + msg
+        _privateMessages.value = current
+        pendingOwnEchoes.addLast(PendingEcho("private", peerKey, text, System.currentTimeMillis()))
+        Toast.makeText(getApplication(), R.string.private_sent_offline, Toast.LENGTH_SHORT).show()
+        scheduleSave()
+    }
+
+    /**
+     * An offline message fetched from our mailbox: filed into the conversation with its sender,
+     * then marked read on the server so the next connection does not fetch it again.
+     */
+    private fun onOfflineMessage(event: Event) {
+        val id = (event.data["message_id"] as? Number)?.toLong() ?: return
+        val uid = (event.data["sender_uid"] as? String)?.takeIf { it.isNotBlank() } ?: return
+        val raw = event.data["message"] as? String ?: return
+        val timestamp = ((event.data["timestamp"] as? Number)?.toLong() ?: 0L)
+            .takeIf { it > 0 }?.let { it * 1000 } ?: System.currentTimeMillis()
+        followServerAddress()
+        val attachment = if (raw.length > 10000) null else parseFileAttachment(raw)
+        val text = attachment?.fileName ?: raw.replace("\u0000", "").trim()
+        val existing = _privateMessages.value[uid].orEmpty()
+        // The name they had, if they are on now or wrote before; the mailbox only gives the uid
+        val sender = _rawUsers.value.firstOrNull { it.uid == uid }?.nickname
+            ?: existing.lastOrNull { !it.isMe }?.sender
+            ?: uid.take(8)
+        // Fetched once more if marking it read did not reach the server: kept only once
+        val known = existing.any { !it.isMe && it.text == text && abs(it.timestamp - timestamp) < 60_000 }
+        if (!known) {
+            val msg = ChatMessage(
+                sender = sender, text = text, timestamp = timestamp, isPrivate = true,
+                fileAttachment = attachment, senderUid = uid,
+            )
+            _privateMessages.value = _privateMessages.value.toMutableMap().apply {
+                put(uid, (existing + msg).sortedBy { it.timestamp })
+            }
+            if (!isChatOpen || activeChatTab != 1 || activePmPeerKey != uid) {
+                _unreadPrivate.value = _unreadPrivate.value.toMutableMap().apply { put(uid, (get(uid) ?: 0) + 1) }
+            }
+            scheduleSave()
+        }
+        tsClient?.markOfflineMessageRead(id)
     }
 
     private fun toastPeerOffline() {

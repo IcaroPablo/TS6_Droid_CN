@@ -403,7 +403,8 @@ class TsClient {
                         val events = c.processEvents() ?: emptyArray()
                         for (event in events) {
                             when (event.type) {
-                                "text_message" -> _chatEvents.tryEmit(event)
+                                // The offline mailbox's messages are private messages too
+                                "text_message", "offline_message_listed", "offline_message" -> _chatEvents.tryEmit(event)
                                 "stream_join_response", "stream_signaling" -> _streamSignals.tryEmit(event)
                                 else -> _events.tryEmit(event)
                             }
@@ -686,6 +687,33 @@ class TsClient {
     fun sendServerMessage(msg: String) {
         launchNativeCommand("sendServerMessage") {
             this.sendServerMessage(msg)
+        }
+    }
+
+    /** Leave [msg] in the offline mailbox of [uid], for someone who is not connected. */
+    fun sendOfflineMessage(uid: String, subject: String, msg: String) {
+        launchNativeCommand("sendOfflineMessage") {
+            this.sendOfflineMessage(uid, subject, msg)
+        }
+    }
+
+    /** Ask for our offline mailbox's list: `offline_message_listed` events on [chatEvents]. */
+    fun requestOfflineMessages() {
+        launchNativeCommand("requestOfflineMessages") {
+            this.requestOfflineMessages()
+        }
+    }
+
+    /** Fetch one offline message: an `offline_message` event on [chatEvents]. */
+    fun getOfflineMessage(messageId: Long) {
+        launchNativeCommand("getOfflineMessage") {
+            this.getOfflineMessage(messageId)
+        }
+    }
+
+    fun markOfflineMessageRead(messageId: Long) {
+        launchNativeCommand("markOfflineMessageRead") {
+            this.markOfflineMessageRead(messageId)
         }
     }
 

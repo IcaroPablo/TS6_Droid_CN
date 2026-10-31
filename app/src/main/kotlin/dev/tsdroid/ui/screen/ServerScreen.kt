@@ -599,6 +599,7 @@ fun ServerScreen(
             messageText = messageText,
             onMessageChange = { messageText = it },
             pmTarget = pmTarget,
+            pmTargetKey = pmTargetUid,
             pmConversationUsers = pmConversationUsers,
             onSelectPmUser = { uid -> pmTargetUid = uid },
             onClearPmTarget = { pmTargetUid = null },
@@ -1061,7 +1062,11 @@ fun ChatPanel(
     latestMessage: ChatMessage?,
     messageText: String,
     onMessageChange: (String) -> Unit,
+    /** The chosen person while they are connected */
     pmTarget: User?,
+    /** The chosen conversation's key (a uid), whether or not they are connected: someone offline
+     *  can still be written to, the message waits in their mailbox on the server */
+    pmTargetKey: String?,
     pmConversationUsers: List<Pair<String, String>>,
     onSelectPmUser: (String) -> Unit,
     onClearPmTarget: () -> Unit,
@@ -1150,14 +1155,14 @@ fun ChatPanel(
                     ) {
                         ChoicePill(
                             label = stringResource(R.string.filter_all),
-                            selected = pmTarget == null,
+                            selected = pmTargetKey == null,
                             onClick = onClearPmTarget,
                         )
                         // One pill per conversation peer (keyed by uid)
                         pmConversationUsers.forEach { (peerKey, nickname) ->
                             ChoicePill(
                                 label = nickname,
-                                selected = pmTarget?.uid == peerKey,
+                                selected = pmTargetKey == peerKey,
                                 onClick = { onSelectPmUser(peerKey) },
                                 unread = unreadPrivatePerUser[peerKey] ?: 0,
                             )
@@ -1223,14 +1228,15 @@ fun ChatPanel(
                         isWhisperActive && whisperTargetName != null ->
                             stringResource(R.string.whisper_placeholder, whisperTargetName)
                         chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
-                        pmTarget == null -> stringResource(R.string.message_private_no_recipient)
-                        else -> stringResource(R.string.message_private_placeholder, pmTarget.nickname)
+                        pmTargetKey == null -> stringResource(R.string.message_private_no_recipient)
+                        else -> stringResource(R.string.message_private_placeholder, recipientName ?: "")
                     },
                     onSend = onSend,
                     whisperTargetName = whisperTargetName.takeIf { isWhisperActive },
-                    enabled = chatTab == 0 || pmTarget != null || isWhisperActive,
+                    enabled = chatTab == 0 || pmTargetKey != null || isWhisperActive,
                     onAttach = pickUpload.takeIf { canUploadFiles },
-                    // A file goes to the channel or to the chosen person, never to whisper targets
+                    // A file goes to the channel or to the chosen person, never to whisper targets,
+                    // and only to someone connected: a mailbox takes text alone
                     attachEnabled = chatTab == 0 || pmTarget != null,
                     // A voice message is a file: it needs the same right to upload, and goes where
                     // a file would, never to whisper targets
