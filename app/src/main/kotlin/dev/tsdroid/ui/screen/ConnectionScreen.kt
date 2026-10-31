@@ -177,8 +177,15 @@ fun ConnectionScreen(
     // Each tab is a page; tapping a tab animates the pager, swiping it moves the selection.
     // An automatic reconnect keeps the server's tab, which shows its progress
     var reconnecting by remember { mutableStateOf(false) }
+    // A session the service already runs counts from the first frame, until this screen has seen
+    // it (or seen it end): the pager, rebuilt with the server's tab as its saved page, was cut back
+    // to the last of two tabs meanwhile, so a reopened app showed Settings
+    var sessionAtStart by remember { mutableStateOf(TsConnectionService.instance?.hasActiveConnection() == true) }
+    LaunchedEffect(connectionState) {
+        if (connectionState == ConnectionState.CONNECTED) sessionAtStart = false
+    }
     val pagerState = rememberPagerState(
-        pageCount = { if (connectionState == ConnectionState.CONNECTED || reconnecting) 3 else 2 },
+        pageCount = { if (connectionState == ConnectionState.CONNECTED || reconnecting || sessionAtStart) 3 else 2 },
     )
     // Connecting opens the server's tab; it appears once the session is up, so the request waits
     var serverTabRequested by remember { mutableStateOf(false) }
@@ -230,6 +237,7 @@ fun ConnectionScreen(
             if (service == null) {
                 // Stopping, it lets go of itself before its client reports the end
                 reconnecting = false
+                sessionAtStart = false
                 viewModel.observeServiceState(ConnectionState.DISCONNECTED)
                 return@collectLatest
             }
