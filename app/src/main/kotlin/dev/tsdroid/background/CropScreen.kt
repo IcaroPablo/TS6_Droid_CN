@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -59,8 +60,8 @@ fun CropScreen(
 
     LaunchedEffect(imageWidth, imageHeight) {
         if (imageWidth > 0 && imageHeight > 0 && cropW == 0f) {
-            cropW = imageWidth * 0.8f
-            cropH = imageWidth * 0.8f
+            cropW = minOf(imageWidth, imageHeight) * 0.8f
+            cropH = cropW
             cropOffset = Offset((imageWidth - cropW) / 2f, (imageHeight - cropH) / 2f)
         }
     }
@@ -123,39 +124,44 @@ fun CropScreen(
                             }
                         }
                 ) {
-                    imageWidth = size.width
-                    imageHeight = size.height
+                    // Fitted whole and centred: filling the canvas stretched the photo out of shape
+                    val fit = minOf(size.width / bitmap.width, size.height / bitmap.height)
+                    imageWidth = bitmap.width * fit
+                    imageHeight = bitmap.height * fit
+                    val imageOrigin = Offset((size.width - imageWidth) / 2f, (size.height - imageHeight) / 2f)
                     if (cropW <= 0f) return@Canvas
 
-                    drawImage(imageBitmap, dstSize = androidx.compose.ui.unit.IntSize(size.width.roundToInt(), size.height.roundToInt()))
-                    drawRect(color = Color.Black.copy(alpha = 0.4f))
+                    // The crop is kept in the fitted image's coordinates
+                    translate(imageOrigin.x, imageOrigin.y) {
+                        drawImage(imageBitmap, dstSize = androidx.compose.ui.unit.IntSize(imageWidth.roundToInt(), imageHeight.roundToInt()))
+                        drawRect(color = Color.Black.copy(alpha = 0.4f), size = Size(imageWidth, imageHeight))
 
-                    val sx = bitmap.width.toFloat() / size.width
-                    val sy = bitmap.height.toFloat() / size.height
-                    drawImage(
-                        imageBitmap,
-                        srcOffset = androidx.compose.ui.unit.IntOffset((cropOffset.x * sx).roundToInt().coerceAtLeast(0), (cropOffset.y * sy).roundToInt().coerceAtLeast(0)),
-                        srcSize = androidx.compose.ui.unit.IntSize((cropW * sx).roundToInt().coerceAtLeast(1), (cropH * sy).roundToInt().coerceAtLeast(1)),
-                        dstOffset = androidx.compose.ui.unit.IntOffset(cropOffset.x.roundToInt(), cropOffset.y.roundToInt()),
-                        dstSize = androidx.compose.ui.unit.IntSize(cropW.roundToInt(), cropH.roundToInt())
-                    )
+                        val scale = bitmap.width.toFloat() / imageWidth
+                        drawImage(
+                            imageBitmap,
+                            srcOffset = androidx.compose.ui.unit.IntOffset((cropOffset.x * scale).roundToInt().coerceAtLeast(0), (cropOffset.y * scale).roundToInt().coerceAtLeast(0)),
+                            srcSize = androidx.compose.ui.unit.IntSize((cropW * scale).roundToInt().coerceAtLeast(1), (cropH * scale).roundToInt().coerceAtLeast(1)),
+                            dstOffset = androidx.compose.ui.unit.IntOffset(cropOffset.x.roundToInt(), cropOffset.y.roundToInt()),
+                            dstSize = androidx.compose.ui.unit.IntSize(cropW.roundToInt(), cropH.roundToInt())
+                        )
 
-                    drawRect(color = Color.White, topLeft = cropOffset, size = Size(cropW, cropH), style = Stroke(width = 2.dp.toPx()))
+                        drawRect(color = Color.White, topLeft = cropOffset, size = Size(cropW, cropH), style = Stroke(width = 2.dp.toPx()))
 
-                    for (i in 1..2) {
-                        val lx = cropOffset.x + cropW * i / 3f
-                        drawLine(Color.White.copy(alpha = 0.35f), Offset(lx, cropOffset.y), Offset(lx, cropOffset.y + cropH), strokeWidth = 1.dp.toPx())
-                        val ly = cropOffset.y + cropH * i / 3f
-                        drawLine(Color.White.copy(alpha = 0.35f), Offset(cropOffset.x, ly), Offset(cropOffset.x + cropW, ly), strokeWidth = 1.dp.toPx())
+                        for (i in 1..2) {
+                            val lx = cropOffset.x + cropW * i / 3f
+                            drawLine(Color.White.copy(alpha = 0.35f), Offset(lx, cropOffset.y), Offset(lx, cropOffset.y + cropH), strokeWidth = 1.dp.toPx())
+                            val ly = cropOffset.y + cropH * i / 3f
+                            drawLine(Color.White.copy(alpha = 0.35f), Offset(cropOffset.x, ly), Offset(cropOffset.x + cropW, ly), strokeWidth = 1.dp.toPx())
+                        }
+
+                        val hs = 16.dp.toPx()
+                        listOf(
+                            cropOffset,
+                            Offset(cropOffset.x + cropW, cropOffset.y),
+                            Offset(cropOffset.x, cropOffset.y + cropH),
+                            Offset(cropOffset.x + cropW, cropOffset.y + cropH)
+                        ).forEach { drawCircle(Color.White, radius = hs / 2, center = it) }
                     }
-
-                    val hs = 16.dp.toPx()
-                    listOf(
-                        cropOffset,
-                        Offset(cropOffset.x + cropW, cropOffset.y),
-                        Offset(cropOffset.x, cropOffset.y + cropH),
-                        Offset(cropOffset.x + cropW, cropOffset.y + cropH)
-                    ).forEach { drawCircle(Color.White, radius = hs / 2, center = it) }
                 }
             }
 

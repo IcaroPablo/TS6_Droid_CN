@@ -618,6 +618,11 @@ fun ServerScreen(
 
     @Composable
     fun VoiceSection() = OwnScope {
+        // Back folds an open panel away before it leaves the tab
+        BackHandler(enabled = (awaySheetOpen || whisperSheetOpen) && isShown()) {
+            awaySheetOpen = false
+            whisperSheetOpen = false
+        }
         VoiceBar(
             state = voiceState(),
             modifier = Modifier.fillMaxWidth(),

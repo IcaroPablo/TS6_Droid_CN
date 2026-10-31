@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.data.AwayStatus
@@ -129,7 +131,11 @@ fun VoiceBar(
             enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
             exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
         ) {
-            shownPanel?.invoke()
+            // At most half the screen: taller, in landscape, it pushed the buttons, and with them
+            // the one that folds it away, off the screen. Its list scrolls within what is left
+            Box(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp / 2).dp)) {
+                shownPanel?.invoke()
+            }
         }
         Row(
             modifier = Modifier
