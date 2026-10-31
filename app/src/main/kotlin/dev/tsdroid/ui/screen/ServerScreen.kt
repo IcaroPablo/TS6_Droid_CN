@@ -69,9 +69,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -246,10 +248,10 @@ fun ServerScreen(
     var pmTargetUid by rememberSaveable { mutableStateOf<String?>(null) }
 
 
-    // 密聊 target list lives in the manager singleton; reading its Compose state
-    // here is what repaints the indicators when a target is added or dropped.
-    val whisperTargets = WhisperManager.targets
-    val whisperHasTargets = whisperTargets.isNotEmpty
+    // 密聊 target list lives in the manager singleton. Delegated, it is read where it is used, so a
+    // target added or dropped repaints those indicators and not the whole screen.
+    val whisperTargets by WhisperManager::targets
+    val whisperHasTargets by WhisperManager::canHold
     var whisperSheetOpen by rememberSaveable { mutableStateOf(false) }
     // Channel waiting for its password (TS3 refuses the move without it).
     var channelPasswordTarget by remember { mutableStateOf<dev.tslib.Channel?>(null) }
@@ -283,12 +285,9 @@ fun ServerScreen(
     }
 
 
-    // Worked out only when the messages change, not on every recomposition (one per talk event)
-    val allPrivateMessages = remember(privateMessages) {
-        privateMessages.values.flatten().sortedBy { it.timestamp }
-    }
-    val latestMessage = remember(channelMessages, allPrivateMessages) {
-        listOfNotNull(channelMessages.lastOrNull(), allPrivateMessages.lastOrNull()).maxByOrNull { it.timestamp }
+    // Derived as well: someone talking changes the users list, but seldom the label
+    val whisperTargetName by remember {
+        derivedStateOf { whisperTargetLabel(context, whisperTargets, users, channels, serverGroups) }
     }
 
     // One entry point for the whisper toggle, shared by the member row's inline
@@ -531,8 +530,16 @@ fun ServerScreen(
 
     // The chat reads its tab, its conversation and its text here, so they recompose it alone
     @Composable
-    fun ChatSection(modifier: Modifier) = OwnScope {
+    fun ChatSection(modifier: Modifier, inputLift: () -> Int) = OwnScope {
         val pmTarget by remember { derivedStateOf { pmTargetUid?.let { uid -> users.find { it.uid == uid } } } }
+        // Worked out here, only when the messages change: a new message then recomposes the chat,
+        // not the whole screen
+        val allPrivateMessages = remember(privateMessages) {
+            privateMessages.values.flatten().sortedBy { it.timestamp }
+        }
+        val latestMessage = remember(channelMessages, allPrivateMessages) {
+            listOfNotNull(channelMessages.lastOrNull(), allPrivateMessages.lastOrNull()).maxByOrNull { it.timestamp }
+        }
         ChatPanel(
             recipientName = pmTarget?.nickname
                 ?: pmConversationUsers.firstOrNull { it.first == pmTargetUid }?.second,
@@ -609,10 +616,11 @@ fun ServerScreen(
             },
             onDownload = { attachment -> viewModel.downloadAttachment(attachment) },
             isWhisperActive = whisperHasTargets,
-            whisperTargetName = whisperTargetLabel(whisperTargets, users, channels, serverGroups),
+            whisperTargetName = whisperTargetName,
             voiceRecordingSince = voiceRecordingSince,
             onStartVoiceMessage = { viewModel.startVoiceMessage(chatTab == 1, pmTargetUid) },
             onFinishVoiceMessage = { send -> viewModel.finishVoiceMessage(send) },
+            inputLift = inputLift,
         )
     }
 
@@ -867,6 +875,11 @@ fun ServerScreen(
                         val placeable = measurable.measure(constraints.copy(minHeight = measured, maxHeight = measured))
                         layout(placeable.width, height) { placeable.place(0, 0) }
                     },
+                // What that cut hides at the bottom: the input is lifted by as much, so it stays
+                // in sight while the chat folds or unfolds
+                inputLift = {
+                    if (chatProgress.isRunning) (chatOpenHeightPx().roundToInt() - chatHeightPx()).coerceAtLeast(0) else 0
+                },
             )
             }
             // Its own scope, so the fold states it reads recompose only the handle
@@ -911,7 +924,8 @@ fun ServerScreen(
     // Full screen, in landscape, when the island's full-screen button asks for it. The choice
     // lives in the view model: rotating recreates the activity.
     val fullscreen = streamSessions.isNotEmpty() && streamLandscape
-    if (fullscreen) {
+    // Its own scope: the voice state it reads changes with every mute
+    if (fullscreen) OwnScope {
         val voiceState = voiceState()
         val watched = streamSessions.map { it.stream.id }.toSet()
         StreamViewer(
@@ -1017,6 +1031,8 @@ fun ChatPanel(
     voiceRecordingSince: Long? = null,
     onStartVoiceMessage: () -> Unit = {},
     onFinishVoiceMessage: (send: Boolean) -> Unit = {},
+    /** How far the input is raised, read while placing: the chat is cut shorter while it folds */
+    inputLift: () -> Int = { 0 },
 ) {
     val pickUpload = rememberUploadPicker(onUploadFile)
     val unread = unreadChannel + unreadPrivateTotal
@@ -1109,6 +1125,13 @@ fun ChatPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
+                        // Cut short by as much as the input is lifted, which would otherwise lie
+                        // over the last messages while the chat folds
+                        .drawWithContent {
+                            val lift = inputLift()
+                            if (lift == 0) drawContent()
+                            else clipRect(bottom = size.height - lift) { this@drawWithContent.drawContent() }
+                        }
                         // The messages' own area, set into the island like a channel's
                         .clip(Shapes.Standard)
                         .background(InsetFill)
@@ -1165,7 +1188,9 @@ fun ChatPanel(
                     recordingSince = voiceRecordingSince,
                     onStartRecording = onStartVoiceMessage.takeIf { canUploadFiles && !isWhisperActive },
                     onFinishRecording = onFinishVoiceMessage,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset { IntOffset(0, -inputLift()) },
                 )
             }
             }
@@ -1268,15 +1293,15 @@ private fun StatusBanner(
  * the list and will be re-applied when it returns. Groups are named from the
  * server's group list and fall back to their id while that list has not arrived.
  */
-@Composable
 private fun whisperTargetLabel(
+    context: Context,
     targets: WhisperTargets,
     users: List<User>,
     channels: List<Channel>,
     groups: List<dev.tslib.ServerGroup>,
 ): String? {
     if (targets.isEmpty) return null
-    val offline = stringResource(R.string.whisper_target_offline)
+    val offline = context.getString(R.string.whisper_target_offline)
     val names = buildList {
         targets.clients.forEach { key ->
             val user = users.firstOrNull { PrivateConversations.keyFor(it.uid, it.id) == key }
@@ -1287,7 +1312,7 @@ private fun whisperTargetLabel(
         }
         targets.groups.forEach { id ->
             val group = groups.firstOrNull { it.id == id }
-            add(group?.name ?: stringResource(R.string.whisper_group_fallback, id))
+            add(group?.name ?: context.getString(R.string.whisper_group_fallback, id))
         }
     }
     return names.joinToString(", ")
