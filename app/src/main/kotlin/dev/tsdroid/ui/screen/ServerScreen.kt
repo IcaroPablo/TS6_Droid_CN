@@ -123,6 +123,7 @@ import dev.tsdroid.ui.component.VoiceBar
 import dev.tsdroid.ui.component.VoiceBarState
 import dev.tsdroid.ui.component.WhisperListSheet
 import dev.tsdroid.ui.component.allowsFile
+import dev.tsdroid.ui.component.chatPattern
 import dev.tsdroid.ui.component.parseSpacer
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.component.rememberKeyboardCrowding
@@ -1191,6 +1192,7 @@ fun ChatPanel(
                         // The messages' own area, set into the island like a channel's
                         .clip(Shapes.Standard)
                         .background(InsetFill)
+                        .chatPattern()
                         .draggable(
                             orientation = Orientation.Horizontal,
                             state = rememberDraggableState { delta -> swipeDrag += delta },
