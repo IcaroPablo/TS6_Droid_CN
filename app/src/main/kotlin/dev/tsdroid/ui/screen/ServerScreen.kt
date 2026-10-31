@@ -122,6 +122,7 @@ import dev.tsdroid.ui.component.UserPanelSheet
 import dev.tsdroid.ui.component.VoiceBar
 import dev.tsdroid.ui.component.VoiceBarState
 import dev.tsdroid.ui.component.WhisperListSheet
+import dev.tsdroid.ui.component.allowsFile
 import dev.tsdroid.ui.component.parseSpacer
 import dev.tsdroid.ui.component.rememberGlassBackdrop
 import dev.tsdroid.ui.component.rememberKeyboardCrowding
@@ -620,7 +621,7 @@ fun ServerScreen(
             unreadPrivatePerUser = unreadPrivate,
             showLinkThumbnails = showLinkThumbnails,
             autoLoadImages = autoLoadImages,
-            canUploadFiles = (channelPermissions and dev.tslib.Channel.PERM_FILE_UPLOAD) != 0L,
+            canUploadFiles = channelPermissions.allowsFile(dev.tslib.Channel.PERM_FILE_UPLOAD),
             onUploadFile = { fileName, data ->
                 viewModel.uploadAndSendFile(fileName, data, chatTab == 1, pmTargetUid)
             },

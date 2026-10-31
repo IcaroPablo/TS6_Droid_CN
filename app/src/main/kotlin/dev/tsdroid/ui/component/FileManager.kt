@@ -110,10 +110,10 @@ fun FileManager(
     // Permission flags — write operations require explicit permission bits.
     // When permissionHints == 0 (server didn't send hints), hide write buttons.
     // Download/browse are always allowed (CommandError toast handles denials).
-    val canUpload = (permissionHints and Channel.PERM_FILE_UPLOAD) != 0L
-    val canDelete = (permissionHints and Channel.PERM_FILE_DELETE) != 0L
-    val canRename = (permissionHints and Channel.PERM_FILE_RENAME) != 0L
-    val canCreateDir = (permissionHints and Channel.PERM_FILE_DIRECTORY_CREATE) != 0L
+    val canUpload = permissionHints.allowsFile(Channel.PERM_FILE_UPLOAD)
+    val canDelete = permissionHints.allowsFile(Channel.PERM_FILE_DELETE)
+    val canRename = permissionHints.allowsFile(Channel.PERM_FILE_RENAME)
+    val canCreateDir = permissionHints.allowsFile(Channel.PERM_FILE_DIRECTORY_CREATE)
     val hasHints = permissionHints != 0L
     val canDownload = !hasHints || (permissionHints and Channel.PERM_FILE_DOWNLOAD) != 0L
 
@@ -529,3 +529,11 @@ private fun formatTimestamp(unixSeconds: Long): String {
         ""
     }
 }
+
+/**
+ * Whether a channel's permission hints allow the file action [bit]. Where the server would not
+ * tell this account its rights, the action is offered and the server decides: hiding it hid what
+ * the account was often allowed to do, and a refusal now says which permission is missing.
+ */
+fun Long.allowsFile(bit: Long): Boolean =
+    (this and bit) != 0L || (this and Channel.PERM_RIGHTS_UNKNOWN) != 0L

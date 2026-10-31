@@ -184,6 +184,17 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private val pendingOwnEchoes = ArrayDeque<PendingEcho>()
 
     /**
+     * The permission the last command that needs one asked the server for, and when: a refusal
+     * soon after names it, so whoever runs the server knows what to grant (see the README).
+     */
+    private class RightNeeded(val permission: String, val at: Long)
+    private var lastRightNeeded: RightNeeded? = null
+
+    private fun needs(permission: String) {
+        lastRightNeeded = RightNeeded(permission, System.currentTimeMillis())
+    }
+
+    /**
      * Stable conversation key for a peer. Private conversations are keyed by the
      * peer's permanent uid rather than the session client id, because a client id
      * is reassigned on every reconnect — keying by it used to split one person
@@ -701,12 +712,22 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             launch {
                 service.tsClient.commandErrors.collect { message ->
                     val refused = rollbackLastPendingEcho()
+                    // A refusal for lack of a right, soon after a command that needs one, names it
+                    val right = lastRightNeeded?.takeIf {
+                        message.contains("permission", ignoreCase = true) &&
+                            System.currentTimeMillis() - it.at < PENDING_ECHO_WINDOW_MS
+                    }
                     withContext(Dispatchers.Main) {
-                        // A mailbox refused for lack of the right, said plainly
-                        if (refused?.offline == true) {
-                            Toast.makeText(getApplication(), R.string.private_offline_refused, Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+                        when {
+                            // A mailbox refused for lack of the right, said plainly
+                            refused?.offline == true ->
+                                Toast.makeText(getApplication(), R.string.private_offline_refused, Toast.LENGTH_LONG).show()
+                            right != null -> Toast.makeText(
+                                getApplication(),
+                                getApplication<Application>().getString(R.string.permission_missing, right.permission),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            else -> Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -993,6 +1014,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun sendChannelMessage(text: String) {
         if (text.isBlank()) return
+        needs("b_client_channel_textmessage_send")
         tsClient?.sendChannelMessage(text)
         channelHistory?.addOwn(getApplication<Application>().getString(R.string.me_sender), text)
         pendingOwnEchoes.addLast(PendingEcho("channel", null, text, System.currentTimeMillis()))
@@ -1014,6 +1036,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         val clientId = clientIdForPeerKey(resolvedKey) ?: return
+        needs("i_client_private_textmessage_power")
         tsClient?.sendPrivateMessage(clientId, text)
         val msg = ChatMessage(
             sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true, isPrivate = true, senderId = clientId,
@@ -1038,6 +1061,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
      * as a toast — the prompt itself is what this overload feeds.
      */
     fun moveToChannel(channelId: Long, password: String?) {
+        needs("i_channel_join_power")
         tsClient?.moveToChannel(channelId, password)
     }
 
@@ -1426,6 +1450,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             val name = freeFileName(client, channelId, "/", fileName)
+            needs("i_ft_file_upload_power")
             val success = client.uploadFile(channelId, "/$name", data, overwrite = false)
             if (success) {
                 val addr = serverAddress ?: "localhost"
@@ -1470,6 +1495,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val client = tsClient ?: return
         // Mailboxes list messages by subject: the first line, cut short
         val subject = text.lineSequence().first().take(OFFLINE_SUBJECT_CHARS)
+        needs("b_client_offline_textmessage_send")
         client.sendOfflineMessage(peerKey, subject, text)
         val existing = _privateMessages.value[peerKey].orEmpty()
         val msg = ChatMessage(
@@ -1711,6 +1737,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val client = tsClient ?: return
         val channelId = currentChannelId()
         val fullPath = _currentFilePath.value + name
+        needs("i_ft_file_delete_power")
         client.deleteFile(channelId, fullPath)
         refreshFileListAfterOperation()
     }
@@ -1719,6 +1746,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val client = tsClient ?: return
         val channelId = currentChannelId()
         val currentPath = _currentFilePath.value
+        needs("i_ft_file_rename_power")
         client.renameFile(channelId, currentPath + oldName, currentPath + newName)
         refreshFileListAfterOperation()
     }
@@ -1729,6 +1757,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (channelId == 0L) { Log.w(TAG, "createDirectory: channelId is 0"); return }
         val fullPath = _currentFilePath.value + dirName
         Log.d(TAG, "createDirectory: channelId=$channelId path=$fullPath")
+        needs("i_ft_directory_create_power")
         try {
             client.createDirectory(channelId, fullPath)
         } catch (e: Exception) {
@@ -1855,6 +1884,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             // A taken name gets a number rather than replacing the file already there
             val path = dir + freeFileName(client, channelId, dir, fileName)
+            needs("i_ft_file_upload_power")
             val success = client.uploadFile(channelId, path, data, overwrite = false)
             if (success) {
                 refreshFileListAfterOperation()
