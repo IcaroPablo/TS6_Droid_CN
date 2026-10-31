@@ -96,6 +96,47 @@ this app on this device can use. Downloaded files can instead be saved to the pu
 identity writes it in plain text, by design, to a file you choose. Release builds keep only
 warnings and errors in the system log.
 
+## Setting up the server
+
+Some of TeleSpeak's features need a permission on the server. Without it the server refuses, and
+the app says which permission was missing. Grant these to the server groups your friends are in:
+
+| Feature | Permission | Value |
+|---|---|---|
+| Channel chat | `b_client_channel_textmessage_send` | 1 |
+| Private messages | `i_client_private_textmessage_power` | 75 |
+| Private messages to someone offline (left in their mailbox on the server) | `b_client_offline_textmessage_send` | 1 |
+| Joining channels | `i_channel_join_power` | 75 |
+| Whispering | `i_client_whisper_power` | 75 |
+| Seeing its own file rights: without it the app cannot tell which file actions are allowed, offers them all and lets the server decide | `b_client_permissionoverview_own` | 1 |
+| Listing a channel's files | `i_ft_file_browse_power` | 75 |
+| Downloading files | `i_ft_file_download_power` | 75 |
+| Uploading files and voice messages | `i_ft_file_upload_power` | 75 |
+| Renaming files | `i_ft_file_rename_power` | 75 |
+| Deleting files | `i_ft_file_delete_power` | 75 |
+| Creating folders | `i_ft_directory_create_power` | 75 |
+
+A power (`i_…`) is compared with what a channel or person requires (`i_…_needed_…`), which is 0
+unless someone set it; 75 is what the default admin groups have. Channel history needs nothing:
+it travels between TeleSpeak clients as hidden plugin commands.
+
+A group of its own for TeleSpeak's users (for example one called *TeleSpeak*, with your friends in
+it) keeps these apart from the server's other groups.
+
+`scripts/server-setup` grants them all at once through the server's ServerQuery over SSH, adding or
+raising each one and never lowering a value an admin set higher. It needs only `ssh` and a POSIX
+shell, so it can be fetched on its own; run it on the machine the server runs on, which keeps the
+query port off the internet:
+
+    curl -O https://raw.githubusercontent.com/IcaroPablo/TS6_Droid_CN/main/scripts/server-setup
+    sh server-setup 127.0.0.1 "TeleSpeak"
+
+It asks for the ServerQuery password (shown once, when the server is first started), and takes
+`-p` for the query port (default 10022), `-v` for the voice port (default 9987) and `-u` for the
+login (default `serveradmin`). ServerQuery over SSH may need turning on first: start the server
+with `query_protocols=raw,ssh` (in its ini file or on its command line). The desktop client's
+permission editor (Permissions → Server Groups) does the same by hand.
+
 ---
 
 *The original README of TS6_Droid_CN follows (in Chinese).*

@@ -1,0 +1,116 @@
+#!/bin/sh
+# Grant a TeamSpeak server's groups the permissions TeleSpeak's features need, through the
+# server's ServerQuery over SSH. Each permission is added or raised, never lowered: a value an
+# admin set higher stays. What each one is for is in the README (Setting up the server).
+# Usage: scripts/server-setup [-p query_port] [-v voice_port] [-u login] host group...
+# The groups are server group names as the server lists them, such as "Guest" or "Server Admin".
+# ssh asks for the query login's password (it is set when the server is first started).
+set -eu
+
+usage() {
+	echo "usage: scripts/server-setup [-p query_port] [-v voice_port] [-u login] host group..." >&2
+	exit 2
+}
+die() { echo "server-setup: $*" >&2; exit 1; }
+
+query_port=10022
+voice_port=9987
+login=serveradmin
+while getopts p:v:u: opt; do
+	case $opt in
+	p) query_port=$OPTARG ;;
+	v) voice_port=$OPTARG ;;
+	u) login=$OPTARG ;;
+	*) usage ;;
+	esac
+done
+shift $((OPTIND - 1))
+[ $# -ge 2 ] || usage
+host=$1
+shift
+
+# The permission, the value TeleSpeak needs, and the feature. Powers (i_*) are compared with what
+# a channel or person needs (i_*_needed_*), which is 0 unless someone set it; 75 matches the
+# default admin groups.
+perms='b_client_channel_textmessage_send 1 channel chat
+i_client_private_textmessage_power 75 private messages
+b_client_offline_textmessage_send 1 private messages to someone offline
+i_channel_join_power 75 joining channels
+i_client_whisper_power 75 whispering
+b_client_permissionoverview_own 1 seeing its own file rights, which decide the file buttons shown
+i_ft_file_browse_power 75 listing a channel'"'"'s files
+i_ft_file_download_power 75 downloading files
+i_ft_file_upload_power 75 uploading files and voice messages
+i_ft_file_rename_power 75 renaming files
+i_ft_file_delete_power 75 deleting files
+i_ft_directory_create_power 75 creating folders'
+
+unescape() { sed 's/\\s/ /g; s/\\p/|/g; s/\\\//\//g; s/\\\\/\\/g'; }
+
+tmp=$(mktemp -d)
+ssh_pid=
+trap '[ -z "$ssh_pid" ] || kill "$ssh_pid" 2>/dev/null || true; rm -rf "$tmp"' EXIT
+mkfifo "$tmp/in" "$tmp/out"
+# One connection for every command, so the password is asked once
+ssh -T -p "$query_port" "$login@$host" <"$tmp/in" >"$tmp/out" &
+ssh_pid=$!
+exec 3>"$tmp/in" 4<"$tmp/out"
+
+# Sends a command and prints its reply, one entry per line; fails with the server's message.
+# The greeting the server sends first comes out with the first reply and matches nothing.
+query() {
+	printf '%s\n' "$1" >&3
+	while IFS= read -r line <&4; do
+		line=$(printf '%s' "$line" | tr -d '\r')
+		case $line in
+		'error id=0 '* | 'error id=1281 '*) return 0 ;; # ok, or an empty list
+		'error '*) die "$1: $(printf '%s' "${line#error }" | unescape)" ;;
+		*) printf '%s\n' "$line" | tr '|' '\n' ;;
+		esac
+	done
+	die "the connection to $host:$query_port closed (wrong port or login?)"
+}
+
+# The value of [key] in one reply entry, unescaped
+field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | unescape; }
+
+query "use port=$voice_port" >/dev/null
+# Assigned on its own: a failed query inside $(...) then stops the script too
+groups=$(query servergrouplist)
+groups=$(printf '%s\n' "$groups" | sed -n '/^sgid=/p')
+
+for group in "$@"; do
+	sgid=
+	while IFS= read -r entry; do
+		# Regular groups only: templates (type 0) and query groups (type 2) are not for clients
+		[ "$(field "$entry" type)" = 1 ] && [ "$(field "$entry" name)" = "$group" ] || continue
+		sgid=$(field "$entry" sgid)
+	done <<EOF
+$groups
+EOF
+	if [ -z "$sgid" ]; then
+		names=$(printf '%s\n' "$groups" | while IFS= read -r e; do
+			[ "$(field "$e" type)" = 1 ] && printf '"%s" ' "$(field "$e" name)"; done)
+		die "no server group named \"$group\"; the server has: $names"
+	fi
+
+	current=$(query "servergrouppermlist sgid=$sgid -permsid")
+	command=
+	granted=
+	while read -r perm value feature; do
+		have=$(printf '%s\n' "$current" | grep "permsid=$perm " | sed -n 's/.*permvalue=\(-\{0,1\}[0-9]*\).*/\1/p')
+		[ -n "$have" ] && [ "$have" -ge "$value" ] && continue
+		command="$command${command:+|}permsid=$perm permvalue=$value permnegated=0 permskip=0"
+		granted="$granted  $perm = $value ($feature)
+"
+	done <<EOF
+$perms
+EOF
+	if [ -z "$command" ]; then
+		echo "$group: already has everything TeleSpeak needs"
+		continue
+	fi
+	query "servergroupaddperm sgid=$sgid $command" >/dev/null
+	printf '%s: granted\n%s' "$group" "$granted"
+done
+query quit >/dev/null 2>&1 || true
