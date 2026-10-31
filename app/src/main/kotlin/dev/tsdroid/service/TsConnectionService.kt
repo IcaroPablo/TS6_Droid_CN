@@ -299,7 +299,15 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         // first frame — for users who never connect at all, too.
         createNotificationChannel()
         savedStateRegistryController.performRestore(null)
-        channelHistory = ChannelHistory(tsClient, MessageStore(this), serviceScope)
+        channelHistory = ChannelHistory(
+            tsClient, MessageStore(this), serviceScope,
+            // A listener stays on for the others: it passes on mentions of whoever is away
+            forwardMentions = { recorderMode },
+            mentionNote = { sender, channel, text ->
+                getString(R.string.mention_note_subject, sender, channel) to
+                    getString(R.string.mention_note, sender, channel, text)
+            },
+        )
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         avatarCache = AvatarCache(applicationContext.cacheDir)
         audioBridge = AudioBridge(applicationContext, tsClient)

@@ -1237,9 +1237,9 @@ fun ChatPanel(
                     whisperTargetName = whisperTargetName.takeIf { isWhisperActive },
                     enabled = chatTab == 0 || pmTargetKey != null || isWhisperActive,
                     onAttach = pickUpload.takeIf { canUploadFiles },
-                    // A file goes to the channel or to the chosen person, never to whisper targets,
-                    // and only to someone connected: a mailbox takes text alone
-                    attachEnabled = chatTab == 0 || pmTarget != null,
+                    // A file goes to the channel or to the chosen person, never to whisper targets;
+                    // someone offline gets its link in their mailbox
+                    attachEnabled = chatTab == 0 || pmTargetKey != null,
                     // A voice message is a file: it needs the same right to upload, and goes where
                     // a file would, never to whisper targets
                     recordingSince = voiceRecordingSince,

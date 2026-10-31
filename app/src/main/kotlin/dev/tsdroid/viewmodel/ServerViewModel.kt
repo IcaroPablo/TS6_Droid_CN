@@ -183,15 +183,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
     private val pendingOwnEchoes = ArrayDeque<PendingEcho>()
 
-    /**
-     * The permission the last command that needs one asked the server for, and when: a refusal
-     * soon after names it, so whoever runs the server knows what to grant (see the README).
-     */
-    private class RightNeeded(val permission: String, val at: Long)
-    private var lastRightNeeded: RightNeeded? = null
-
+    /** Notes the permission the next command needs, so a refusal can name it (see [TsClient.needs]) */
     private fun needs(permission: String) {
-        lastRightNeeded = RightNeeded(permission, System.currentTimeMillis())
+        tsClient?.needs(permission)
     }
 
     /**
@@ -713,7 +707,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 service.tsClient.commandErrors.collect { message ->
                     val refused = rollbackLastPendingEcho()
                     // A refusal for lack of a right, soon after a command that needs one, names it
-                    val right = lastRightNeeded?.takeIf {
+                    val right = service.tsClient.lastRightNeeded?.takeIf {
                         message.contains("permission", ignoreCase = true) &&
                             System.currentTimeMillis() - it.at < PENDING_ECHO_WINDOW_MS
                     }
@@ -1442,9 +1436,12 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val client = tsClient ?: return
         val channelId = currentChannelId()
         if (channelId == 0L) return
-        // A private file is never posted to the channel instead: refuse it before the upload
-        // when the peer is already gone, and again after it when they left in the meantime
-        if (isPrivate && (targetPeerKey == null || resolvePeerKey(targetPeerKey) == null)) {
+        // A private file is never posted to the channel instead. Someone offline gets its link in
+        // their mailbox; only a conversation with no uid behind it, which no mailbox can reach, is
+        // refused, before the upload
+        if (isPrivate && (targetPeerKey == null ||
+                (resolvePeerKey(targetPeerKey) == null && PrivateConversations.isLegacy(targetPeerKey)))
+        ) {
             toastPeerOffline()
             return
         }
@@ -1468,7 +1465,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     val resolvedKey = targetPeerKey?.let { resolvePeerKey(it) }
                     val privateTargetId = resolvedKey?.let { clientIdForPeerKey(it) }
                     if (resolvedKey == null || privateTargetId == null) {
-                        toastPeerOffline()
+                        // Gone, or never there: the link waits in their mailbox
+                        if (targetPeerKey == null || PrivateConversations.isLegacy(targetPeerKey)) toastPeerOffline()
+                        else sendOfflineMessage(targetPeerKey, ts3Url, attachment)
                         return@launch
                     }
                     tsClient?.sendPrivateMessage(privateTargetId, ts3Url)
@@ -1491,19 +1490,22 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
      * it as an offline message. A server that refuses (no right to send offline messages) answers
      * with a command error, which takes the message back out like any refused send.
      */
-    private fun sendOfflineMessage(peerKey: String, text: String) {
+    private fun sendOfflineMessage(peerKey: String, text: String, attachment: FileAttachment? = null) {
         val client = tsClient ?: return
+        // A file goes as its link, which the receiver shows as the file; the chat here shows its name
+        val shown = attachment?.fileName ?: text
         // Mailboxes list messages by subject: the first line, cut short
-        val subject = text.lineSequence().first().take(OFFLINE_SUBJECT_CHARS)
+        val subject = shown.lineSequence().first().take(OFFLINE_SUBJECT_CHARS)
         needs("b_client_offline_textmessage_send")
         client.sendOfflineMessage(peerKey, subject, text)
         val existing = _privateMessages.value[peerKey].orEmpty()
         val msg = ChatMessage(
-            sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true, isPrivate = true,
+            sender = getApplication<Application>().getString(R.string.me_sender), text = shown, isMe = true, isPrivate = true,
+            fileAttachment = attachment,
             recipientName = existing.lastOrNull { !it.isMe }?.sender ?: existing.lastOrNull { it.recipientName != null }?.recipientName,
         )
         _privateMessages.value = _privateMessages.value.toMutableMap().apply { put(peerKey, existing + msg) }
-        val pending = PendingEcho("private", peerKey, text, System.currentTimeMillis(), offline = true)
+        val pending = PendingEcho("private", peerKey, shown, System.currentTimeMillis(), offline = true)
         pendingOwnEchoes.addLast(pending)
         // Said only once the server had time to refuse: a refusal takes the message back instead
         viewModelScope.launch {
@@ -1782,11 +1784,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val meSender = getApplication<Application>().getString(R.string.me_sender)
 
         if (targetPeerKey != null) {
-            // Shared with one person: if they are gone it is not sent, rather than posted to the channel
+            // Shared with one person, never posted to the channel instead: someone offline gets the
+            // link in their mailbox, and only a conversation with no uid behind it is refused
             val resolvedKey = resolvePeerKey(targetPeerKey)
             val privateTargetId = resolvedKey?.let { clientIdForPeerKey(it) }
             if (resolvedKey == null || privateTargetId == null) {
-                toastPeerOffline()
+                if (PrivateConversations.isLegacy(targetPeerKey)) toastPeerOffline()
+                else sendOfflineMessage(targetPeerKey, ts3Url, attachment)
                 return
             }
             tsClient?.sendPrivateMessage(privateTargetId, ts3Url)

@@ -690,6 +690,20 @@ class TsClient {
         }
     }
 
+    /** A permission a command asks the server for, and when it was sent */
+    class RightNeeded(val permission: String, val at: Long)
+
+    /**
+     * The permission the last command that needs one asked for: a refusal soon after names it,
+     * so whoever runs the server knows what to grant (see the README). Main thread only.
+     */
+    var lastRightNeeded: RightNeeded? = null
+        private set
+
+    fun needs(permission: String) {
+        lastRightNeeded = RightNeeded(permission, System.currentTimeMillis())
+    }
+
     /** Leave [msg] in the offline mailbox of [uid], for someone who is not connected. */
     fun sendOfflineMessage(uid: String, subject: String, msg: String) {
         launchNativeCommand("sendOfflineMessage") {

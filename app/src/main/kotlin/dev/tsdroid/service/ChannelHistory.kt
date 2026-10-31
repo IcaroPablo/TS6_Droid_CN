@@ -4,6 +4,7 @@ import android.util.Log
 import dev.tsdroid.bridge.TsClient
 import dev.tsdroid.data.CommandParts
 import dev.tsdroid.data.HistorySync
+import dev.tsdroid.data.Mentions
 import dev.tsdroid.data.MessageStore
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.FileAttachment
@@ -37,6 +38,10 @@ class ChannelHistory(
     private val client: TsClient,
     private val store: MessageStore,
     private val scope: CoroutineScope,
+    /** Whether mentions of someone offline are left in their mailbox: a listener does it */
+    private val forwardMentions: () -> Boolean = { false },
+    /** The note's subject and text for a mention by (sender, channel, message) */
+    private val mentionNote: (String, String, String) -> Pair<String, String> = { s, c, t -> s to "$c: $t" },
 ) {
     private companion object {
         const val TAG = "ChannelHistory"
@@ -46,6 +51,9 @@ class ChannelHistory(
 
         // Writes are gathered: a burst of messages, or a history reply, is saved once
         const val SAVE_DELAY_MS = 2000L
+
+        // A mention note quotes the message up to this long
+        const val MENTION_TEXT_CHARS = 300
     }
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -63,6 +71,10 @@ class ChannelHistory(
     /** Commands too long for the server arrive in parts (see [CommandParts]) */
     private val parts = CommandParts.Assembler()
 
+    /** Everyone seen on the server this session, uid to the name they last had: a mention of
+     *  someone who has left uses the name they left with. Main thread only. */
+    private val seenNames = HashMap<String, String>()
+
     init {
         // Each connection: the server's history, then a request for what others have that we lack
         scope.launch {
@@ -77,6 +89,11 @@ class ChannelHistory(
             }
         }
         scope.launch { client.chatEvents.collect(::onChatEvent) }
+        scope.launch {
+            client.users.collect { users ->
+                for (user in users) user.uid?.takeIf(String::isNotBlank)?.let { seenNames[it] = user.nickname }
+            }
+        }
         scope.launch {
             client.events.collect { event ->
                 if (event.type != "plugin_command") return@collect
@@ -136,15 +153,41 @@ class ChannelHistory(
         val text = event.data["message"] as? String ?: return
         val attachment = if (text.length > 10000) null else parseFileAttachment(text)
         // A channel message reaches only the channel we are in
-        add(
-            ChatMessage(
-                sender = sender,
-                text = attachment?.fileName ?: text.replace("\u0000", "").trim(),
-                fileAttachment = attachment,
-                channelId = myChannelId(),
-                senderUid = client.users.value.firstOrNull { it.id == senderId }?.uid,
-            ),
+        val message = ChatMessage(
+            sender = sender,
+            text = attachment?.fileName ?: text.replace("\u0000", "").trim(),
+            fileAttachment = attachment,
+            channelId = myChannelId(),
+            senderUid = client.users.value.firstOrNull { it.id == senderId }?.uid,
         )
+        add(message)
+        if (attachment == null && forwardMentions()) forwardMentions(message)
+    }
+
+    /**
+     * Leaves a note in the mailbox of each offline person [message] mentions as "@name", so the
+     * mention reaches them when they next connect. Names come from who has written here (the
+     * history keeps their uids) and who is on now; someone on now saw it, and the sender knows.
+     */
+    private fun forwardMentions(message: ChatMessage) {
+        val online = client.users.value.mapNotNull { it.uid?.takeIf(String::isNotBlank) }.toSet()
+        val people = buildMap {
+            for (known in _messages.value) {
+                val uid = known.senderUid ?: continue
+                if (!known.isMe) put(uid, known.sender)
+            }
+            putAll(seenNames)
+            for (user in client.users.value) user.uid?.takeIf(String::isNotBlank)?.let { put(it, user.nickname) }
+        }
+        val absent = Mentions.mentioned(message.text, people) - online - setOfNotNull(myUid(), message.senderUid)
+        if (absent.isEmpty()) return
+        val channel = client.channels.value.firstOrNull { it.id == message.channelId }?.name ?: ""
+        val (subject, note) = mentionNote(message.sender, channel, message.text.take(MENTION_TEXT_CHARS))
+        for (uid in absent) {
+            Log.i(TAG, "Leaving a mention note in an offline mailbox")
+            client.needs("b_client_offline_textmessage_send")
+            client.sendOfflineMessage(uid, subject, note)
+        }
     }
 
     // --- History sync (see HistorySync) ---
