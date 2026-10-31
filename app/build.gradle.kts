@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.icaropablo.telespeak"
         minSdk = 29
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.6.4"
+        versionCode = 12
+        versionName = "1.6.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
