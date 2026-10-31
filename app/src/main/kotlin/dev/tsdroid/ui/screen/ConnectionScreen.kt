@@ -91,6 +91,7 @@ import dev.tsdroid.ui.component.IslandHeader
 import dev.tsdroid.ui.component.IslandIconSize
 import dev.tsdroid.ui.component.IslandTab
 import dev.tsdroid.ui.component.IslandTabs
+import dev.tsdroid.ui.component.LocalGlassWallpaper
 import dev.tsdroid.ui.component.RootIsland
 import dev.tsdroid.ui.component.ServerIcon
 import dev.tsdroid.ui.component.rememberGlassBackdrop
@@ -418,6 +419,7 @@ fun ConnectionScreen(
                 onClick = if (onServerTab) {
                     { serverInfoOpen.value = !serverInfoOpen.value }
                 } else null,
+                titleOnFill = LocalGlassWallpaper.current != null,
                 trailing = {
                     IslandTabs(
                         tabs = listOfNotNull(

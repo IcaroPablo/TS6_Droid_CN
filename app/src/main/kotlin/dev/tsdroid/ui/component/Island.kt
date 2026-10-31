@@ -163,6 +163,9 @@ fun IslandHeader(
     onClick: (() -> Unit)? = null,
     expanded: Boolean = true,
     trailing: (@Composable RowScope.() -> Unit)? = null,
+    /** The icon and title on the inset colour, as tabs are: bare, over a bright wallpaper, the
+     *  title could hardly be read */
+    titleOnFill: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -172,6 +175,15 @@ fun IslandHeader(
             .padding(horizontal = Spacing.Gap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Row(
+            modifier = if (titleOnFill) {
+                Modifier
+                    .clip(Shapes.Standard)
+                    .background(InsetFill)
+                    .padding(end = 12.dp)
+            } else Modifier,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         if (image != null || icon != null) {
             Box(
                 modifier = Modifier
@@ -199,6 +211,7 @@ fun IslandHeader(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        }
         Spacer(Modifier.width(8.dp))
         Row(
             modifier = Modifier.weight(1f),

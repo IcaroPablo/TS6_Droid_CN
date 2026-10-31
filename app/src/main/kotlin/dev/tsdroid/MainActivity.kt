@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.service.TsConnectionService
@@ -48,6 +51,19 @@ class MainActivity : ComponentActivity() {
             val seedColor = AnimeWallpaperState.dominantColor.value
             val colorScheme by settingsStore.colorScheme
                 .collectAsStateWithLifecycle(initialValue = AppColorScheme.DEFAULT.key)
+
+            // The system bars' icons follow the wallpaper while one is painted: the light ones
+            // all but vanished on a bright picture. Without one, they keep the system's choice
+            val view = LocalView.current
+            val bars = remember(view) { WindowCompat.getInsetsController(window, view) }
+            val defaultLightBars = remember(bars) { bars.isAppearanceLightStatusBars }
+            val lightWallpaper = animeBackground == true && AnimeWallpaperState.activeBitmap != null &&
+                (seedColor?.luminance() ?: 0f) > 0.5f
+            SideEffect {
+                val light = lightWallpaper || defaultLightBars
+                bars.isAppearanceLightStatusBars = light
+                bars.isAppearanceLightNavigationBars = light
+            }
 
             TsDroidTheme(
                 seedColor = if (showSplash) null else seedColor,
