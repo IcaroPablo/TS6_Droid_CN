@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material3.HorizontalDivider
@@ -70,7 +72,8 @@ fun AwayStatusSheet(
     wallpaper: ImageBitmap? = null,
 ) {
     // Unfolded in place in the server's tab, under what opened it
-    Column(modifier = Modifier.fillMaxWidth().padding(InsetPadding)) {
+    // Scrolls where the screen is short: in landscape it is cut to the room beside the islands
+    Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(InsetPadding)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 // The moon is the away icon; online gets the plain dot the bottom bar shows

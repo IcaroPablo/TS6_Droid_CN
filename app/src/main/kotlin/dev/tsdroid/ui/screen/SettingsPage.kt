@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,11 +44,13 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -182,8 +185,9 @@ fun SettingsPage(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            // The settings are a tab of the home island: its gap all round
-            .padding(Spacing.Gap),
+            // The settings are a tab of the home island: its gap at the sides and bottom, as the
+            // servers list has. The header above already leaves the one at the top
+            .padding(start = Spacing.Gap, end = Spacing.Gap, bottom = Spacing.Gap),
     ) {
         // ── 外观 ──
         InsetSection(
@@ -938,8 +942,18 @@ private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
                 cropBitmap = null
                 showCropScreen = false
             },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+            // Edge to edge: fitted to the system's insets, the window in landscape was moved clear
+            // of the camera cutout but kept the screen's full width, and its confirm button ran off
+            // the other edge
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) {
+            // Into the cutout as well, which the window otherwise stays out of
+            val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect {
+                dialogWindow?.attributes = dialogWindow.attributes.apply {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
             dev.tsdroid.background.CropScreen(
                 bitmap = cropBitmap!!,
                 onConfirm = { left, top, right, bottom ->

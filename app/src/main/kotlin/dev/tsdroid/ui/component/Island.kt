@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,13 +26,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -287,3 +294,27 @@ fun RootIsland(
         )
     }
 }
+
+/**
+ * Whether the keyboard leaves the window too short for the screen's usual furniture: a phone in
+ * landscape, mostly. What typing does not need (the headers, the voice bar, the channels) then
+ * steps aside, or the field being typed in was pushed out of sight. Read it where it is used: the
+ * keyboard's height changes on every frame of its animation, this only when it crosses the line.
+ */
+@Composable
+fun rememberKeyboardCrowding(): State<Boolean> {
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
+    val windowHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.roundToPx() }
+    val leftAtLeastPx = with(density) { KeyboardLeavesAtLeast.roundToPx() }
+    return remember(ime, density, windowHeightPx, leftAtLeastPx) {
+        derivedStateOf {
+            val imeHeight = ime.getBottom(density)
+            imeHeight > 0 && windowHeightPx - imeHeight < leftAtLeastPx
+        }
+    }
+}
+
+/** Below this much height left above the keyboard, the window counts as crowded. */
+private val KeyboardLeavesAtLeast = 300.dp
+

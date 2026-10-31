@@ -18,12 +18,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -46,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -90,6 +94,7 @@ import dev.tsdroid.ui.component.IslandTabs
 import dev.tsdroid.ui.component.RootIsland
 import dev.tsdroid.ui.component.ServerIcon
 import dev.tsdroid.ui.component.rememberGlassBackdrop
+import dev.tsdroid.ui.component.rememberKeyboardCrowding
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
 import dev.tsdroid.ui.theme.InsetPadding
@@ -367,6 +372,9 @@ fun ConnectionScreen(
         Scaffold(
             containerColor = Color.Transparent,
             snackbarHost = { SnackbarHost(snackbarHostState) },
+            // The camera cutout as well: in landscape it is at the side, where the system bars
+            // leave nothing, and the content ran under it
+            contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.displayCutout),
         ) { padding ->
             // The whole home screen is one island: the app's name and its two tabs, servers and
             // settings, in the header, and the tab's content below. Swiping between the tabs works
@@ -377,7 +385,9 @@ fun ConnectionScreen(
                 ?.let { it.serverName ?: it.name } ?: stringResource(R.string.server)
             val onServerTab = selectedTab == SERVER_TAB && sessionRunning
             val serverName = serverInfo?.name?.takeIf { it.isNotBlank() } ?: bookmarkName
-            IslandHeader(
+            // Out of the way while the keyboard leaves too little room for the field
+            val keyboardCrowded by rememberKeyboardCrowding()
+            if (!keyboardCrowded) IslandHeader(
                 title = if (onServerTab) serverName else stringResource(R.string.app_name),
                 icon = null,
                 image = {

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -11,9 +12,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +32,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -76,6 +80,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -119,6 +124,7 @@ import dev.tsdroid.ui.component.VoiceBarState
 import dev.tsdroid.ui.component.WhisperListSheet
 import dev.tsdroid.ui.component.parseSpacer
 import dev.tsdroid.ui.component.rememberGlassBackdrop
+import dev.tsdroid.ui.component.rememberKeyboardCrowding
 import dev.tsdroid.ui.component.rememberUploadPicker
 import dev.tsdroid.ui.icon.AppIcons
 import dev.tsdroid.ui.theme.IconSize
@@ -200,6 +206,8 @@ fun ServerScreen(
     // The channel list and the chat docked under it can each be folded to their header
     var channelsOpen by rememberSaveable { mutableStateOf(true) }
     var chatOpen by rememberSaveable { mutableStateOf(false) }
+    // While it is set, the chat alone fills the islands' space, and the voice bar steps aside
+    val keyboardCrowded by rememberKeyboardCrowding()
     // The chat's share of the room when both are open, set by dragging the border between them
     var chatFraction by rememberSaveable { mutableFloatStateOf(0.55f) }
     // Whether the channels island shows the streams being watched rather than the channel list
@@ -624,8 +632,18 @@ fun ServerScreen(
         )
     }
 
+    // The panel unfolded from the voice bar, if one is open
+    fun openPanel(): (@Composable () -> Unit)? = when {
+        awaySheetOpen -> statusPanel
+        whisperSheetOpen -> whisperListPanel
+        else -> null
+    }
+    val sidePanels = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     @Composable
     fun VoiceSection() = OwnScope {
+        // Out of the way while the keyboard leaves too little room for the chat's field
+        if (keyboardCrowded) return@OwnScope
         // Back folds an open panel away before it leaves the tab
         BackHandler(enabled = (awaySheetOpen || whisperSheetOpen) && isShown()) {
             awaySheetOpen = false
@@ -634,12 +652,33 @@ fun ServerScreen(
         VoiceBar(
             state = voiceState(),
             modifier = Modifier.fillMaxWidth(),
-            panel = when {
-                awaySheetOpen -> statusPanel
-                whisperSheetOpen -> whisperListPanel
-                else -> null
-            },
+            panel = openPanel().takeUnless { sidePanels },
         )
+    }
+
+    // In landscape the status and the whisper list open beside the islands: above the voice bar,
+    // with the screen that short, they squeezed the channels and the chat out of sight
+    @Composable
+    fun SidePanel() = OwnScope {
+        val panel = openPanel().takeIf { sidePanels }
+        // The last panel stays drawn while it folds away
+        var shownPanel by remember { mutableStateOf(panel) }
+        if (panel != null) shownPanel = panel
+        AnimatedVisibility(
+            visible = panel != null,
+            enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+            exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
+        ) {
+            InsetSection(
+                modifier = Modifier
+                    .padding(start = Spacing.Gap)
+                    .fillMaxHeight()
+                    .width((LocalConfiguration.current.screenWidthDp * 0.4f).dp),
+                padded = false,
+            ) {
+                shownPanel?.invoke()
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -681,9 +720,14 @@ fun ServerScreen(
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
             }
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .weight(1f),
+        ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
                 .weight(1f),
         ) {
             // Two islands: the channels and the chat. Each folds down to its header, and with both
@@ -727,7 +771,10 @@ fun ServerScreen(
                 val sharedPx = sharedPx()
                 return lerp(sharedPx - headerPx, sharedPx * chatFractionNow(), channelsProgress.value)
             }
-            fun chatHeightPx(): Int = lerp(headerPx, chatOpenHeightPx(), chatProgress.value).roundToInt()
+            fun chatHeightPx(): Int =
+                // The channels then get none of it, and the island they fold to is squeezed away
+                if (keyboardCrowded) sharedPx().roundToInt()
+                else lerp(headerPx, chatOpenHeightPx(), chatProgress.value).roundToInt()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -871,21 +918,21 @@ fun ServerScreen(
                     .clip(Shapes.Standard)
                     .layout { measurable, constraints ->
                         val height = chatHeightPx()
-                        val measured = if (chatProgress.isRunning) chatOpenHeightPx().roundToInt() else height
+                        val measured = if (chatProgress.isRunning && !keyboardCrowded) chatOpenHeightPx().roundToInt() else height
                         val placeable = measurable.measure(constraints.copy(minHeight = measured, maxHeight = measured))
                         layout(placeable.width, height) { placeable.place(0, 0) }
                     },
                 // What that cut hides at the bottom: the input is lifted by as much, so it stays
                 // in sight while the chat folds or unfolds
                 inputLift = {
-                    if (chatProgress.isRunning) (chatOpenHeightPx().roundToInt() - chatHeightPx()).coerceAtLeast(0) else 0
+                    if (chatProgress.isRunning && !keyboardCrowded) (chatOpenHeightPx().roundToInt() - chatHeightPx()).coerceAtLeast(0) else 0
                 },
             )
             }
             // Its own scope, so the fold states it reads recompose only the handle
             @Composable
             fun Handle() = OwnScope {
-                if (!(channelsOpen && chatOpen)) return@OwnScope
+                if (!(channelsOpen && chatOpen) || keyboardCrowded) return@OwnScope
                 val handleHalfPx = with(density) { (BorderHandleHeight / 2).toPx() }
                 BorderHandle(
                     modifier = Modifier
@@ -903,6 +950,8 @@ fun ServerScreen(
             }
 
 
+        }
+            SidePanel()
         }
             VoiceSection()
         }
