@@ -213,10 +213,12 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
                 // auto-reconnect. Destruction is deferred by the borrow protocol
                 // until the last client releases it.
                 val pw = password.value.trim().takeIf { it.isNotEmpty() }
-                var connectionFailure = service.connect(addr, identity, nick, pw)
+                // The bookmark's channel, which used to be filled in here and then never sent
+                val ch = channel.value.trim().takeIf { it.isNotEmpty() }
+                var connectionFailure = service.connect(addr, identity, nick, pw, ch)
                 if (connectionFailure?.isTooManyClonesFailure() == true) {
                     Log.w(TAG, "Too many clones for saved identity; retrying with a temporary identity")
-                    connectionFailure = service.connect(addr, getCloneBypassIdentity(), nick, pw)
+                    connectionFailure = service.connect(addr, getCloneBypassIdentity(), nick, pw, ch)
                 }
 
                 if (connectionFailure == null) {
@@ -288,16 +290,21 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         connect(onConnected)
     }
 
+    /**
+     * Connects to the last server, once per process and only if Auto-reconnect was on when the
+     * app started. Turning the setting on later, in Settings, used to connect right away.
+     */
     fun tryAutoReconnect(onConnected: () -> Unit) {
         if (autoReconnectAttempted) return
         autoReconnectAttempted = true
-        // Never stack a second connection on top of a live one: if the service is already running a
-        // session, the only sensible move is to jump back into it, and only on a fresh start.
-        if (TsConnectionService.instance?.hasActiveConnection() == true) {
-            resumeExistingConnectionOnce(onConnected)
-            return
-        }
         viewModelScope.launch {
+            if (!bookmarkStore.autoReconnect.first()) return@launch
+            // Never stack a second connection on top of a live one: if the service is already running a
+            // session, the only sensible move is to jump back into it, and only on a fresh start.
+            if (TsConnectionService.instance?.hasActiveConnection() == true) {
+                resumeExistingConnectionOnce(onConnected)
+                return@launch
+            }
             val lastAddr = bookmarkStore.lastBookmarkAddress.first()
             if (lastAddr.isEmpty()) return@launch
             val list = bookmarkStore.bookmarks.first()

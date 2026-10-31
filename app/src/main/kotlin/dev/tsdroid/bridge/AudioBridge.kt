@@ -134,6 +134,13 @@ class AudioBridge(
 
     // Per-user decoders and opus queues for playback mixing
     private val userDecoders = ConcurrentHashMap<Int, OpusCodec>()
+
+    /**
+     * Held while a decoder is used or closed. The playback loop decodes on its own thread while
+     * [pruneUsers] and [release] close decoders from others; closing one mid-frame freed its
+     * native state under the decoder (a crash in the native library).
+     */
+    private val decoderLock = Any()
     private val userQueues = ConcurrentHashMap<Int, ArrayDeque<VoiceFrame>>()
 
     private val frameLoss = FrameLossTracker()
@@ -278,10 +285,12 @@ class AudioBridge(
      * server, so recycled client ids never inherit old state.
      */
     fun pruneUsers(activeIds: Set<Int>) {
-        for (id in userDecoders.keys) {
-            if (id !in activeIds) {
-                userDecoders.remove(id)?.let { decoder ->
-                    try { decoder.close() } catch (_: Exception) {}
+        synchronized(decoderLock) {
+            for (id in userDecoders.keys) {
+                if (id !in activeIds) {
+                    userDecoders.remove(id)?.let { decoder ->
+                        try { decoder.close() } catch (_: Exception) {}
+                    }
                 }
             }
         }
@@ -999,8 +1008,8 @@ class AudioBridge(
 
     /**
      * Playback loop: decodes one opus frame per user, mixes PCM, writes
-     * one combined frame to AudioTrack. All decoder access is on this
-     * single thread so no synchronization is needed on decoders.
+     * one combined frame to AudioTrack. Decoders are created and used on
+     * this thread only, but closed from others: see [decoderLock].
      */
     private fun startPlaybackLoop() {
         playbackJob = playbackScope.launch {
@@ -1015,22 +1024,26 @@ class AudioBridge(
 
                 val complexity = decoderComplexity
                 if (complexity != appliedComplexity) {
-                    for (decoder in userDecoders.values) {
-                        try { decoder.setDecoderComplexity(complexity) } catch (_: Exception) {}
+                    synchronized(decoderLock) {
+                        for (decoder in userDecoders.values) {
+                            try { decoder.setDecoderComplexity(complexity) } catch (_: Exception) {}
+                        }
                     }
                     appliedComplexity = complexity
                 }
 
                 for ((userId, queue) in userQueues) {
                     val frame = synchronized(queue) { queue.pollFirst() } ?: continue
-                    val decoder = userDecoders.getOrPut(userId) {
-                        OpusCodec(audioConfig).also { it.setDecoderComplexity(appliedComplexity) }
-                    }
                     try {
-                        val pcmBytes = when {
-                            frame.data != null -> decoder.decode(frame.data)
-                            frame.fecSource != null -> decoder.decodeFec(frame.fecSource)
-                            else -> decoder.decodePlc()
+                        val pcmBytes = synchronized(decoderLock) {
+                            val decoder = userDecoders.getOrPut(userId) {
+                                OpusCodec(audioConfig).also { it.setDecoderComplexity(appliedComplexity) }
+                            }
+                            when {
+                                frame.data != null -> decoder.decode(frame.data)
+                                frame.fecSource != null -> decoder.decodeFec(frame.fecSource)
+                                else -> decoder.decodePlc()
+                            }
                         }
                         bytesToShorts(pcmBytes, decodeBuffer)
                         hasData = true
@@ -1200,11 +1213,13 @@ class AudioBridge(
         acousticEchoCanceler = null
         encoder?.close()
         encoder = null
-        // Close per-user decoders
-        for (decoder in userDecoders.values) {
-            try { decoder.close() } catch (_: Exception) {}
+        // Close per-user decoders; the cancelled loop may still be finishing a frame
+        synchronized(decoderLock) {
+            for (decoder in userDecoders.values) {
+                try { decoder.close() } catch (_: Exception) {}
+            }
+            userDecoders.clear()
         }
-        userDecoders.clear()
         userQueues.clear()
         frameLoss.clear()
     }

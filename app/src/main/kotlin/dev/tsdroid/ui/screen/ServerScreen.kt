@@ -143,6 +143,12 @@ fun ServerScreen(
     initialAnimeBackground: Boolean,
     /** The server's details unfolded; the app's header, which shows the server, toggles it */
     infoOpen: MutableState<Boolean>,
+    /**
+     * Whether this is the page on screen. The pager keeps it composed behind the other tabs, so
+     * what this screen does on Back must check it; read in a lambda, so a page change only
+     * recomposes the readers.
+     */
+    isShown: () -> Boolean = { true },
     viewModel: ServerViewModel = viewModel(),
 ) {
     val channels by viewModel.channels.collectAsStateWithLifecycle()
@@ -309,7 +315,7 @@ fun ServerScreen(
     // The chat's Files tab: back goes up a folder, and from the top back to the channel's chat
     @Composable
     fun FilesBack() = OwnScope {
-        BackHandler(enabled = chatTab == FILES_TAB) {
+        BackHandler(enabled = chatTab == FILES_TAB && isShown()) {
             if (currentFilePath != "/") viewModel.navigateUp() else chatTab = 0
         }
     }
@@ -321,11 +327,16 @@ fun ServerScreen(
             if (!showFiles && viewModel.fileManagerOpen.value) viewModel.closeFileManager()
         }
     }
-    // A folded chat must not keep the keyboard up for its hidden input, nor the Files tab for the
-    // input of the chat kept under it
+    // Hidden inputs must not keep the keyboard up: a fold hides them all, and going to or from
+    // the Files tab hides the one in use (the chat's input, or a folder or rename field). Both
+    // stay composed while hidden, so nothing else takes their focus away.
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) {
-        snapshotFlow { chatOpen && chatTab != FILES_TAB }.collect { typing -> if (!typing) focusManager.clearFocus() }
+        var wasFiles: Boolean? = null
+        snapshotFlow { chatOpen to (chatTab == FILES_TAB) }.collect { (open, files) ->
+            if (!open || (wasFiles != null && files != wasFiles)) focusManager.clearFocus()
+            wasFiles = files
+        }
     }
 
     // Sync chat state to ViewModel for unread tracking
@@ -347,7 +358,12 @@ fun ServerScreen(
     // The server renames a client whose nickname is taken (ushummu → ushummu1). Say so once, when
     // our own name first shows up, or the user cannot tell which row is theirs.
     LaunchedEffect(Unit) {
-        snapshotFlow { users.firstOrNull { it.id == viewModel.myClientId }?.nickname }.collect { selfNickname ->
+        // Our client id is not snapshot state: reading the connection state too re-runs this when
+        // a (re)connect hands us a new id, not only when the user list happens to change
+        snapshotFlow {
+            connectionState
+            users.firstOrNull { it.id == viewModel.myClientId }?.nickname
+        }.collect { selfNickname ->
             if (selfNickname == null) return@collect
             val requested = viewModel.requestedNickname
             if (requested != null && requested != selfNickname && viewModel.takeNicknameNotice()) {
@@ -426,20 +442,19 @@ fun ServerScreen(
         UserPanelSheet(
             user = panelUser,
             avatar = panelUser?.uid?.let { userAvatars[it] },
-            volumeDb = userPanelUserId?.let { userVolumes[it] } ?: 0f,
-            isMuted = userPanelUserId != null && userPanelUserId in mutedUserIds,
-            onVolumeChange = { db -> userPanelUserId?.let { viewModel.setUserVolumeDb(it, db, commit = false) } },
-            onVolumeCommit = { db -> userPanelUserId?.let { viewModel.setUserVolumeDb(it, db, commit = true) } },
-            onToggleMute = { userPanelUserId?.let { viewModel.toggleMuteUser(it) } },
+            // The member this panel shows, not userPanelUserId: a panel folding away is still
+            // drawn while that already names the next member, and must not act on them
+            volumeDb = userVolumes[panelUser.id] ?: 0f,
+            isMuted = panelUser.id in mutedUserIds,
+            onVolumeChange = { db -> viewModel.setUserVolumeDb(panelUser.id, db, commit = false) },
+            onVolumeCommit = { db -> viewModel.setUserVolumeDb(panelUser.id, db, commit = true) },
+            onToggleMute = { viewModel.toggleMuteUser(panelUser.id) },
             onPrivateMessage = {
-                val id = userPanelUserId
-                if (id != null) {
-                    // Open the conversation under the peer's uid, matching every other
-                    // entry point into private chat.
-                    users.find { it.id == id }?.let { pmTargetUid = it.uid }
-                    chatTab = 1
-                    chatOpen = true
-                }
+                // Open the conversation under the peer's uid, matching every other
+                // entry point into private chat.
+                users.find { it.id == panelUser.id }?.let { pmTargetUid = it.uid }
+                chatTab = 1
+                chatOpen = true
                 userPanelUserId = null
             },
             onDismiss = { userPanelUserId = null },
@@ -502,6 +517,7 @@ fun ServerScreen(
             }
         },
         onWhisperRelease = { viewModel.endWhisperHold() },
+        whisperHolding = WhisperManager.isHolding,
         onWhisperList = {
             awaySheetOpen = false
             whisperSheetOpen = !whisperSheetOpen
@@ -573,7 +589,7 @@ fun ServerScreen(
             onClearPmTarget = { pmTargetUid = null },
             onSend = {
                 when {
-                    // While密聊 is live the microphone is on the target
+                    // While whispering the microphone is on the target
                     // set, so the text follows the voice: it goes to
                     // those same people as private messages.
                     whisperHasTargets -> viewModel.sendWhisperMessage(messageText)
@@ -837,8 +853,9 @@ fun ServerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     // While the chat folds or unfolds it keeps the open size and is cut to the
-                    // animated one: its messages are then measured once, not on every frame
-                    .clipToBounds()
+                    // animated one: its messages are then measured once, not on every frame. Cut
+                    // in the island's own shape, so the bottom corners stay round while it moves.
+                    .clip(Shapes.Standard)
                     .layout { measurable, constraints ->
                         val height = chatHeightPx()
                         val measured = if (chatProgress.isRunning) chatOpenHeightPx().roundToInt() else height
@@ -915,6 +932,7 @@ fun ServerScreen(
                 whisperReady = voiceState.whisperReady,
                 onWhisperHold = voiceState.onWhisperHold,
                 onWhisperRelease = voiceState.onWhisperRelease,
+                whisperHolding = voiceState.whisperHolding,
                 // The status sheet opens in the main window, behind the viewer
                 awayStatus = voiceState.awayStatus,
             ),

@@ -103,6 +103,16 @@ private val IMG_URL = Regex("""(?<!\S)(https?://\S+\.(?:png|jpe?g|gif|webp|bmp|s
 // Match bare URLs (not wrapped in BBCode [url])
 private val URL_REGEX = Regex("""https?://\S+""")
 
+/**
+ * The link schemes a message may open. A sender chooses a [url] or <a href> target freely, and a
+ * tap on "file://" threw an exception nothing catches, crashing the app on every tap; any other
+ * scheme stays plain text.
+ */
+private val SAFE_LINK_SCHEMES = setOf("http", "https", "mailto", "ts3server")
+
+private fun isSafeLink(url: String): Boolean =
+    android.net.Uri.parse(url.trim()).scheme?.lowercase() in SAFE_LINK_SCHEMES
+
 // YouTube video ID extraction patterns
 private val YOUTUBE_PATTERNS = listOf(
     Regex("""(?:https?://)?(?:www\.)?youtube\.com/watch\?.*?v=([a-zA-Z0-9_-]{11})"""),
@@ -625,7 +635,7 @@ private fun parseMessage(rawText: String, linkColor: Color, codeBackground: Colo
         for (span in spanned.getSpans(0, spanned.length, URLSpan::class.java)) {
             val start = spanned.getSpanStart(span) - trimmedStart
             val end = spanned.getSpanEnd(span) - trimmedStart
-            if (start >= 0 && end <= plainText.length && start < end) {
+            if (start >= 0 && end <= plainText.length && start < end && isSafeLink(span.url)) {
                 linkRanges.add(LinkRange(start, end, span.url))
             }
         }

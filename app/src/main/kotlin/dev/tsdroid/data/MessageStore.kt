@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import dev.tsdroid.viewmodel.ChatMessage
 import dev.tsdroid.viewmodel.FileAttachment
+import dev.tsdroid.viewmodel.normalizeFilePath
 import java.io.File
 
 /**
@@ -204,6 +205,7 @@ internal fun ChatMessage.toStoredJson(): org.json.JSONObject {
                     put("fi", fa.fileId)
                     put("im", fa.isImage)
                     put("ch", fa.channelId)
+                    if (fa.path != "/") put("p", fa.path)
                 }
             )
         }
@@ -229,6 +231,7 @@ internal fun storedMessageFromJson(o: org.json.JSONObject, isPrivate: Boolean): 
                     fileId = fa.optString("fi"),
                     isImage = fa.optBoolean("im", false),
                     channelId = fa.optLong("ch", 0),
+                    path = normalizeFilePath(fa.optString("p", "/")),
                 )
             },
         )

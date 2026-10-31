@@ -177,37 +177,20 @@ fun UserPanelSheet(
                 onVolumeCommit = onVolumeCommit,
             )
 
-            // Each switch row flips from anywhere on it, its label included
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(value = isMuted, role = Role.Switch, onValueChange = { onToggleMute() }),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(if (isMuted) R.string.unmute_user else R.string.mute_user),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(checked = isMuted, onCheckedChange = null)
-            }
+            PanelSwitchRow(
+                label = stringResource(if (isMuted) R.string.unmute_user else R.string.mute_user),
+                checked = isMuted,
+                onToggle = onToggleMute,
+            )
 
             // 密聊 switch: the panel doorway next to the inline button on the row,
             // with a label that spells out what whispering does to the microphone.
             if (onToggleWhisper != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .toggleable(value = isWhisperTarget, role = Role.Switch, onValueChange = { onToggleWhisper() }),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.whisper_switch_label),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(checked = isWhisperTarget, onCheckedChange = null)
-                }
+                PanelSwitchRow(
+                    label = stringResource(R.string.whisper_switch_label),
+                    checked = isWhisperTarget,
+                    onToggle = onToggleWhisper,
+                )
             }
 
             Spacer(Modifier.height(8.dp))
@@ -247,6 +230,29 @@ fun UserPanelSheet(
         ) {
             Column { UserDetails(user, knownServerGroups, knownChannelGroups) }
         }
+    }
+}
+
+/**
+ * A switch row that flips from anywhere on it, its label included. At least 48dp tall: the
+ * Switch drops its own touch size once the row takes the clicks (onCheckedChange = null), which
+ * left these rows 32dp high between the volume slider and each other.
+ */
+@Composable
+private fun PanelSwitchRow(label: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = { onToggle() }),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

@@ -889,6 +889,20 @@ private fun BatteryOptimizationRow(context: Context) {
 
 // ── 自定义背景区 ──
 
+/** The longest side a picked background is decoded at: more than any screen needs, and drawable. */
+private const val MAX_BACKGROUND_SIDE = 4096
+
+/** Decodes [uri] halved as often as it takes for its longest side to fit [maxSide]. */
+private fun decodeSampledImage(context: Context, uri: Uri, maxSide: Int): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    return context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+}
+
 @Composable
 private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
     val scope = rememberCoroutineScope()
@@ -901,16 +915,18 @@ private fun CustomBackgroundSection(context: Context, wallpaper: ImageBitmap?) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(it)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
+            // Scaled down, and off the main thread: a photo above about 26 MP made a bitmap too
+            // large to draw, and the crop screen crashed the app on its first frame
+            scope.launch {
+                val bitmap = withContext(Dispatchers.IO) {
+                    runCatching { decodeSampledImage(context, it, MAX_BACKGROUND_SIDE) }.getOrNull()
+                }
                 if (bitmap != null) {
                     cropBitmap = bitmap
                     showCropScreen = true
+                } else {
+                    Toast.makeText(context, context.getString(R.string.custom_bg_load_error), Toast.LENGTH_SHORT).show()
                 }
-            } catch (_: Exception) {
-                Toast.makeText(context, context.getString(R.string.custom_bg_load_error), Toast.LENGTH_SHORT).show()
             }
         }
     }

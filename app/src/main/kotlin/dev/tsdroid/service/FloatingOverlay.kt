@@ -1137,12 +1137,8 @@ private fun ActionBar(
         whisperReady = WhisperManager.canHold,
         onWhisperHold = onWhisperTalkStart,
         onWhisperRelease = onWhisperTalkStop,
+        whisperHolding = state.localWhisperActive,
     )
-    // A column: the island stacks what it holds, and the warning has to sit above the buttons
-    Column {
-    if (confirmDisconnect) {
-        WarningStrip(text = stringResource(R.string.floating_overlay_tap_again_to_disconnect))
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1150,12 +1146,27 @@ private fun ActionBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Hold-to-whisper: the same gesture as the bubble's push-to-talk, but the
-        // voice only reaches the whisper list. It stays usable while the normal
-        // microphone is muted, because the hold opens the microphone itself.
-        WhisperHoldButton(voice)
-        MicButton(voice)
-        SpeakerButton(voice)
+        if (confirmDisconnect) {
+            // The warning takes the other buttons' place: a strip above or below the row
+            // resized the window and moved Disconnect away from the confirming tap
+            Text(
+                text = stringResource(R.string.floating_overlay_tap_again_to_disconnect),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
+            )
+        } else {
+            // Hold-to-whisper: the same gesture as the bubble's push-to-talk, but the
+            // voice only reaches the whisper list. It stays usable while the normal
+            // microphone is muted, because the hold opens the microphone itself.
+            WhisperHoldButton(voice)
+            MicButton(voice)
+            SpeakerButton(voice)
+        }
         // Red, as a warning, and filled once a first tap has armed it
         VoiceButton(
             onClick = { if (confirmDisconnect) onDisconnect() else confirmDisconnect = true },
@@ -1168,7 +1179,6 @@ private fun ActionBar(
                 modifier = Modifier.size(IconSize),
             )
         }
-    }
     }
 }
 

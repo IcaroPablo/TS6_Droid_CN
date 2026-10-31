@@ -206,10 +206,9 @@ fun ConnectionScreen(
         viewModel.resumeExistingConnectionOnce(onConnected)
     }
 
-    LaunchedEffect(autoReconnect) {
-        if (autoReconnect) {
-            viewModel.tryAutoReconnect(onConnected)
-        }
+    // Once, at the first screen: the ViewModel reads the setting as stored then
+    LaunchedEffect(Unit) {
+        viewModel.tryAutoReconnect(onConnected)
     }
 
     // A session that is still running lives in the service, which is the only thing that knows when
@@ -677,6 +676,7 @@ fun ConnectionScreen(
                         onBackToHome = { scope.launch { pagerState.animateScrollToPage(0) } },
                         initialAnimeBackground = initialAnimeBackground,
                         infoOpen = serverInfoOpen,
+                        isShown = { selectedTab == SERVER_TAB },
                     )
                 }
             }

@@ -217,6 +217,7 @@
     <string name="error_service_start_failed">后台服务启动失败</string>
     <string name="error_not_connected">未连接到服务器</string>
     <string name="download_failed">下载失败</string>
+    <string name="private_send_peer_offline">未发送：对方已不在服务器上</string>
 
 
     <!-- Crash report overlay -->

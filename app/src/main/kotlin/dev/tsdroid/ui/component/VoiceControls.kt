@@ -91,6 +91,8 @@ class VoiceBarState(
     val whisperReady: Boolean,
     val onWhisperHold: () -> Unit,
     val onWhisperRelease: () -> Unit,
+    /** Whether a hold-to-whisper is on, from whichever button started it */
+    val whisperHolding: Boolean = false,
     /** Opens the whisper list; left out where it cannot open (over a full-screen stream) */
     val onWhisperList: (() -> Unit)? = null,
     /** Our status, and the way to change it where its sheet can open */
@@ -251,9 +253,14 @@ fun MicButton(state: VoiceBarState) {
                 detectTapGestures(onPress = {
                     pressed = true
                     latest.onPushToTalk(true)
-                    tryAwaitRelease()
-                    latest.onPushToTalk(false)
-                    pressed = false
+                    // A button that leaves the screen mid-press cancels this wait: release anyway,
+                    // or the microphone stays open with nobody holding it
+                    try {
+                        tryAwaitRelease()
+                    } finally {
+                        latest.onPushToTalk(false)
+                        pressed = false
+                    }
                 })
             }
         } else {
@@ -286,14 +293,20 @@ fun WhisperHoldButton(state: VoiceBarState) {
     val tint = if (state.whisperReady) WhisperAmber else LocalContentColor.current.copy(alpha = 0.35f)
     VoiceButton(
         onClick = null,
-        highlight = if (pressed) WhisperAmber.copy(alpha = 0.2f) else Color.Transparent,
+        // Lit while the whisper hold is on, not just while pressed: a hold that outlived its
+        // press is then visible instead of whispering behind the user's back
+        highlight = if (pressed || state.whisperHolding) WhisperAmber.copy(alpha = 0.2f) else Color.Transparent,
         modifier = Modifier.pointerInput(Unit) {
             detectTapGestures(onPress = {
                 pressed = true
                 latest.onWhisperHold()
-                tryAwaitRelease()
-                latest.onWhisperRelease()
-                pressed = false
+                // Released even when the button leaves the screen mid-press (see MicButton)
+                try {
+                    tryAwaitRelease()
+                } finally {
+                    latest.onWhisperRelease()
+                    pressed = false
+                }
             })
         },
     ) {

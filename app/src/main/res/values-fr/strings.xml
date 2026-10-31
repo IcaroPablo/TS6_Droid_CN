@@ -217,6 +217,7 @@
     <string name="error_service_start_failed">Impossible de démarrer le service en arrière-plan</string>
     <string name="error_not_connected">Non connecté au serveur</string>
     <string name="download_failed">Échec du téléchargement</string>
+    <string name="private_send_peer_offline">Non envoyé : cette personne n’est plus sur le serveur</string>
 
 
     <!-- Crash report overlay -->

@@ -220,6 +220,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     private var overlayTalking by mutableStateOf(false)
     /** When the current hold started, so a hold whose release went missing cannot stay open. */
     private var overlayTalkStartedAt = 0L
+    /** True while the panel's hold-to-whisper is pressed, so a window torn down mid-press can end it. */
+    private var overlayWhispering = false
     private var overlayWidth = 0
     private var overlayHeight = 0
     /** Where the window sat before expanding/collapsing, so the docked edge can stay put. */
@@ -759,10 +761,16 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
             return
         }
-        serviceScope.launch { WhisperManager.beginHoldWithMic() }
+        overlayWhispering = true
+        // Immediate: the hold has to be marked before this returns. A posted start could run
+        // after a quick release, which would then find no hold to end and leave the mic open.
+        serviceScope.launch(Dispatchers.Main.immediate) { WhisperManager.beginHoldWithMic() }
     }
 
-    private fun stopOverlayWhisperTalk() = WhisperManager.endHoldWithMic()
+    private fun stopOverlayWhisperTalk() {
+        overlayWhispering = false
+        WhisperManager.endHoldWithMic()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -896,6 +904,15 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
      */
     @Volatile var nicknameNoticeShown = false
 
+    /**
+     * The chat events a server screen has already taken in. The chat flow replays its latest
+     * events to every new subscriber, so a screen opened again would count and store them twice.
+     * By identity (events have no equals of their own), and weak: the replay holds the ones that
+     * can still come back. Main thread only.
+     */
+    val seenChatEvents: MutableSet<dev.tslib.Event> =
+        java.util.Collections.newSetFromMap(java.util.WeakHashMap())
+
     /** The nickname this session asked for; the server picks another one when it is taken. */
     val requestedNickname: String?
         get() = sessionParams?.nickname
@@ -906,7 +923,14 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             (address == null || tsClient.serverAddress == address)
     }
 
-    suspend fun connect(address: String, identity: Identity, nickname: String, password: String?): Throwable? {
+    /** [channel]: the channel to join, as the bookmark keeps it ("Parent/Child"); null for the server's default. */
+    suspend fun connect(
+        address: String,
+        identity: Identity,
+        nickname: String,
+        password: String?,
+        channel: String? = null,
+    ): Throwable? {
         if (isStopping) {
             return IllegalStateException("Connection service is still stopping. Please try again.")
         }
@@ -918,7 +942,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         sessionParams = null
 
         isIntentionalDisconnect = false
-        val failure = connectInternal(address, identity, nickname, password, isReconnect = false)
+        val failure = connectInternal(address, identity, nickname, password, isReconnect = false, channel = channel)
         if (failure == null) {
             sessionParams = SessionParams(address, identity, nickname, password)
             nicknameNoticeShown = false
@@ -932,9 +956,11 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
         nickname: String,
         password: String?,
         isReconnect: Boolean,
+        // A reconnect goes back to the channel it was in instead (restoreChannelAfterReconnect)
+        channel: String? = null,
     ): Throwable? {
         return try {
-            tsClient.connect(address, identity, nickname, password)
+            tsClient.connect(address, identity, nickname, password, channel)
             acquireWakeLock()
             val recording = runCatching { SettingsStore(this).recorderMode.first() }.getOrDefault(false)
             if (recording) {
@@ -1068,6 +1094,17 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     override fun onDestroy() {
         channelHistory.saveNow()
         unregisterNetworkCallback()
+        // The system can stop this service without prepareToStop(), for instance an idle one
+        // left behind by a failed connect. Still published, it took the next connect while the
+        // screen bound to the new service, and nothing could end that session.
+        if (instance === this) instance = null
+        // WhisperManager is left alone: it is shared, and a newer service may have attached it
+        hideFloatingWindow()
+        releaseWakeLock()
+        // Nothing else releases the bridge: its playback loop, AudioTrack, codecs and the
+        // call-audio route outlived every session
+        if (::audioBridge.isInitialized) audioBridge.release()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -1527,8 +1564,9 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
     fun hideFloatingWindow() {
         // The bubble's hold opens the microphone, and a window that goes away takes the finger's
         // release event with it. Closing here as well means the microphone can never be left open
-        // by a hold nobody is holding any more.
+        // by a hold nobody is holding any more. The same goes for the panel's hold-to-whisper.
         stopOverlayTalk()
+        if (overlayWhispering) stopOverlayWhisperTalk()
         overlayView?.let { view ->
             try {
                 // A window that disappears while its password field had the

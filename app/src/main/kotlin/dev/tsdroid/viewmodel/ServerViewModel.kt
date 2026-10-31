@@ -64,7 +64,15 @@ data class FileAttachment(
     val fileId: String,
     val isImage: Boolean,
     val channelId: Long = 0L,
+    /** The channel folder the file is in, with a slash at both ends: "/" for the root */
+    val path: String = "/",
 )
+
+/** [raw] as a channel folder: "/a/b/", without empty, "." or ".." parts. */
+internal fun normalizeFilePath(raw: String?): String {
+    val parts = raw.orEmpty().split('/').filter { it.isNotEmpty() && it != "." && it != ".." }
+    return if (parts.isEmpty()) "/" else parts.joinToString("/", prefix = "/", postfix = "/")
+}
 
 data class ChatMessage(
     val sender: String,
@@ -116,9 +124,11 @@ internal fun parseFileAttachment(text: String): FileAttachment? {
             val fileName = uri.getQueryParameter("filename") ?: return null
             val fileSize = uri.getQueryParameter("size")?.toLongOrNull() ?: 0L
             val channelId = uri.getQueryParameter("channel")?.toLongOrNull() ?: 0L
+            // A file shared from a subfolder: without its folder the root file of the same name opened
+            val path = normalizeFilePath(uri.getQueryParameter("path"))
             val ext = fileName.substringAfterLast('.', "").lowercase()
             val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
-            FileAttachment(fileName, fileSize, fileId = "", isImage, channelId = channelId)
+            FileAttachment(fileName, fileSize, fileId = "", isImage, channelId = channelId, path = path)
         } catch (_: Exception) { null }
     }
     return null
@@ -649,6 +659,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             launch {
                 service.tsClient.state.collect { state ->
                     _connectionState.value = state
+                    // A connect to another server can reuse this client without a rebind
+                    if (state == ConnectionState.CONNECTED) followServerAddress()
                     // The status survives a dropout on purpose: TsClient remembers
                     // it and pushes it again on the next connection, which is what
                     // the desktop client does too. Only an explicit disconnect
@@ -663,8 +675,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             }
             // Chat messages arrive on a replayed flow: events emitted between
             // connection and this subscription are replayed instead of lost.
+            // The replay also brings back what an earlier screen already took in
+            // and saved; those are skipped, or they would be stored twice.
             launch {
-                service.tsClient.chatEvents.collect { handleEvent(it) }
+                service.tsClient.chatEvents.collect { if (service.seenChatEvents.add(it)) handleEvent(it) }
             }
             launch {
                 service.tsClient.commandErrors.collect { message ->
@@ -674,19 +688,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                     rollbackLastPendingEcho()
                 }
             }
-            // Load persisted messages
-            launch {
-                val addr = service.tsClient.serverAddress
-                if (!addr.isNullOrEmpty()) {
-                    serverAddress = addr
-                    _serverAddressLabel.value = addr
-                    val stored = messageStore.load(addr)
-                    if (stored.privateMessages.isNotEmpty()) {
-                        _privateMessages.value = stored.privateMessages.mapValues { (_, msgs) -> msgs.map { migrateMessage(it) } }
-                    }
-                    if (stored.unreadPrivate.isNotEmpty()) _unreadPrivate.value = stored.unreadPrivate
-                }
-            }
+            // Load persisted messages, now if the client is already connected,
+            // otherwise once it is (the state collector above)
+            followServerAddress()
             // The channel chat is the connection's: it records and syncs it even with no screen open
             channelHistory = service.channelHistory
             launch {
@@ -872,6 +876,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                         try {
                             when (target) {
                                 "private" -> {
+                                    // A message from a server we just switched to may come in
+                                    // before the state change does: move to that server first
+                                    followServerAddress()
                                     val id = senderId ?: run {
                                         Log.w(TAG, "Private message without sender ID")
                                         return
@@ -1378,44 +1385,74 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val client = tsClient ?: return
         val channelId = currentChannelId()
         if (channelId == 0L) return
+        // A private file is never posted to the channel instead: refuse it before the upload
+        // when the peer is already gone, and again after it when they left in the meantime
+        if (isPrivate && (targetPeerKey == null || resolvePeerKey(targetPeerKey) == null)) {
+            toastPeerOffline()
+            return
+        }
         viewModelScope.launch {
-            val path = "/$fileName"
-            val success = client.uploadFile(channelId, path, data, overwrite = true)
+            val name = freeFileName(client, channelId, "/", fileName)
+            val success = client.uploadFile(channelId, "/$name", data, overwrite = false)
             if (success) {
                 val addr = serverAddress ?: "localhost"
                 val host = addr.substringBefore(':')
                 val port = addr.substringAfter(':', "9987")
                 val fileDateTime = System.currentTimeMillis() / 1000
-                val ts3Url = buildTs3FileUrl(host, port, channelId, "/", fileName, data.size.toLong(), fileDateTime)
+                val ts3Url = buildTs3FileUrl(host, port, channelId, "/", name, data.size.toLong(), fileDateTime)
 
-                val ext = fileName.substringAfterLast('.', "").lowercase()
+                val ext = name.substringAfterLast('.', "").lowercase()
                 val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
-                val attachment = FileAttachment(fileName, data.size.toLong(), fileId = "", isImage, channelId = channelId)
+                val attachment = FileAttachment(name, data.size.toLong(), fileId = "", isImage, channelId = channelId)
                 val meSender = getApplication<Application>().getString(R.string.me_sender)
 
-                val resolvedKey = if (isPrivate && targetPeerKey != null) resolvePeerKey(targetPeerKey) else null
-                val privateTargetId = resolvedKey?.let { clientIdForPeerKey(it) }
-                if (resolvedKey != null && privateTargetId != null) {
+                if (isPrivate) {
+                    val resolvedKey = targetPeerKey?.let { resolvePeerKey(it) }
+                    val privateTargetId = resolvedKey?.let { clientIdForPeerKey(it) }
+                    if (resolvedKey == null || privateTargetId == null) {
+                        toastPeerOffline()
+                        return@launch
+                    }
                     tsClient?.sendPrivateMessage(privateTargetId, ts3Url)
-                    val msg = ChatMessage(sender = meSender, text = fileName, isMe = true, isPrivate = true, senderId = privateTargetId, fileAttachment = attachment)
+                    val msg = ChatMessage(sender = meSender, text = name, isMe = true, isPrivate = true, senderId = privateTargetId, fileAttachment = attachment)
                     val current = _privateMessages.value.toMutableMap()
                     current[resolvedKey] = (current[resolvedKey] ?: emptyList()) + msg
                     _privateMessages.value = current
                 } else {
                     tsClient?.sendChannelMessage(ts3Url)
-                    channelHistory?.addOwn(meSender, fileName, attachment)
+                    channelHistory?.addOwn(meSender, name, attachment)
                 }
                 scheduleSave()
             }
         }
     }
 
+    private fun toastPeerOffline() {
+        Toast.makeText(getApplication(), R.string.private_send_peer_offline, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * A name no file in [dir] has yet: "photo.jpg", then "photo (2).jpg" and so on. An upload
+     * under a taken name replaced that file for everyone, so messages that linked to it opened
+     * the new one. Without a listing (the request failed) the name is kept.
+     */
+    private suspend fun freeFileName(client: TsClient, channelId: Long, dir: String, fileName: String): String {
+        val taken = client.listFiles(channelId, dir)?.mapTo(HashSet()) { it.name } ?: return fileName
+        if (fileName !in taken) return fileName
+        val dot = fileName.lastIndexOf('.').takeIf { it > 0 } ?: fileName.length
+        val base = fileName.substring(0, dot)
+        val ext = fileName.substring(dot)
+        var n = 2
+        while ("$base ($n)$ext" in taken) n++
+        return "$base ($n)$ext"
+    }
+
     fun downloadAttachment(attachment: FileAttachment): StateFlow<DownloadState> {
         val channelId = if (attachment.channelId != 0L) attachment.channelId else currentChannelId()
         val host = serverAddress?.substringBefore(':') ?: "unknown"
-        // Include the channel in the cache path: identical file names in
-        // different channels must not collide
-        val cachePath = "ch$channelId/" + attachment.fileName.trimStart('/')
+        // Include the channel and folder in the cache path: identical file names in
+        // different channels or folders must not collide. The same path as the file manager's.
+        val cachePath = "ch$channelId/" + attachment.path.trimStart('/') + attachment.fileName.trimStart('/')
         val cacheKey = "$host/$cachePath"
 
         // Return existing in-memory result if already loaded
@@ -1442,7 +1479,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(Dispatchers.IO) {
             // Check disk cache first
             val cached = fileCache.get(host, cachePath)
-            val bytes = cached ?: client.downloadFile(channelId, "/${attachment.fileName}")
+            val bytes = cached ?: client.downloadFile(channelId, attachment.path + attachment.fileName.trimStart('/'))
 
             if (bytes != null) {
                 // Save to disk cache if this was a fresh download
@@ -1568,7 +1605,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     /** Native file ops are fire-and-forget: refresh shortly after, then once
      *  more in case the server was slow applying the change. */
     private fun refreshFileListAfterOperation() {
-        refreshFileListAfterOperation()
+        refreshFileList()
         viewModelScope.launch { delay(2000); refreshFileList() }
     }
 
@@ -1612,12 +1649,19 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val ts3Url = buildTs3FileUrl(host, port, channelId, currentPath, fileName, fileSize)
         val ext = fileName.substringAfterLast('.', "").lowercase()
         val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
-        val attachment = FileAttachment(fileName, fileSize, fileId = "", isImage, channelId = channelId)
+        val attachment = FileAttachment(
+            fileName, fileSize, fileId = "", isImage, channelId = channelId, path = normalizeFilePath(currentPath),
+        )
         val meSender = getApplication<Application>().getString(R.string.me_sender)
 
-        val resolvedKey = targetPeerKey?.let { resolvePeerKey(it) }
-        val privateTargetId = resolvedKey?.let { clientIdForPeerKey(it) }
-        if (resolvedKey != null && privateTargetId != null) {
+        if (targetPeerKey != null) {
+            // Shared with one person: if they are gone it is not sent, rather than posted to the channel
+            val resolvedKey = resolvePeerKey(targetPeerKey)
+            val privateTargetId = resolvedKey?.let { clientIdForPeerKey(it) }
+            if (resolvedKey == null || privateTargetId == null) {
+                toastPeerOffline()
+                return
+            }
             tsClient?.sendPrivateMessage(privateTargetId, ts3Url)
             val msg = ChatMessage(
                 sender = meSender, text = fileName, isMe = true,
@@ -1709,9 +1753,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         val client = tsClient ?: return
         val channelId = currentChannelId()
         if (channelId == 0L) return
-        val path = _currentFilePath.value + fileName
+        val dir = _currentFilePath.value
         viewModelScope.launch {
-            val success = client.uploadFile(channelId, path, data, overwrite = true)
+            // A taken name gets a number rather than replacing the file already there
+            val path = dir + freeFileName(client, channelId, dir, fileName)
+            val success = client.uploadFile(channelId, path, data, overwrite = false)
             if (success) {
                 refreshFileListAfterOperation()
             }
@@ -1796,7 +1842,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
-        finishVoiceMessage(send = false)
+        // viewModelScope is already cancelled here, so finishVoiceMessage() would never get to
+        // stop the recorder: stop it now, or its tap keeps taking every microphone frame and
+        // nothing more is sent to the server
+        voiceRecorder?.stop(keep = false, minDurationMs = 0)
+        voiceRecorder = null
         stopWatching()
         saveNow()
         bound = false
@@ -1817,7 +1867,45 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private fun saveNow() {
         saveJob?.cancel()
         val addr = serverAddress ?: return
+        // Until the server's history is read, a save would write over it with only the newest messages
+        if (addr != historyLoadedFor) return
         messageStore.save(addr, _privateMessages.value, _unreadPrivate.value)
+    }
+
+    /** The server whose stored private chats are in memory; null while they are being read. */
+    private var historyLoadedFor: String? = null
+    private var historyLoadJob: Job? = null
+
+    /**
+     * Follows the client onto the server it is connected to now. Private chats and their badges
+     * belong to one server: the previous server's are saved and dropped, and the new server's
+     * history is read and put in front of whatever arrived in the meantime. Without this, the
+     * first server's chats stayed on screen after a switch and the new ones were saved into its file.
+     */
+    private fun followServerAddress() {
+        val addr = tsClient?.serverAddress?.takeIf { it.isNotEmpty() } ?: return
+        if (addr == serverAddress) return
+        saveNow()
+        serverAddress = addr
+        _serverAddressLabel.value = addr
+        historyLoadedFor = null
+        _privateMessages.value = emptyMap()
+        _unreadPrivate.value = emptyMap()
+        _unreadChannel.value = 0
+        historyLoadJob?.cancel()
+        historyLoadJob = viewModelScope.launch {
+            val stored = withContext(Dispatchers.IO) { messageStore.load(addr) }
+            if (serverAddress != addr) return@launch
+            val arrived = _privateMessages.value
+            _privateMessages.value = (stored.privateMessages.keys + arrived.keys).associateWith { key ->
+                stored.privateMessages[key].orEmpty().map { migrateMessage(it) } + arrived[key].orEmpty()
+            }
+            val unread = stored.unreadPrivate.toMutableMap()
+            _unreadPrivate.value.forEach { (key, count) -> unread[key] = (unread[key] ?: 0) + count }
+            _unreadPrivate.value = unread
+            historyLoadedFor = addr
+            if (arrived.isNotEmpty()) scheduleSave()
+        }
     }
 }
 
