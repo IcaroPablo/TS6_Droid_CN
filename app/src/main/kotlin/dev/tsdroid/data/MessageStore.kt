@@ -196,6 +196,7 @@ internal fun ChatMessage.toStoredJson(): org.json.JSONObject {
         put("sid", senderId)
         if (channelId != 0L) put("c", channelId)
         senderUid?.let { put("u", it) }
+        recipientName?.let { put("r", it) }
         fileAttachment?.let { fa ->
             put(
                 "fa",
@@ -224,6 +225,7 @@ internal fun storedMessageFromJson(o: org.json.JSONObject, isPrivate: Boolean): 
             senderId = o.optInt("sid", 0),
             channelId = o.optLong("c", 0L),
             senderUid = o.optString("u").takeIf { it.isNotEmpty() },
+            recipientName = o.optString("r").takeIf { it.isNotEmpty() },
             fileAttachment = o.optJSONObject("fa")?.let { fa ->
                 FileAttachment(
                     fileName = fa.getString("fn"),

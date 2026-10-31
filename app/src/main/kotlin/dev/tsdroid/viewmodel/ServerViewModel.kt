@@ -87,6 +87,9 @@ data class ChatMessage(
     val channelId: Long = 0L,
     /** The sender's permanent unique id, when known: what history sync matches senders by */
     val senderUid: String? = null,
+    /** Whom a private message of ours went to, by the name they had: a conversation with someone
+     *  offline who never wrote back is named by it, not by their uid */
+    val recipientName: String? = null,
     /**
      * Tells this message apart from every other one in this process, even one
      * sent in the same millisecond; a copy keeps it. Not stored: messages
@@ -161,6 +164,9 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
         /** An offline message's subject: its first line, at most this long */
         private const val OFFLINE_SUBJECT_CHARS = 40
+
+        /** How long a mailbox send waits for a refusal before it is called left */
+        private const val OFFLINE_REFUSAL_WAIT_MS = 2000L
         // Each watched stream is a video decoder and a connection of its own
         const val MAX_WATCHED_STREAMS = 4
     }
@@ -171,7 +177,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
      * error rolls back only still-unconfirmed echoes — failures of unrelated
      * commands (channel moves etc.) can no longer delete an accepted message.
      */
-    private class PendingEcho(val target: String, val peerKey: String?, val text: String, val at: Long) {
+    /** [offline]: left in a mailbox, which no echo confirms and only a refusal answers */
+    private class PendingEcho(val target: String, val peerKey: String?, val text: String, val at: Long, val offline: Boolean = false) {
         var confirmed = false
     }
     private val pendingOwnEchoes = ArrayDeque<PendingEcho>()
@@ -263,26 +270,29 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (idx >= 0) pendingOwnEchoes[idx].confirmed = true
     }
 
-    private fun rollbackLastPendingEcho() {
+    /** Takes back the oldest send not confirmed yet, which the server refused; returns it. */
+    private fun rollbackLastPendingEcho(): PendingEcho? {
         val now = System.currentTimeMillis()
         while (pendingOwnEchoes.isNotEmpty() && now - pendingOwnEchoes.first().at > PENDING_ECHO_WINDOW_MS) {
             pendingOwnEchoes.removeFirst()
         }
         val idx = pendingOwnEchoes.indexOfFirst { !it.confirmed }
-        if (idx < 0) return
+        if (idx < 0) return null
         val pending = pendingOwnEchoes.removeAt(idx)
         if (pending.target == "channel") {
             channelHistory?.removeOwn(pending.text, pending.at)
         } else {
-            val peerKey = pending.peerKey ?: return
-            val existing = _privateMessages.value[peerKey] ?: return
+            val peerKey = pending.peerKey ?: return pending
+            val existing = _privateMessages.value[peerKey] ?: return pending
             val list = existing.toMutableList()
             val idx = list.indexOfFirst { it.isMe && it.text == pending.text && it.timestamp >= pending.at }
             if (idx >= 0) {
                 list.removeAt(idx)
                 _privateMessages.value = _privateMessages.value.toMutableMap().apply { put(peerKey, list) }
+                scheduleSave()
             }
         }
+        return pending
     }
 
     private val messageStore = MessageStore(application)
@@ -690,10 +700,15 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             }
             launch {
                 service.tsClient.commandErrors.collect { message ->
+                    val refused = rollbackLastPendingEcho()
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+                        // A mailbox refused for lack of the right, said plainly
+                        if (refused?.offline == true) {
+                            Toast.makeText(getApplication(), R.string.private_offline_refused, Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    rollbackLastPendingEcho()
                 }
             }
             // Load persisted messages, now if the client is already connected,
@@ -1002,6 +1017,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         tsClient?.sendPrivateMessage(clientId, text)
         val msg = ChatMessage(
             sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true, isPrivate = true, senderId = clientId,
+            recipientName = _rawUsers.value.firstOrNull { it.id == clientId }?.nickname,
         )
         val current = _privateMessages.value.toMutableMap()
         current[resolvedKey] = (current[resolvedKey] ?: emptyList()) + msg
@@ -1455,14 +1471,21 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         // Mailboxes list messages by subject: the first line, cut short
         val subject = text.lineSequence().first().take(OFFLINE_SUBJECT_CHARS)
         client.sendOfflineMessage(peerKey, subject, text)
+        val existing = _privateMessages.value[peerKey].orEmpty()
         val msg = ChatMessage(
             sender = getApplication<Application>().getString(R.string.me_sender), text = text, isMe = true, isPrivate = true,
+            recipientName = existing.lastOrNull { !it.isMe }?.sender ?: existing.lastOrNull { it.recipientName != null }?.recipientName,
         )
-        val current = _privateMessages.value.toMutableMap()
-        current[peerKey] = (current[peerKey] ?: emptyList()) + msg
-        _privateMessages.value = current
-        pendingOwnEchoes.addLast(PendingEcho("private", peerKey, text, System.currentTimeMillis()))
-        Toast.makeText(getApplication(), R.string.private_sent_offline, Toast.LENGTH_SHORT).show()
+        _privateMessages.value = _privateMessages.value.toMutableMap().apply { put(peerKey, existing + msg) }
+        val pending = PendingEcho("private", peerKey, text, System.currentTimeMillis(), offline = true)
+        pendingOwnEchoes.addLast(pending)
+        // Said only once the server had time to refuse: a refusal takes the message back instead
+        viewModelScope.launch {
+            delay(OFFLINE_REFUSAL_WAIT_MS)
+            if (pending in pendingOwnEchoes) {
+                Toast.makeText(getApplication(), R.string.private_sent_offline, Toast.LENGTH_SHORT).show()
+            }
+        }
         scheduleSave()
     }
 

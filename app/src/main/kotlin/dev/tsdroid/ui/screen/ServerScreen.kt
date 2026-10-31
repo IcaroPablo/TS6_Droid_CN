@@ -278,6 +278,7 @@ fun ServerScreen(
         derivedStateOf { privateMessages.keys.map { peerKey ->
             val name = users.find { it.uid == peerKey }?.nickname
                 ?: privateMessages[peerKey]?.lastOrNull { !it.isMe }?.sender
+                ?: privateMessages[peerKey]?.lastOrNull { it.recipientName != null }?.recipientName
                 // A conversation that never resolved to a uid (the peer was not in
                 // the user list yet) keeps the old generic label.
                 ?: if (PrivateConversations.isLegacy(peerKey)) {
