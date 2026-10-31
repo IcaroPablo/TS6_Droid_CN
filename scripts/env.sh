@@ -24,7 +24,9 @@ ndk/$NDK_VERSION android-ndk-r29-linux.zip 4abbbcdc842f3d4879206e9695d52709603e5
 # git repository: the archive opus's autogen.sh downloads (from media.xiph.org)
 OPUS_MODEL_SHA256=a5177ec6fb7d15058e99e57029746100121f68e4890b1467d4094aa336b6013e
 
-export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}
+# The Android Gradle plugin needs JDK 21, so a JAVA_HOME the shell already has (often a newer
+# JDK) is not used: TS_JAVA_HOME overrides this one
+export JAVA_HOME=${TS_JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/.local/share/android-sdk}
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION
 export CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
