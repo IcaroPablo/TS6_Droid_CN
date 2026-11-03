@@ -6,7 +6,6 @@
     <string name="language_english">English</string>
     <string name="language_french">Français</string>
     <string name="language_nheengatu">Nheengatu</string>
-    <string name="language_change_title">应用语言更改</string>
     <string name="language_change_message">需要重启应用以应用 %1$s。</string>
     <string name="restart">重启</string>
     <string name="mute_user">静音用户</string>
@@ -36,7 +35,6 @@
     <string name="auto_reconnect">自动重连</string>
     <string name="remove">移除</string>
     <string name="edit">编辑</string>
-    <string name="select_channel">选择频道</string>
     <string name="cancel">取消</string>
 
     <!-- ServerScreen -->
@@ -52,26 +50,21 @@
     <string name="noise_suppression">麦克风降噪</string>
     <string name="chat">聊天</string>
     <string name="push_to_talk">按住说话</string>
-    <string name="ptt">按键说话</string>
     <string name="mute_mic">静音麦克风</string>
-    <string name="mute">静音</string>
     <string name="unmute_mic">取消静音</string>
     <string name="tab_channel">频道</string>
     <string name="tab_private">私聊</string>
-    <string name="tab_home">主页</string>
     <string name="tab_settings">设置</string>
     <string name="no_connection">暂无连接</string>
     <string name="wallpaper_cache_size">壁纸缓存：%1$s MB（%2$d 张）</string>
     <string name="wallpaper_max_cache">最大缓存：%1$d MB</string>
     <string name="wallpaper_view_cache">查看壁纸缓存</string>
     <string name="wallpaper_clear_cache">清空壁纸缓存</string>
-    <string name="wallpaper_clear_cache_confirm">确定要清空所有壁纸缓存吗？此操作不可恢复。</string>
     <string name="wallpaper_cache_empty">暂无缓存壁纸</string>
     <string name="wallpaper_export">保存到相册</string>
     <string name="wallpaper_export_all">全部保存</string>
     <string name="wallpaper_export_done">已保存 %1$d 张到相册</string>
     <string name="wallpaper_export_failed">保存到相册失败</string>
-    <string name="back_to_home">返回首页</string>
     <string name="floating_overlay_offline">未连接</string>
     <string name="floating_overlay_no_channel">不在任何频道</string>
     <string name="floating_overlay_members">%1$d 人</string>
@@ -86,11 +79,9 @@
     <string name="floating_overlay_mic_not_working">麦克风未工作</string>
     <string name="floating_overlay_deafened">已关闭声音</string>
     <string name="overlay_permission_needed">需要「显示在其他应用上层」权限，悬浮窗才会出现</string>
-    <string name="confirm">确定</string>
     <string name="custom_bg_title">自定义背景</string>
     <string name="custom_bg_upload">从相册选择</string>
     <string name="custom_bg_delete">删除自定义背景</string>
-    <string name="custom_bg_delete_confirm">删除自定义背景？</string>
     <string name="custom_bg_active">已设置自定义背景</string>
     <string name="custom_bg_inactive">未设置自定义背景</string>
     <string name="custom_bg_saved">背景已保存</string>
@@ -188,7 +179,6 @@
     <string name="file_size_gb">%1$.1f GB</string>
 
     <!-- File Manager -->
-    <string name="file_manager">文件管理</string>
     <string name="no_files">暂无文件</string>
     <string name="new_folder">新建文件夹</string>
     <string name="rename">重命名</string>
@@ -249,7 +239,6 @@
     <string name="back">返回</string>
 
     <!-- 服务器信息卡 -->
-    <string name="server_info">服务器信息</string>
     <string name="server_platform_version">平台 / 版本</string>
     <string name="server_clients">在线人数</string>
     <string name="server_clients_format">%1$d / %2$d</string>
@@ -336,8 +325,6 @@
     <string name="files_in_channel">%1$s 的文件</string>
     <string name="stream_screen_share">屏幕共享</string>
     <string name="channel_default">默认频道</string>
-    <string name="chat_fold">收起聊天</string>
-    <string name="chat_unfold">展开聊天</string>
     <string name="people_online">%1$d 人在线</string>
     <string name="chat_empty_private_with">还没有与 %1$s 的消息。</string>
     <string name="stream_fullscreen">全屏</string>

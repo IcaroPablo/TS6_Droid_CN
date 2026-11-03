@@ -6,7 +6,6 @@
     <string name="language_english">English</string>
     <string name="language_french">Français</string>
     <string name="language_nheengatu">Nheengatu</string>
-    <string name="language_change_title">Appliquer la modification de langue ?</string>
     <string name="language_change_message">L’application doit redémarrer pour appliquer %1$s.</string>
     <string name="restart">Redémarrer</string>
     <string name="mute_user">Couper le son de l’utilisateur</string>
@@ -36,7 +35,6 @@
     <string name="auto_reconnect">Reconnexion automatique</string>
     <string name="remove">Supprimer</string>
     <string name="edit">Modifier</string>
-    <string name="select_channel">Sélectionner un channel</string>
     <string name="cancel">Annuler</string>
 
     <!-- ServerScreen -->
@@ -52,26 +50,21 @@
     <string name="noise_suppression">Réduction de bruit du micro</string>
     <string name="chat">Chat</string>
     <string name="push_to_talk">Appuyer pour parler</string>
-    <string name="ptt">PTT</string>
     <string name="mute_mic">Couper le micro</string>
-    <string name="mute">Couper</string>
     <string name="unmute_mic">Activer le micro</string>
     <string name="tab_channel">Channel</string>
     <string name="tab_private">Privé</string>
-    <string name="tab_home">Accueil</string>
     <string name="tab_settings">Paramètres</string>
     <string name="no_connection">Aucune connexion</string>
     <string name="wallpaper_cache_size">Cache fond d\'écran : %1$s Mo (%2$d images)</string>
     <string name="wallpaper_max_cache">Cache max : %1$d Mo</string>
     <string name="wallpaper_view_cache">Voir le cache des fonds d\'écran</string>
     <string name="wallpaper_clear_cache">Vider le cache des fonds d\'écran</string>
-    <string name="wallpaper_clear_cache_confirm">Êtes-vous sûr de vouloir vider tout le cache des fonds d\'écran ? Cette action est irréversible.</string>
     <string name="wallpaper_cache_empty">Aucun fond d\'écran en cache</string>
     <string name="wallpaper_export">Enregistrer dans la galerie</string>
     <string name="wallpaper_export_all">Tout enregistrer</string>
     <string name="wallpaper_export_done">%1$d image(s) enregistrée(s) dans la galerie</string>
     <string name="wallpaper_export_failed">Échec de l\'enregistrement dans la galerie</string>
-    <string name="back_to_home">Retour à l\'accueil</string>
     <string name="floating_overlay_offline">Non connecté</string>
     <string name="floating_overlay_no_channel">Dans aucun canal</string>
     <string name="floating_overlay_members">%1$d ici</string>
@@ -86,11 +79,9 @@
     <string name="floating_overlay_mic_not_working">Le microphone ne fonctionne pas</string>
     <string name="floating_overlay_deafened">Son coupé</string>
     <string name="overlay_permission_needed">La fenêtre flottante nécessite l\'autorisation « afficher par-dessus les autres applications »</string>
-    <string name="confirm">Confirmer</string>
     <string name="custom_bg_title">Fond d\'écran personnalisé</string>
     <string name="custom_bg_upload">Choisir dans la galerie</string>
     <string name="custom_bg_delete">Supprimer le fond personnalisé</string>
-    <string name="custom_bg_delete_confirm">Supprimer l\'arrière-plan personnalisé ?</string>
     <string name="custom_bg_active">Fond personnalisé défini</string>
     <string name="custom_bg_inactive">Aucun fond personnalisé</string>
     <string name="custom_bg_saved">Fond d\'écran enregistré</string>
@@ -188,7 +179,6 @@
     <string name="file_size_gb">%1$.1f Go</string>
 
     <!-- File Manager -->
-    <string name="file_manager">Fichiers</string>
     <string name="no_files">Aucun fichier</string>
     <string name="new_folder">Nouveau dossier</string>
     <string name="rename">Renommer</string>
@@ -249,7 +239,6 @@
     <string name="back">Retour</string>
 
     <!-- 服务器信息卡 -->
-    <string name="server_info">Infos du serveur</string>
     <string name="server_platform_version">Plateforme / version</string>
     <string name="server_clients">Clients en ligne</string>
     <string name="server_clients_format">%1$d / %2$d</string>
@@ -336,8 +325,6 @@
     <string name="files_in_channel">Fichiers de %1$s</string>
     <string name="stream_screen_share">Partage d\'écran</string>
     <string name="channel_default">Salon par défaut</string>
-    <string name="chat_fold">Replier le chat</string>
-    <string name="chat_unfold">Déplier le chat</string>
     <string name="people_online">%1$d en ligne</string>
     <string name="chat_empty_private_with">Aucun message avec %1$s pour l\'instant.</string>
     <string name="stream_fullscreen">Plein écran</string>
