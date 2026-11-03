@@ -695,19 +695,28 @@ fun ServerScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
         ) {
             // The server's details, unfolded from the app's header, which names the server
-            AnimatedVisibility(
-                visible = showServerInfo,
-                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
-            ) {
-                InsetSection(modifier = Modifier.fillMaxWidth()) {
-                    ServerInfoContent(
-                        info = serverInfo,
-                        address = serverAddressLabel,
-                        clientsOnline = users.size,
-                        channelCount = channels.size,
-                        modifier = Modifier.heightIn(max = 320.dp),
-                    )
+            OwnScope {
+                // They step aside while a name is typed in the Files tab: with the keyboard up,
+                // they left the files too little room to show the name's field and its buttons
+                val ime = WindowInsets.ime
+                val density = LocalDensity.current
+                val namingFile by remember(ime, density) {
+                    derivedStateOf { chatTab == FILES_TAB && ime.getBottom(density) > 0 }
+                }
+                AnimatedVisibility(
+                    visible = showServerInfo && !namingFile,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                ) {
+                    InsetSection(modifier = Modifier.fillMaxWidth()) {
+                        ServerInfoContent(
+                            info = serverInfo,
+                            address = serverAddressLabel,
+                            clientsOnline = users.size,
+                            channelCount = channels.size,
+                            modifier = Modifier.heightIn(max = 320.dp),
+                        )
+                    }
                 }
             }
             // Connection / microphone health, so a silent failure is never invisible again

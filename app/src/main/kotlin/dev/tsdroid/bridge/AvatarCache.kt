@@ -15,6 +15,9 @@ import kotlinx.coroutines.withContext
 /**
  * Avatars by uid: in memory, and on disk encrypted (see [DeviceCipher]) under hashed
  * names, since a list of friends' uids is itself worth hiding.
+ *
+ * Each is kept with the avatar id the server gave it (a hash of the picture): a new id is a new
+ * picture, fetched once, and someone without an id has no avatar to ask for.
  */
 class AvatarCache(private val cacheDir: File) {
 
@@ -22,27 +25,25 @@ class AvatarCache(private val cacheDir: File) {
         private const val TAG = "AvatarCache"
     }
 
-    private val memoryCache = ConcurrentHashMap<String, ImageBitmap>()
+    private class Cached(val avatarId: String, val bitmap: ImageBitmap)
+
+    private val memoryCache = ConcurrentHashMap<String, Cached>()
     private val loading = ConcurrentHashMap<String, Boolean>()
-    // Asked on every member list refresh (twice a second): a failed avatar waits its turn.
+    // Asked on every member list refresh (twice a second): a failed avatar waits its turn. Keyed
+    // by uid and avatar id, so a new picture is tried afresh.
     private val retries = RetryBackoff()
     private val avatarsDir = File(cacheDir, "avatars_enc").also { it.mkdirs() }
     private val cipher = DeviceCipher()
 
-    fun getAvatar(uid: String): ImageBitmap? = memoryCache[uid]
+    fun getAvatar(uid: String): ImageBitmap? = memoryCache[uid]?.bitmap
 
-    /** False while a failed download of [uid]'s avatar waits for its next attempt, or was given up. */
-    fun mayLoad(uid: String): Boolean = retries.canTry(uid)
+    /** Whether [uid]'s avatar [avatarId] is the one in memory */
+    fun has(uid: String, avatarId: String): Boolean = memoryCache[uid]?.avatarId == avatarId
 
-    /** Clear memory cache for specific UIDs so next loadAvatar forces re-download */
-    fun clearMemoryCache(vararg uids: String) {
-        for (uid in uids) {
-            memoryCache.remove(uid)
-            loading.remove(uid)
-            retries.reset(uid)
-        }
-        Log.d(TAG, "Cleared memory cache for ${uids.size} UID(s)")
-    }
+    /** False while a failed download of this avatar waits for its next attempt, or was given up. */
+    fun mayLoad(uid: String, avatarId: String): Boolean = retries.canTry(retryKey(uid, avatarId))
+
+    private fun retryKey(uid: String, avatarId: String) = "$uid/$avatarId"
 
     /**
      * Convert a TS3 base64 UID to the avatar file path used by the server.
@@ -61,17 +62,24 @@ class AvatarCache(private val cacheDir: File) {
         return "/avatar_$sb"
     }
 
-    suspend fun loadAvatar(uid: String, tsClient: TsClient) {
+    /** Loads [uid]'s avatar [avatarId] (from [dev.tslib.User.avatarId]) unless it is in memory. */
+    suspend fun loadAvatar(uid: String, avatarId: String?, tsClient: TsClient) {
         if (uid.isEmpty()) return
-        if (memoryCache.containsKey(uid)) return
-        if (!mayLoad(uid)) return
+        if (avatarId.isNullOrEmpty()) {
+            // Taken away: nothing to show, nothing to fetch
+            memoryCache.remove(uid)
+            return
+        }
+        if (has(uid, avatarId)) return
+        val retryKey = retryKey(uid, avatarId)
+        if (!retries.canTry(retryKey)) return
         if (loading.putIfAbsent(uid, true) != null) return
 
         try {
             // Disk I/O and the JNI download must not run on the caller's
             // (main) dispatcher — both call sites collect from the UI side
             withContext(Dispatchers.IO) {
-                val diskFile = File(avatarsDir, DeviceCipher.hashedName(uid))
+                val diskFile = File(avatarsDir, DeviceCipher.hashedName("$uid/$avatarId"))
                 var bytes: ByteArray? = null
                 var fromDisk = false
 
@@ -91,7 +99,7 @@ class AvatarCache(private val cacheDir: File) {
                 if (fromDisk && bytes != null) {
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     if (bitmap != null) {
-                        memoryCache[uid] = bitmap.forSmallSizes()
+                        memoryCache[uid] = Cached(avatarId, bitmap.forSmallSizes())
                         Log.d(TAG, "Loaded avatar from disk cache for $uid")
                         return@withContext
                     }
@@ -106,12 +114,12 @@ class AvatarCache(private val cacheDir: File) {
                 bytes = when (val result = tsClient.download(0L, path)) {
                     is TsClient.Download.Ok -> result.data
                     is TsClient.Download.Failed -> {
-                        retries.failed(uid, result.permanent)
+                        retries.failed(retryKey, result.permanent)
                         return@withContext
                     }
                 }
                 if (bytes.isEmpty()) {
-                    retries.failed(uid, permanent = true)
+                    retries.failed(retryKey, permanent = true)
                     return@withContext
                 }
 
@@ -120,17 +128,21 @@ class AvatarCache(private val cacheDir: File) {
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 if (bitmap != null) {
                     cipher.writeFile(diskFile, bytes)
-                    memoryCache[uid] = bitmap.forSmallSizes()
-                    retries.succeeded(uid)
+                    // Drops the file of the picture this replaces, and the one older versions kept
+                    // under the uid alone
+                    val replaced = memoryCache.put(uid, Cached(avatarId, bitmap.forSmallSizes()))
+                    replaced?.let { File(avatarsDir, DeviceCipher.hashedName("$uid/${it.avatarId}")).delete() }
+                    File(avatarsDir, DeviceCipher.hashedName(uid)).delete()
+                    retries.succeeded(retryKey)
                     Log.i(TAG, "Avatar loaded for $uid")
                 } else {
                     Log.w(TAG, "Failed to decode downloaded avatar (${bytes.size} bytes)")
-                    retries.failed(uid, permanent = true)
+                    retries.failed(retryKey, permanent = true)
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load avatar", e)
-            retries.failed(uid, permanent = false)
+            retries.failed(retryKey, permanent = false)
         } finally {
             loading.remove(uid)
         }

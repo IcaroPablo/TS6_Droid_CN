@@ -194,6 +194,7 @@
     <string name="delete_file">Delete</string>
     <string name="enter_folder_name">Folder name</string>
     <string name="enter_new_name">New name</string>
+    <string name="name_taken">Already taken in this folder</string>
     <string name="refresh">Refresh</string>
     <string name="create">Create</string>
     <string name="folder">Folder</string>

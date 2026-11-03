@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,13 +15,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -47,8 +54,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tsdroid.bridge.TsFileEntry
@@ -143,6 +156,8 @@ fun FileManager(
     val sortedFiles = remember(files) {
         files.sortedWith(compareBy<TsFileEntry> { it.isFile }.thenBy { it.name.lowercase() })
     }
+    // A TeamSpeak 6 server renames a file over another of the same name, which is then lost
+    val takenNames = remember(files) { files.mapTo(HashSet()) { it.name } }
 
     Column(modifier = modifier.fillMaxSize()) {
         // "/" alone did not say whose files these are
@@ -195,6 +210,7 @@ fun FileManager(
         ) {
             NameEditor(
                 label = stringResource(R.string.enter_folder_name),
+                takenNames = takenNames,
                 confirmText = stringResource(R.string.create),
                 onConfirm = { name ->
                     onCreateDirectory(name)
@@ -276,6 +292,7 @@ fun FileManager(
                                         EntryPanel.RENAME -> NameEditor(
                                             label = stringResource(R.string.enter_new_name),
                                             initialValue = entry.name,
+                                            takenNames = takenNames - entry.name,
                                             confirmText = stringResource(R.string.rename),
                                             onConfirm = { newName ->
                                                 if (newName != entry.name) onRename(entry.name, newName)
@@ -388,20 +405,41 @@ private fun ShareTargets(
     }
 }
 
-/** A name typed in place: a new folder's, or a file's new one. */
+/**
+ * A name typed in place: a new folder's, or a file's new one. It opens ready to type, with a file's
+ * name selected up to its extension, and the keyboard's Done confirms it. A name in [takenNames]
+ * cannot be confirmed.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NameEditor(
     label: String,
     initialValue: String = "",
+    takenNames: Set<String>,
     confirmText: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var text by remember { mutableStateOf(initialValue) }
-    val name = text.trim()
+    var text by remember {
+        val stem = initialValue.lastIndexOf('.').takeIf { it > 0 } ?: initialValue.length
+        mutableStateOf(TextFieldValue(initialValue, TextRange(0, stem)))
+    }
+    val name = text.text.trim()
+    val taken = name in takenNames
+    val canConfirm = name.isNotEmpty() && !taken
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    // The keyboard shrinks the list this sits in: the confirm button is kept in sight above it,
+    // where the list would otherwise only keep the field
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val keyboardHeight = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(keyboardHeight) {
+        if (keyboardHeight > 0) bringIntoView.bringIntoView()
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bringIntoViewRequester(bringIntoView)
             .padding(horizontal = InsetPadding)
             .padding(bottom = Spacing.Gap),
         verticalArrangement = Arrangement.spacedBy(Spacing.Gap),
@@ -410,9 +448,17 @@ private fun NameEditor(
             value = text,
             onValueChange = { text = it },
             label = { Text(label) },
+            isError = taken,
+            supportingText = if (taken) {
+                { Text(stringResource(R.string.name_taken)) }
+            } else null,
             singleLine = true,
             shape = Shapes.Standard,
-            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { if (canConfirm) onConfirm(name) }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focus),
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -424,7 +470,7 @@ private fun NameEditor(
             Button(
                 shape = Shapes.Standard,
                 onClick = { onConfirm(name) },
-                enabled = name.isNotEmpty(),
+                enabled = canConfirm,
             ) {
                 Text(confirmText)
             }

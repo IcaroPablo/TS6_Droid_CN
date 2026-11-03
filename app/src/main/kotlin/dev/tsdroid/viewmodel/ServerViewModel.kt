@@ -811,12 +811,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             val uid = user.uid ?: continue
             if (uid.isEmpty()) continue
             if (user.isQuery) continue
-            if (user.avatarId.isNullOrEmpty()) continue  // no avatar on server
-            if (avatarCache.getAvatar(uid) != null) continue
-            if (!avatarCache.mayLoad(uid)) continue
+            val avatarId = user.avatarId
+            if (avatarId.isNullOrEmpty()) continue  // no avatar on server
+            if (avatarCache.has(uid, avatarId)) continue
+            if (!avatarCache.mayLoad(uid, avatarId)) continue
             Log.d(TAG, "loadAvatars: launching download for ${user.nickname}")
             viewModelScope.launch {
-                avatarCache.loadAvatar(uid, client)
+                avatarCache.loadAvatar(uid, avatarId, client)
                 val avatar = avatarCache.getAvatar(uid)
                 if (avatar != null) {
                     _avatars.value = _avatars.value + (uid to avatar)

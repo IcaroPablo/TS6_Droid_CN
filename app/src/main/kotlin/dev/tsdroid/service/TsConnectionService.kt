@@ -353,9 +353,7 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                                 val uid = speakerUser?.uid
                                 if (!uid.isNullOrEmpty()) {
                                     serviceScope.launch(Dispatchers.IO) {
-                                        // Force refresh speaker avatar
-                                        avatarCache.clearMemoryCache(uid)
-                                        avatarCache.loadAvatar(uid, tsClient)
+                                        avatarCache.loadAvatar(uid, speakerUser?.avatarId, tsClient)
                                         val avatar = avatarCache.getAvatar(uid)
                                         withContext(Dispatchers.Main) {
                                             if (overlayActiveSpeakerId == speakerId) {
@@ -445,16 +443,14 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                 if (pendingLocalSpeaking == isSpeaking) {
                     delayedLocalSpeaking = isSpeaking
                     
-                    // Force refresh local user avatar when speaking starts
+                    // The local user's avatar when speaking starts
                     if (isSpeaking) {
                         val myId = tsClient.clientId
                         val localUser = tsClient.users.value.find { it.id == myId }
                         val localUid = localUser?.uid
                         if (!localUid.isNullOrEmpty()) {
                             serviceScope.launch(Dispatchers.IO) {
-                                // Force refresh local avatar
-                                avatarCache.clearMemoryCache(localUid)
-                                avatarCache.loadAvatar(localUid, tsClient)
+                                avatarCache.loadAvatar(localUid, localUser?.avatarId, tsClient)
                                 val avatar = avatarCache.getAvatar(localUid)
                                 withContext(Dispatchers.Main) {
                                     if (overlayActiveSpeakerId == myId) {
@@ -468,7 +464,8 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
             }
         }.launchIn(serviceScope)
         
-        // Periodic avatar refresh — force re-download ALL user avatars to keep them fresh
+        // The avatars of the channel's people, for the floating window: one changed or newly set
+        // shows within this interval, and the rest are already in memory
         serviceScope.launch {
             while (true) {
                 delay(AVATAR_REFRESH_INTERVAL_MS)
@@ -479,17 +476,12 @@ class TsConnectionService : LifecycleService(), ViewModelStoreOwner, SavedStateR
                 val currentChannelId = currentUsers.find { it.id == myId }?.channelId
                 val channelUsers = currentUsers.filter { it.channelId == currentChannelId }
                 
-                // Collect all UIDs in the current channel
-                val uids = channelUsers.mapNotNull { it.uid }.filter { it.isNotEmpty() }.toList()
-                if (uids.isEmpty()) continue
-                
+                if (channelUsers.none { !it.uid.isNullOrEmpty() }) continue
+
                 serviceScope.launch(Dispatchers.IO) {
-                    // Clear memory cache for all channel users to force re-download
-                    avatarCache.clearMemoryCache(*uids.toTypedArray())
-                    
-                    // Re-download all avatars
-                    for (uid in uids) {
-                        avatarCache.loadAvatar(uid, tsClient)
+                    for (user in channelUsers) {
+                        val uid = user.uid?.takeIf { it.isNotEmpty() } ?: continue
+                        avatarCache.loadAvatar(uid, user.avatarId, tsClient)
                     }
                     
                     // Update the current speaker avatar if someone is speaking
