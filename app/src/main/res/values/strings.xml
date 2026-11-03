@@ -217,6 +217,7 @@
     <string name="download_failed">Download failed</string>
     <string name="private_send_peer_offline">Not sent: this person is no longer on the server</string>
     <string name="private_sent_offline">They are offline: left in their mailbox on the server</string>
+    <string name="upload_failed">Upload failed: the server did not take the file</string>
     <string name="permission_missing">Refused: this needs %1$s on the server</string>
     <string name="mention_note_subject">%1$s mentioned you in %2$s</string>
     <string name="mention_note">%1$s mentioned you in %2$s while you were away: %3$s</string>

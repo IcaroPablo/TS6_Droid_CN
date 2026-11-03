@@ -1449,6 +1449,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             val name = freeFileName(client, channelId, "/", fileName)
             needs("i_ft_file_upload_power")
             val success = client.uploadFile(channelId, "/$name", data, overwrite = false)
+            if (!success) toastUploadFailed()
             if (success) {
                 val addr = serverAddress ?: "localhost"
                 val host = addr.substringBefore(':')
@@ -1551,6 +1552,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             scheduleSave()
         }
         tsClient?.markOfflineMessageRead(id)
+    }
+
+    /** An upload that failed or got no answer used to end in silence, as if nothing had been picked */
+    private fun toastUploadFailed() {
+        Toast.makeText(getApplication(), R.string.upload_failed, Toast.LENGTH_SHORT).show()
     }
 
     private fun toastPeerOffline() {
@@ -1892,6 +1898,8 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             val success = client.uploadFile(channelId, path, data, overwrite = false)
             if (success) {
                 refreshFileListAfterOperation()
+            } else {
+                toastUploadFailed()
             }
         }
     }
