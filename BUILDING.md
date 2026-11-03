@@ -40,32 +40,31 @@ The versions live in [`scripts/env.sh`](scripts/env.sh).
 
    `gcompat` runs the NDK's clang and the SDK's `aapt2`, which are glibc programs, and
    `libgcc-chimera-devel` provides the `libgcc_s` that they and the musl Rust toolchain need.
+   The build checks for them and prints this command with the ones missing.
 
-2. Clone with the submodules and run the one-time setup:
+2. Clone and build:
 
    ```
    git clone --recursive https://github.com/IcaroPablo/TS6_Droid_CN.git
    cd TS6_Droid_CN
-   scripts/setup
-   ```
-
-   It changes no shell profile; the scripts set `PATH` themselves. The Android packages are
-   downloaded straight from Google's repository and checked against the SHA-256 sums in
-   `scripts/env.sh`; using them means accepting the
-   [Android SDK License](https://developer.android.com/studio/terms). opus's model archive
-   (135 MB) comes from media.xiph.org, the address opus's own `autogen.sh` uses, checked against
-   the SHA-256 sum opus pins; only its generated C files are kept (83 MB).
-
-3. Build:
-
-   ```
    scripts/build
    ```
 
-   This builds the library, runs the unit tests and writes `out/telespeak-<version>.apk`. It
-   checks out the `tslib_multi` commit this repository records, also after a `git pull`; if
-   `tslib_multi` has commits or uncommitted changes of its own, it builds them as they are and
-   says so.
+   This builds the library, runs the unit tests and writes `out/telespeak-<version>.apk`.
+
+   It first runs `scripts/setup`, which installs what is missing of the pinned toolchain, SDK and
+   models, and does nothing, offline, once they are there. A `git pull` that changes a pinned
+   version is then installed by the next build. Setup changes no shell profile; the scripts set
+   `PATH` themselves. The Android packages are downloaded straight from Google's repository and
+   checked against the SHA-256 sums in `scripts/env.sh`; using them means accepting the
+   [Android SDK License](https://developer.android.com/studio/terms). opus's model archive
+   (135 MB) comes from media.xiph.org, the address opus's own `autogen.sh` uses, checked against
+   the SHA-256 sum opus pins; only its generated C files are kept (83 MB). Gradle's own download
+   is checked against the sum in `gradle/wrapper/gradle-wrapper.properties`.
+
+   The build checks out the `tslib_multi` commit this repository records, also after a
+   `git pull`, moving a branch checked out there forward to it. If `tslib_multi` has commits or
+   uncommitted changes of its own, it builds them as they are and says so.
 
 To run `./gradlew` or `cargo` by hand, first source the environment from the repository root:
 `. scripts/env.sh`.
@@ -87,10 +86,12 @@ The keystore is never in the repository.
    scripts/release notes.md
    ```
 
-   It checks that `main` matches GitHub and the version is new, runs `scripts/build`, checks that
-   the committed library is what the build produces and that the APK is signed with the release
-   key (`TS_SIGNER_SHA256` in `scripts/env.sh`), then shows the notes and asks before tagging
-   `vX.Y.Z` and publishing the release with the APK. The notes get the library's SHA-256 appended.
+   It checks that `main` matches GitHub, the version is new, and `tslib_multi` is clean, at the
+   commit `main` records and on GitHub (anyone rebuilding the tag fetches it from there). It then
+   runs `scripts/build`, checks that the committed library is what the build produces and that the
+   APK is signed with the release key (`TS_SIGNER_SHA256` in `scripts/env.sh`), then shows the
+   notes and asks before tagging `vX.Y.Z` and publishing the release with the APK. The notes get
+   the library's SHA-256 appended.
    It needs the GitHub CLI (`gh`, package `github-cli`), logged in.
 
 The in-app updater reads the latest release: its tag gives the version, and it downloads the

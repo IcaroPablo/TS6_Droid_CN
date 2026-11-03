@@ -26,6 +26,11 @@ repo=$(git remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.
 git fetch -q origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main differs from origin/main"
 [ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || die "$tag already exists on GitHub"
+recorded=$(git rev-parse :tslib_multi)
+[ "$(git -C tslib_multi rev-parse HEAD)" = "$recorded" ] || die "tslib_multi is not at the commit main records"
+[ -z "$(git -C tslib_multi status --porcelain --untracked-files=no)" ] || die "tslib_multi has uncommitted changes"
+git -C tslib_multi fetch -q origin
+git -C tslib_multi branch -r --contains "$recorded" | grep -q . || die "tslib_multi $recorded is not on GitHub; push it first"
 latest=$(gh release view -R "$repo" --json tagName -q .tagName 2>/dev/null || true)
 if [ -n "$latest" ]; then
 	newest=$(printf '%s\n%s\n' "${latest#v}" "$version" | sort -V | tail -n 1)

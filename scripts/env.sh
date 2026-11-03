@@ -6,6 +6,8 @@
 ts_repo=${ts_repo:-$PWD}
 [ -f "$ts_repo/scripts/env.sh" ] || { echo "env.sh: source it from the repository root" >&2; return 1; }
 
+HOST_PACKAGES="git curl unzip clang lld llvm-binutils openjdk21 gcompat libgcc-chimera-devel"
+
 # Pinned versions; scripts/setup installs exactly these
 RUST_VERSION=1.99.1
 NDK_VERSION=29.0.14206865

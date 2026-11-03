@@ -1,14 +1,22 @@
 #!/bin/sh
-# One-time setup for building on Chimera Linux: the pinned Rust toolchain in
-# ~/.rustup and ~/.cargo, the pinned Android SDK packages in
-# ~/.local/share/android-sdk and opus's models in ~/.local/share/telespeak.
-# The host packages come first; see BUILDING.md. Running it again only
-# installs what is missing; scripts/build runs it when the models are missing.
+# Install what building on Chimera Linux needs and is missing: the pinned Rust
+# toolchain, Android SDK packages and opus models. Host packages are only
+# checked. See BUILDING.md.
 set -eu
 
 ts_repo=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ts_repo"
 . scripts/env.sh
+
+missing=
+for package in $HOST_PACKAGES; do
+	apk info -e "$package" >/dev/null 2>&1 || missing="$missing $package"
+done
+if [ -n "$missing" ]; then
+	echo "setup: missing host packages; install them with:" >&2
+	echo "  doas apk add$missing" >&2
+	exit 1
+fi
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -20,7 +28,9 @@ if ! command -v rustup >/dev/null; then
 	# No default toolchain and no PATH change in the shell profile: env.sh pins both
 	"$tmp/rustup-init" -y --no-modify-path --profile minimal --default-toolchain none
 fi
-rustup toolchain install "$RUST_VERSION" --profile minimal --target aarch64-linux-android
+if ! rustup target list --installed --toolchain "$RUST_VERSION" 2>/dev/null | grep -qx aarch64-linux-android; then
+	rustup toolchain install "$RUST_VERSION" --profile minimal --target aarch64-linux-android
+fi
 
 # Each archive holds one top directory, which becomes the package's directory
 echo "$SDK_PACKAGES" | while read -r dir archive sha256; do

@@ -1,15 +1,13 @@
 #!/bin/sh
 # Build TeleSpeak natively on Chimera Linux: the tslib JNI library, the unit
 # tests and the release APK. Result: out/telespeak-<version>.apk
-# Run scripts/setup once first; see BUILDING.md.
 set -eu
 
 ts_repo=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ts_repo"
 . scripts/env.sh
 
-# Setup added the opus models later; fetch them on the first build that needs them
-[ -f "$OPUS_MODEL_DIR/MODEL_SHA256" ] || scripts/setup
+scripts/setup
 
 # Check out the tslib_multi commit this repository records, unless tslib_multi
 # holds work of its own (other commits or uncommitted changes): that is built
@@ -23,7 +21,11 @@ else
 		git -C tslib_multi cat-file -e "$recorded^{commit}" 2>/dev/null || git -C tslib_multi fetch -q origin
 		if [ -z "$(git -C tslib_multi status --porcelain --untracked-files=no --ignore-submodules)" ] &&
 			git -C tslib_multi merge-base --is-ancestor "$current" "$recorded"; then
-			git submodule update --recursive tslib_multi
+			if git -C tslib_multi symbolic-ref -q HEAD >/dev/null; then
+				git -C tslib_multi merge -q --ff-only "$recorded"
+			else
+				git submodule update --recursive tslib_multi
+			fi
 		else
 			echo "build: tslib_multi has work of its own (at $(git -C tslib_multi rev-parse --short HEAD)," \
 				"recorded $(git -C tslib_multi rev-parse --short "$recorded")); building it as it is" >&2
