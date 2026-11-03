@@ -161,8 +161,8 @@ internal data class FloatingOverlayState(
  *   around the shape instead of a soft shadow;
  * * no ripples either (`indication = null`): their bounds are the rectangular touch target, so every
  *   tap flashed a grey square. Pressed/selected states are explicit colours instead;
- * * surfaces are translucent app colours with a hairline border, which reads the same over a game, a
- *   video or a desktop;
+ * * surfaces are the app's own opaque colours with a hairline border, which reads the same over a
+ *   game, a video or a desktop, and lets no icon of the home screen show through the text;
  * * the bubble carries the app's own pink ([AppPink], the launcher icon's background) while nobody is
  *   talking, at half opacity so it does not hide what is underneath;
  * * a push-to-talk hold paints the bubble's rim and a ring around it, and the ring follows the
@@ -709,8 +709,8 @@ private fun OverlayIsland(
         modifier = modifier.fillMaxWidth(),
         shape = Shapes.Standard,
         color = overlaySurface(),
-        // Explicit: a translucent surface colour matches no theme colour, so Surface could not
-        // derive one and the texts without their own colour (the server name) came out black.
+        // Explicit: Surface derives a content colour only from a theme colour it recognises, and the
+        // texts without their own colour (the server name) once came out black.
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         content = content,
@@ -1235,8 +1235,8 @@ private val AppPink = Color(0xFFFF69B4)
 private const val AppPinkAlpha = 0.5f
 
 /**
- * The overlay's surface colour: a translucent version of the app's own surface, so the window follows
- * the system theme while still letting a game or a desktop show through at its edges.
+ * The overlay's surface colour: the app's own surface, so the window follows the system theme. Opaque:
+ * through a translucent one, the home screen's icons showed under the text.
  */
 @Composable
-private fun overlaySurface(): Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+private fun overlaySurface(): Color = MaterialTheme.colorScheme.surface
