@@ -137,6 +137,33 @@ login (default `serveradmin`). ServerQuery over SSH may need turning on first: s
 with `query_protocols=raw,ssh` (in its ini file or on its command line). The desktop client's
 permission editor (Permissions → Server Groups) does the same by hand.
 
+## To do
+
+### To solve
+
+- **File transfers:** they are not encrypted yet.
+- **Old migration code:** remove the code that converts data from older versions, once everyone has
+  updated.
+- **History sync trust:** for now, anyone connected to the server can send and receive channel
+  history.
+- **Giphy:** maybe some kind of plugin integration API, i don't know, may be useful to apply some extensions like the next ones
+- **Whatsapp and Telegram stickers:** somehow integrated in the chat as giphy
+- **Ideas:**
+    - end-to-end encrypted chat
+    - exporting settings (plain, or protected by a passphrase: undecided)
+    - privilege keys.
+    - stop anyone who has the link from joining the server
+    - using the identity of an account that already exists (the one we use on the PC) in the app is
+      a bit complicated; I want to see if I can simplify that, so we don't need two identities on
+      the server
+- **Two listeners:** with two phones in listener mode, both leave the same mention note.
+- **iOS version:** currently TeleSpeak is Android only.
+
+### To test
+
+- `scripts/server-setup` against a real ServerQuery (the friend's server, run on its machine).
+- Switching servers (needs a second server that is up; not for a while).
+
 ---
 
 *The original README of TS6_Droid_CN follows (in Chinese).*
