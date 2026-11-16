@@ -68,8 +68,9 @@ class SettingsStore(private val context: Context) {
     val autoLoadImages: Flow<Boolean> = context.settingsDataStore.data
         .map { it[KEY_AUTO_LOAD_IMAGES] ?: false }
 
+    // Nheengatu ("yrl") is no longer offered: whoever had picked it gets English
     val language: Flow<String> = context.settingsDataStore.data
-        .map { it[KEY_LANGUAGE] ?: "en" }
+        .map { it[KEY_LANGUAGE]?.takeUnless { tag -> tag == "yrl" } ?: "en" }
 
     val enableFloatingWindow: Flow<Boolean> = context.settingsDataStore.data
         .map { it[KEY_ENABLE_FLOATING_WINDOW] ?: true }

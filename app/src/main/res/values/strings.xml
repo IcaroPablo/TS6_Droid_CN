@@ -7,7 +7,6 @@
     <string name="language_simplified_chinese">简体中文</string>
     <string name="language_english">English</string>
     <string name="language_french">Français</string>
-    <string name="language_nheengatu">Nheengatu</string>
     <string name="language_change_message">The app needs to restart to apply %1$s.</string>
     <string name="restart">Restart</string>
     <string name="mute_user">Mute user</string>

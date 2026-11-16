@@ -117,7 +117,6 @@ fun SettingsPage(
         "zh" to stringResource(R.string.language_simplified_chinese),
         "en" to stringResource(R.string.language_english),
         "fr" to stringResource(R.string.language_french),
-        "yrl" to stringResource(R.string.language_nheengatu),
     )
     val selectedLanguageTag by settingsStore.language.collectAsStateWithLifecycle(initialValue = "en")
     val selectedLanguageLabel = languageOptions.firstOrNull { it.first == selectedLanguageTag }?.second
